@@ -1,0 +1,24 @@
+// This protobuf file defines the recommended message formats used in OBN-Sim between nodes.
+// Note that these formats are recommended.
+// OpenBuildNet simulation framework does not manage the communication between nodes, nor enforce the message formats used by them.
+// https://developers.google.com/protocol-buffers/docs/proto
+
+// Note that all field names are converted to lowercase in the generated code, so MsgType becomes msgtype.
+
+option optimize_for = LITE_RUNTIME;
+
+package OBNSimIOMsg;  // package or namespace
+
+// ********** between nodes **********
+
+// A scalar of type double (real number)
+message DoubleScalar {
+  required int64 time = 1;     // time stamp
+  required double value = 2;   // the scalar
+}
+
+// A vector of type double (real numbers)
+message DoubleVector {
+  required int64 time = 1;     // time stamp
+  repeated double value = 2 [packed=true];   // the vector (may contain 0 elements)
+}

@@ -1,0 +1,5 @@
+This directory contains the test projects for the framework.  Each test is an independent project that uses code files from the SMN, nodecpp, etc. to test various aspects of the framework.  Summary of the tests:
+
+- test1: a very simple test of the SMN with only one node updated regularly.
+- test2: a simple motor control simulation with 3 nodes.
+- test3: a simple ADMM example with one master node and five slave nodes. It tests the capabilty of the framework for irregular updates / events.

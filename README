@@ -1,0 +1,51 @@
+* Requirements
+
+- A recent C++ compiler that supports C++11 standards.
+- cmake version 3.1.0 or later.
+- Boost library for C++.
+- Google's Protocol Buffer (protobuf): https://code.google.com/p/protobuf/
+- YARP if YARP is used for communication
+- Paho MQTT library (http://www.eclipse.org/paho) if MQTT is used for communication; install the libraries corresponding to the used languages.
+- gnuplot if you want to plot the results of the tests.
+
+
+* Installation instructions
+
+** For all platforms
+
+After installing the required libraries and software, to build the framework or any of the test, go to the corresponding directory and do the following:
+
+- Create a sub-directory for the build, e.g. ./build
+- Change to that sub-directory, and run cmake to generate Makefiles. For example in UNIX / MacOS / Linux:
+  	 cmake ..
+  To generate Xcode projects, run: cmake -G Xcode ..
+- Run make to build the project(s).
+
+
+** On Mac OS
+
+The easiest way to install the required components and get going on Mac OS.
+
+- Update to the latest version of Xcode and its command line programs, which should support C++11 standards.
+- Install and update Homebrew for MacOS if you haven't had it: http://brew.sh/
+- Install cmake:
+  	  brew install cmake
+- Install Boost:
+  	  brew install boost
+- Install protobuf:
+  	  brew install protobuf
+- To install yarp (http://wiki.icub.org/wiki/Homebrew#Installing_Yarp):
+	  brew tap homebrew/x11
+	  brew install yarp
+- To install gnuplot:
+     	  brew install gnuplot
+- To install Paho MQTT, please consult the website http://www.eclipse.org/paho
+
+
+* List of folders
+- ./msg: contains the definitions of messages used in the openBuildNet framework, written in protobuf syntax.
+- ./smn: contains the source code implementing the SMN.
+- ./nodecpp: contains the source code of node.cpp - the framework for writing nodes in C++. This will be the reference for all other node implementations (in Python, Matlab, etc.).
+- ./tests: contains source code of tests for SMN and/or nodes. Typically a test should contain both the SMN (using the SMN library) and nodes (using the node libraries).
+
+The main CMake file in this folder will build everything, while the CMake files in sub-folders build the corresponding code.

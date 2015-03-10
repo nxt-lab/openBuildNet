@@ -1,0 +1,17 @@
+This folder contains the project for the SMN (obnsim-smn).
+
+The source files are in /src; the header files are in /include.
+This project uses CMake to build.
+
+Dependencies:
+- BOOST graph library (BGL) must be installed and available in the system.
+- Google's ProtoBuf must be installed and available in the system.
+- At least one supported communication framework must be installed. Currently: YARP. Multiple frameworks may be used in the same binary.
+
+To build the project, simply go to the subdirectory ./build and run the following commands:
+  cmake ..
+  make
+
+The binary file is put inside ./build.
+
+If this project is included in the root obnsim project as a subproject, refer to the root README file for details. Generally, the binary will be put in the /smn directory of the build directory.

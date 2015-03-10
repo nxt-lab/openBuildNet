@@ -1,0 +1,50 @@
+// This protobuf file defines the messages used in OBN-Sim between the SMN and nodes.
+// https://developers.google.com/protocol-buffers/docs/proto
+
+// Note that all field names are converted to lowercase in the generated code, so MsgType becomes msgtype.
+
+option optimize_for = LITE_RUNTIME;
+
+package OBNSimMsg;  // package or namespace
+
+// ********** between the SMN and nodes **********
+
+// The data field of a message
+message MSGDATA {
+  optional int64 T = 1;  // time stamp
+  optional int64 I = 2;  // an integer value
+  optional bytes B = 3;  // a string of bytes, for binary data
+}
+
+// Message from the SMN to a node
+message SMN2N {
+  enum MSGTYPE {
+    SIM_INIT = 0x0100;
+    SIM_Y = 0x0101;	// regular update-y
+    SIM_X = 0x0102;	// update-x (for both regular and irregular update iterations)
+    SIM_YI = 0x0103;	// irregular update-y
+    SIM_EVENT_ACK = 0x0110;
+    SIM_TERM = 0x010F;
+  }
+  
+  required MSGTYPE MsgType = 1;  // type of message
+  required int64 Time = 2;     // simulation time stamp
+  optional int32 ID = 3;       // ID of the receiving node
+  optional MSGDATA Data = 4;   // data attached to the message
+}
+
+// Message from a node to the SMN
+message N2SMN {
+  enum MSGTYPE {
+    SIM_INIT_ACK = 0x0100;
+    SIM_Y_ACK = 0x0101;
+    SIM_X_ACK = 0x0102;
+    SIM_YI_ACK = 0x0103;
+    SIM_EVENT = 0x0110;
+  }
+  
+  required MSGTYPE MsgType = 1;  // type of message
+  optional int32 ID = 3;       // ID of the receiving node
+  optional MSGDATA Data = 4;   // data attached to the message
+}
+

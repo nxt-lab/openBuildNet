@@ -1,0 +1,2 @@
+This folder contains the .proto files for the definitions of all the messages used in the openBuildNet-simulation framework.  These files will be compiled by protoc to generate source files (in C++, Java, Python, etc.).  This directory will not be built directly, but the files will be used by the subprojects such as SMN, node frameworks, tests, etc.
+

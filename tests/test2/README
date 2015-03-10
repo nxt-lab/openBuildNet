@@ -1,0 +1,7 @@
+This test implements a motor control system simulation with 3 nodes: a motor node, a controller node, and a setpoint node. The setpoint node is updated less frequently than the other two nodes.  It produces the speed setpoint for the controller, which is changed randomly everytime it is updated.
+
+To run the demo:
+- Requires YARP network: start yarpserver.
+- Build the entire project.
+- Run ./nodemotor, ./nodectrl, ./nodesetpoint, ./smntest2
+- If gnuplot is available, after the simulation finishes, gnuplot will be called by nodectrl to plot the results; press ENTER to close the plot window and exit.
