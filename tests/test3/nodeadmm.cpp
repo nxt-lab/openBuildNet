@@ -339,7 +339,7 @@ int main() {
     google::protobuf::ShutdownProtobufLibrary();
     
     dump.close();
-    system("gnuplot ../../plot.plg");
+    // system("gnuplot ../../plot.plg");
     
     return 0;
 }

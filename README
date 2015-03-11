@@ -37,8 +37,8 @@ The easiest way to install the required components and get going on Mac OS.
 - To install yarp (http://wiki.icub.org/wiki/Homebrew#Installing_Yarp):
 	  brew tap homebrew/x11
 	  brew install yarp
-- To install gnuplot:
-     	  brew install gnuplot
+- To install gnuplot: you should specify an output device, for example --with-x11 or --with-qt. Run brew info gnuplot for more options.
+     	  brew install --with-x11 gnuplot
 - To install Paho MQTT, please consult the website http://www.eclipse.org/paho
 
 
