@@ -23,19 +23,18 @@
 
 
 namespace OBNsmn {
-    /* A class that will be defined later in obnsim_gc.h, that implements iterator for regular updating nodes. */
-    class RegUpdateListIterator;
+    /** Contain information about an updating node. */
+    struct NodeUpdateInfo {
+        int nodeID;             ///< ID of the node
+        //unsigned char type;     // Update type: 1 if regular only, 2 if irregular only, 3 if both
+        updatemask_t updateMask;    // Update type mask for the current update
+    };
     
-    /* NOT USED
-     A base class for iterating over a list of updating nodes.
-    class UpdateListIterator {
-    public:
-        virtual UpdateListIterator& operator++() = 0;
-        //virtual bool operator==(const UpdateListIterator& rhs) = 0;
-        //virtual bool operator!=(const UpdateListIterator& rhs) = 0;
-        virtual int getID() const = 0;
-        virtual outputmask_t getMask() const = 0;
-    }; */
+    typedef std::vector<NodeUpdateInfo> NodeUpdateInfoList;     ///< A list of updating nodes.
+    
+    /** Iterator type for enumerating the list of updating nodes in GC. */
+    typedef NodeUpdateInfoList::iterator GCUpdateListIterator;
+
     
     /** \brief Graph of nodes' dependency, used in runtime.
      
@@ -58,7 +57,7 @@ namespace OBNsmn {
         /** \brief Check if the graph is empty.
          \return True if empty.
          */
-        virtual bool empty() = 0;
+        virtual bool empty() const = 0;
     };
     
     /** \brief Graph of nodes' dependency, with weights on edges.
@@ -89,27 +88,25 @@ namespace OBNsmn {
          The ID of a node is the index of the node in the array of all nodes, so it is between 0 and N-1, where N is the number of nodes. The IDs of nodes are guaranteed to be contiguous integers.
          \param s ID of the source node.
          \param t ID of the target node.
-         \param w Bit mask of the output groups of node s on which node t depends.
+         \param smask Bit mask of the update types of node s on which node t depends.
+         \param tmask Bit mask of the update types of node t for which node t will depend on the update types smask of node s.
          */
-        virtual void addDependency(int s, int t, outputmask_t w) = 0;
+        virtual void addDependency(int s, int t, updatemask_t smask, updatemask_t tmask) = 0;
         
-        /** \brief Return a runtime node dependency graph, keeping only updating nodes.
+        /** \brief Return a runtime node dependency graph.
          
-         Copy the full node dependency graph to a run-time node dependency graph after removing all non-updating nodes and their associated edges.
-         All relevant data (e.g. mappings between IDs and nodes) must be copied also.
-         \param it First iterator
+         The returned pointer will be used in determining the correct dependency order in each update iteration. The caller will not delete this object, so the NodeDepGraph object should store a pointer to this run-time graph object and destroy it when necessary.
+         \param itbegin Iterator to the beginning of the list of updating nodes.
          \param n Exact number of elements (nodes to be updated)
-         \return Unique pointer to a RTNodeDepGraph object
+         \return Pointer to a RTNodeDepGraph object
          */
-        virtual std::unique_ptr<RTNodeDepGraph> getRTNodeDepGraph(RegUpdateListIterator it, size_t n) = 0;
+        virtual RTNodeDepGraph* getRTNodeDepGraph(GCUpdateListIterator itbegin, size_t n) = 0;
     };
     
     
     // =============================================
     // Implementation using Boost graph library (BGL)
     // =============================================
-    
-    class NodeDepGraph_BGL;
     
     /** \brief Implementation of RTNodeDepGraph in Boost Graph Library.
      
@@ -122,36 +119,36 @@ namespace OBNsmn {
      Therefore we choose listS for VertexList and OutEdgeList.
      \see http://www.boost.org/doc/libs/1_57_0/libs/graph/doc/using_adjacency_list.html
      */
-    class RTNodeDepGraph_BGL: public RTNodeDepGraph {
-    public:
-        RTNodeDepGraph_BGL(int numNodes): _graph(numNodes) {}
-        // virtual ~RTNodeDepGraph_BGL() { std::cout << "RT Node graph deleted." << std::endl; }
-        
-        /** \brief Return and remove independent nodes. */
-        virtual std::vector<int> getAndRemoveIndependentNodes();
-        
-        /** \brief Check if the graph is empty.
-         \return True if empty.
-         */
-        virtual bool empty() {
-            return boost::num_vertices(_graph) == 0;
-        }
-        
-    private:
-        /**
-         Here we use listS to store the list of vertices and the list of edges because the RT graph will be modified frequently.
-         To each vertex, we associate the ID of the corresponding node, therefore a bundled property of type int is used for the vertices.
-         */
-        typedef boost::adjacency_list<boost::listS, boost::listS, boost::directedS, int> GraphT;
-        GraphT _graph;
-        
-        RTNodeDepGraph_BGL() {}  // prevent being constructed outside of NodeDepGraph_BGL
+//    class RTNodeDepGraph_BGL: public RTNodeDepGraph {
+//    public:
+//        RTNodeDepGraph_BGL(int numNodes): _graph(numNodes) {}
+//        // virtual ~RTNodeDepGraph_BGL() { std::cout << "RT Node graph deleted." << std::endl; }
+//        
+//        /** \brief Return and remove independent nodes. */
+//        virtual std::vector<int> getAndRemoveIndependentNodes();
+//        
+//        /** \brief Check if the graph is empty.
+//         \return True if empty.
+//         */
+//        virtual bool empty() {
+//            return boost::num_vertices(_graph) == 0;
+//        }
+//        
+//    private:
+//        /**
+//         Here we use listS to store the list of vertices and the list of edges because the RT graph will be modified frequently.
+//         To each vertex, we associate the ID of the corresponding node, therefore a bundled property of type int is used for the vertices.
+//         */
+//        typedef boost::adjacency_list<boost::listS, boost::listS, boost::directedS, int> GraphT;
+//        GraphT _graph;
+//        
+//        RTNodeDepGraph_BGL() {}  // prevent being constructed outside of NodeDepGraph_BGL
+//
+//        friend class NodeDepGraph_BGL;
+//    };
 
-        friend class NodeDepGraph_BGL;
-    };
     
-    
-    /** \brief Implementation of NodeDepGraph in Boost Graph Library.
+    /** \brief Implementation of NodeDepGraph and RTNodeDepGraph using Boost Graph Library.
      
      The most important part is choosing the right containers for the adjacency_list graph, which stores the dependency graph.
      Properties:
@@ -161,17 +158,24 @@ namespace OBNsmn {
      
      We choose vecS for both VertexList and OutEdgeList.
      \see http://www.boost.org/doc/libs/1_57_0/libs/graph/doc/using_adjacency_list.html
+     
+     By using the same graph for both the full dependency graph and its run-time version (using multiple inheritance), we avoid creating and destructing graph objects repeatedly, adding and removing vertices and edges repeatedly, which potentially improves speed and memory performance.
      */
-    class NodeDepGraph_BGL: public NodeDepGraph {
+    class NodeDepGraph_BGL: public NodeDepGraph, public RTNodeDepGraph {
+        
     public:
+        /* ======== Implementation of the NodeDepGraph interface ========= */
+        
         /** \brief Construct a graph of a given number of nodes.
          \param numNodes Number of nodes, whose indices are from 0 to (numNodes-1).
          */
-        NodeDepGraph_BGL(int numNodes): _graph(numNodes) {}
+        NodeDepGraph_BGL(int numNodes): _graph(numNodes) {
+            assert(numNodes > 0);
+        }
         
         // virtual ~NodeDepGraph_BGL() { std::cout << "Node graph deleted." << std::endl; }
         
-        /** \brief Add a new node with a unique ID.
+        /* \brief Add a new node with a unique ID.
          
          Add a new node associated with a unique ID to the graph.
          The ID is the index of the node in the array of all nodes, so it is between 0 and N-1, where N is the number of nodes. The IDs of nodes are guaranteed to be contiguous integers.
@@ -182,28 +186,62 @@ namespace OBNsmn {
         
         /** \brief Add dependency of a node on another node.
          
-         Add that some outputs of node t depend on the values of the output groups specified in w of node s.
-         The ID is the index of the node in the array of all nodes, so it is between 0 and N-1, where N is the number of nodes. The IDs of nodes are guaranteed to be contiguous integers.
-         \param s ID of the source node.
-         \param t ID of the target node.
-         \param w Bit mask of the output groups of node s on which node t depends.
+         Refer to NodeDepGraph::addDependency() for details.
          */
-        virtual void addDependency(int s, int t, outputmask_t w) {
-            boost::add_edge(s, t, w, _graph);
-        }
+        virtual void addDependency(int s, int t, updatemask_t smask, updatemask_t tmask);
         
         /** \brief Return a runtime node dependency graph, keeping only updating nodes. */
-        virtual std::unique_ptr<RTNodeDepGraph> getRTNodeDepGraph(RegUpdateListIterator it, size_t n);
-
+        virtual RTNodeDepGraph* getRTNodeDepGraph(GCUpdateListIterator itbegin, size_t n);
+        
+        /* ======== Implementation of the RTNodeDepGraph interface ========= */
+        /** \brief Return and remove independent nodes. */
+        virtual std::vector<int> getAndRemoveIndependentNodes();
+        
+        /** \brief Check if the run-time graph is empty.
+         \return True if empty.
+         */
+        virtual bool empty() const {
+            return (rtNodesLeft < 1);
+        }
+        
     private:
         /**
          Here we use vecS to store the list of vertices, which is essentially a vector of integers (IDs of the vertices) starting from 0.
          Because this coincides with the IDs of the nodes (which are guaranteed to be integers from 0 to N-1 where N is the total number of nodes), we can directly associate the ID of a node with the ID (descriptor) of a vertex.
          However, Otherwise we would have to use an <int> as the property of a vertex.
-         The property of an edge is simply its weight (output mask).
+         The property of an edge is a vector (list) of pairs of source update mask and target update mask, which represents parallel links from one source node to one target node associated.
+         A link is active iff its source mask is active (an active update type of the source node) and its target mask is active (an active update type of the target node).
+         An edge is active, and is added to run-time dependency graph, iff at least one of its links is active.
+         Links can be combined to reduce the number of parallel links (see the implementation of addDependency for details).
+         
+         For the run-time graph algorithm, we need:
+         - For each edge: a bool property to mark if the edge is "removed" or not yet.
+         - For each vertex (node): enum value of UNMARKED, MARKED, and REMOVED.
          */
-        typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::directedS, boost::no_property, outputmask_t> GraphT;
+        typedef std::pair<updatemask_t, updatemask_t> LinkLabel;
+        struct EdgeLabel {
+            std::vector<LinkLabel> links;   ///< List of links from the same source node to the same target nodes
+            bool removed;                   ///< Whether the edge has been removed (to be used in the run-time algorithm)
+            EdgeLabel(updatemask_t s, updatemask_t t): links(1, std::make_pair(s, t)), removed(false) {}
+            // EdgeLabel(const EdgeLabel& other): links(other.links), removed(other.removed) {}
+            EdgeLabel(): links(), removed(false) {}
+        };
+        struct VertexLabel {
+            enum {
+                UNMARKED,
+                MARKED,
+                REMOVED
+            } status;
+            updatemask_t updateMask;
+        };
+        typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::directedS, VertexLabel, EdgeLabel> GraphT;
         GraphT _graph;
+        
+        int rtNodesLeft;        ///< Number of nodes left to be considered in the run-time graph
+        
+        /** \brief Combine two links into one if possible. */
+        bool combineLinks(LinkLabel& link1, const LinkLabel& link2);
+        
     };
 }
 

@@ -10,8 +10,8 @@
 
 #include <iostream>
 #include <thread>
-#include <obnsim_report.h>
-#include <obnsim_gc.h>   // The GC thread
+#include <obnsmn_report.h>
+#include <obnsmn_gc.h>   // The GC thread
 
 
 #ifdef OBNSIM_SMN_COMM_YARP

@@ -46,7 +46,7 @@ void OBNsmn::report_info(int code, std::string msg) {
 int main() {
     yarp::os::Network yarp;
     
-    const int N = 5;  // number of slaves
+    const int N = 3;  // number of slaves
     
     // The individual ports to send to nodes
     OBNsmn::YARP::YARPPort admmPort;
@@ -70,12 +70,13 @@ int main() {
     
     // In this test, we create an ADMM master node
     OBNsmn::YARP::OBNNodeYARP* pnode = new OBNsmn::YARP::OBNNodeYARP("admm", 1, &admmPort);
-    pnode->setOutputGroup(0, 1000);  // bit mask 0
+    pnode->setUpdateType(0, 1000, 0x01);  // bit mask 0
+    pnode->setUpdateType(1, 0, 0x02);     // bit mask 1 = the irregular update for ADMM iterations
     gc.insertNode(pnode);
     
     for (int i = 0; i < N; ++i) {
         pnode = new OBNsmn::YARP::OBNNodeYARP("x" + std::to_string(i), 1, &slavePorts[i]);
-        pnode->setOutputGroup(0, 1000);
+        pnode->setUpdateType(0, 1000);
         gc.insertNode(pnode);
     }
     

@@ -61,15 +61,15 @@ int main() {
     
     // In this test, we create three nodes: motor, controller, and setpoint source
     OBNsmn::YARP::OBNNodeYARP* pnode = new OBNsmn::YARP::OBNNodeYARP("motor", 1, &motorPort);
-    pnode->setOutputGroup(0, 10);  // bit mask 0
+    pnode->setUpdateType(0, 10);  // bit mask 0
     gc.insertNode(pnode);
     
     pnode = new OBNsmn::YARP::OBNNodeYARP("ctrl", 1, &ctrlPort);
-    pnode->setOutputGroup(0, 10);  // bit mask 0
+    pnode->setUpdateType(0, 10);  // bit mask 0
     gc.insertNode(pnode);
     
     pnode = new OBNsmn::YARP::OBNNodeYARP("setpoint", 1, &spPort);
-    pnode->setOutputGroup(0, 200);  // bit mask 0
+    pnode->setUpdateType(0, 200);  // bit mask 0
     gc.insertNode(pnode);
     
     // NOTE the index: 0 - motor, 1 - ctrl, 2 - setpoint
@@ -77,9 +77,9 @@ int main() {
     
     // We can try different tests: no dependency ...
     // ... or (setpoint -> controller, motor)
-    //nodeGraph->addDependency(2, 1, 0x01);
+    //nodeGraph->addDependency(2, 1, 0x01, 0x01);
     // ... or (setpoint -> controller, controller -> motor)
-    //nodeGraph->addDependency(2, 1, 0x01); nodeGraph->addDependency(1, 0, 0x01);
+    nodeGraph->addDependency(2, 1, 0x01, 0x01); nodeGraph->addDependency(1, 0, 0x01, 0x01);
     
     gc.setDependencyGraph(nodeGraph);
     

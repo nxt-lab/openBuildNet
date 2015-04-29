@@ -101,7 +101,6 @@ set(OBNSMN_CORE_SRCFILES
 	${OBNSMN_SRC_DIR}/obnsmn_event.cpp
 	${OBNSMN_SRC_DIR}/obnsmn_node.cpp
 	${OBNSMN_SRC_DIR}/obnsmn_nodegraph.cpp
-	${OBNSMN_SRC_DIR}/obnsmn_iterators.cpp
     	${OBNSMN_SRC_DIR}/obnsmn_gc.cpp
 	${OBNSMN_COMM_SRC}
 )
@@ -117,7 +116,6 @@ set(OBNSMN_CORE_HDRFILES
 	${OBNSMN_INCLUDE_DIR}/obnsmn_node.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_nodegraph.h
 	${OBNSMN_INCLUDE_DIR}/sharedqueue.h
-	${OBNSMN_INCLUDE_DIR}/obnsmn_iterators.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_report.h
 	${OBNSMN_COMM_HDR}
 )

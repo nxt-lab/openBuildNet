@@ -106,7 +106,6 @@ set(OBNSMN_CORE_SRCFILES
 	${PROJECT_SOURCE_DIR}/obnsmn_event.cpp
 	${PROJECT_SOURCE_DIR}/obnsmn_node.cpp
 	${PROJECT_SOURCE_DIR}/obnsmn_nodegraph.cpp
-	${PROJECT_SOURCE_DIR}/obnsmn_iterators.cpp
     	${PROJECT_SOURCE_DIR}/obnsmn_gc.cpp
 	${PROTO_SRCS}
 	${OBNSMN_COMM_SRC}
@@ -119,7 +118,6 @@ set(OBNSMN_CORE_HDRFILES
 	${PROJECT_INCLUDE_DIR}/obnsmn_node.h
 	${PROJECT_INCLUDE_DIR}/obnsmn_nodegraph.h
 	${PROJECT_INCLUDE_DIR}/sharedqueue.h
-	${PROJECT_INCLUDE_DIR}/obnsmn_iterators.h
 	${PROJECT_INCLUDE_DIR}/obnsmn_report.h
 	${PROTO_HDRS}
 	${OBNSMN_COMM_HDR}
@@ -165,3 +163,4 @@ INSTALL(
 
 # ADD_SUBDIRECTORY(doc)
 
+set(CMAKE_BUILD_TYPE Release)

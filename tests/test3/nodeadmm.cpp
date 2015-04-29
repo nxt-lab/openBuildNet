@@ -66,7 +66,7 @@ void sendACK(int myid, OBNSimMsg::N2SMN::MSGTYPE type, OBNSimMsg::N2SMN& n2smn, 
     port.writeStrict();
 }
 
-void sendEventRequest(int myid, OBNnode::simtime_t t, OBNSimMsg::N2SMN& n2smn, OBNnode::YARP::smnPort &port) {
+void sendEventRequest(int myid, OBNnode::simtime_t t, int mask, OBNSimMsg::N2SMN& n2smn, OBNnode::YARP::smnPort &port) {
     OBNnode::YARP::smnMsg& msg = port.prepare();
     
     n2smn.set_msgtype(OBNSimMsg::N2SMN_MSGTYPE_SIM_EVENT);
@@ -74,10 +74,13 @@ void sendEventRequest(int myid, OBNnode::simtime_t t, OBNSimMsg::N2SMN& n2smn, O
     
     auto *data = new OBNSimMsg::MSGDATA;
     data->set_t(t);
+    data->set_i(mask);
     n2smn.set_allocated_data(data);
     
     msg.setMessage(n2smn);
     port.writeStrict();
+    
+    report_info(0, "Sent EVENT request for time " + std::to_string(t));
 }
 
 /* Read inputs as a vector of doubles */
@@ -114,7 +117,7 @@ void sendXbar(PortIT pbegin, PortIT pend, ValIT vbegin, ValIT vend, OBNnode::sim
 int main() {
     std::cout << "This is the ADMM master node." << std::endl;
     
-    const int N = 5;  // number of slaves
+    const int N = 3;  // number of slaves
     const int dim = 3;  // dimension of the x vector
     const int nIter = 20;   // number of iterations
     
@@ -207,60 +210,66 @@ int main() {
                 case NODE_RUN:
                     switch (smn2n.msgtype()) {
                         case OBNSimMsg::SMN2N_MSGTYPE_SIM_Y:
-                            // Restart the ADMM loop
-                            admmIter = 0;
-                            
-                            // Register an irregular event
-                            nextACKType = OBNSimMsg::N2SMN_MSGTYPE_SIM_Y_ACK;
-                            sendEventRequest(myID, curTime + distribution(generator), n2smn, smnPort);
-                            
-                            report_info(0, "At " + std::to_string(curTime) + " UPDATE_Y: starts ADMM.");
-                            
-                            nodeState = NODE_EVENTACK;
-                            
-                            break;
-                            
-                        case OBNSimMsg::SMN2N_MSGTYPE_SIM_YI:
-                            // Continue the ADMM loop
-                            if (++admmIter >= nIter) {
-                                // ADMM completes, acknowledges and stops
-                                sendACK(myID, OBNSimMsg::N2SMN_MSGTYPE_SIM_YI_ACK, n2smn, smnPort);
-                                report_info(0, "At " + std::to_string(curTime) + " UPDATE_YI: completes ADMM.");
-                            }
-                            else {
-                                // Send xbar to every slave
-                                slaveRes.reset();
-                                sendXbar(slavePorts.begin(), slavePorts.end(), xbar.begin(), xbar.end(), curTime);
-                                
-                                // std::cout << "Sent Xbar to all." << std::endl;
-                                
-                                // Reset xbar to compute the new mean
-                                xbar.fill(0.0);
-                                
-                                // Wait for returns from all slaves
-                                std::array<double, N> xj;  // to store xj from slave
-                                while (!slaveRes.all()) {
-                                    for (int i = 0; i < N; ++i) {
-                                        if (!slaveRes[i] && readInput(slavePorts[i], xj.begin())) {
-                                            // Got the result from slave i -> add to xbar
-                                            std::transform(xbar.begin(), xbar.end(), xj.begin(), xbar.begin(), std::plus<double>());
-                                            slaveRes.set(i);
-                                        }
+                            assert(smn2n.has_data() && smn2n.data().has_i());
+                            switch (smn2n.data().i()) {
+                                case 0x01:  // The normal update
+                                    // Restart the ADMM loop
+                                    admmIter = 0;
+                                    
+                                    // Register an irregular event
+                                    nextACKType = OBNSimMsg::N2SMN_MSGTYPE_SIM_Y_ACK;
+                                    sendEventRequest(myID, curTime + distribution(generator), 0x02, n2smn, smnPort);
+                                    
+                                    report_info(0, "At " + std::to_string(curTime) + " UPDATE_Y: starts ADMM.");
+                                    
+                                    nodeState = NODE_EVENTACK;
+                                    break;
+                                case 0x02:  // The ADMM iteration
+                                    // Continue the ADMM loop
+                                    if (++admmIter >= nIter) {
+                                        // ADMM completes, acknowledges and stops
+                                        sendACK(myID, OBNSimMsg::N2SMN_MSGTYPE_SIM_Y_ACK, n2smn, smnPort);
+                                        report_info(0, "At " + std::to_string(curTime) + " UPDATE_Y: completes ADMM.");
                                     }
-                                }
-                                
-                                // std::cout << "Got X back from all." << std::endl;
-                                
-                                // All slaves responded, xbar contains the sum, now calculate the mean
-                                std::transform(xbar.begin(), xbar.end(), xbar.begin(), [N](double v) {return v/N;});
-                                
-                                // Register an irregular event
-                                nextACKType = OBNSimMsg::N2SMN_MSGTYPE_SIM_YI_ACK;
-                                sendEventRequest(myID, curTime + distribution(generator), n2smn, smnPort);
-                                
-                                // report_info(0, "At " + std::to_string(curTime) + " UPDATE_YI: continue ADMM.");
-                                
-                                nodeState = NODE_EVENTACK;
+                                    else {
+                                        // Send xbar to every slave
+                                        slaveRes.reset();
+                                        sendXbar(slavePorts.begin(), slavePorts.end(), xbar.begin(), xbar.end(), curTime);
+                                        
+                                        // std::cout << "Sent Xbar to all." << std::endl;
+                                        
+                                        // Reset xbar to compute the new mean
+                                        xbar.fill(0.0);
+                                        
+                                        // Wait for returns from all slaves
+                                        std::array<double, N> xj;  // to store xj from slave
+                                        while (!slaveRes.all()) {
+                                            for (int i = 0; i < N; ++i) {
+                                                if (!slaveRes[i] && readInput(slavePorts[i], xj.begin())) {
+                                                    // Got the result from slave i -> add to xbar
+                                                    std::transform(xbar.begin(), xbar.end(), xj.begin(), xbar.begin(), std::plus<double>());
+                                                    slaveRes.set(i);
+                                                }
+                                            }
+                                        }
+                                        
+                                        // std::cout << "Got X back from all." << std::endl;
+                                        
+                                        // All slaves responded, xbar contains the sum, now calculate the mean
+                                        std::transform(xbar.begin(), xbar.end(), xbar.begin(), [N](double v) {return v/N;});
+                                        
+                                        // Register an irregular event
+                                        nextACKType = OBNSimMsg::N2SMN_MSGTYPE_SIM_Y_ACK;
+                                        sendEventRequest(myID, curTime + distribution(generator), 0x02, n2smn, smnPort);
+                                        
+                                        // report_info(0, "At " + std::to_string(curTime) + " UPDATE_Y: continue ADMM.");
+                                        
+                                        nodeState = NODE_EVENTACK;
+                                    }
+                                    break;
+                                default:
+                                    report_warning(1, "Unknown UPDATE_Y mask " + std::to_string(smn2n.data().i()));
+                                    break;
                             }
                             break;
                             
@@ -290,7 +299,7 @@ int main() {
                     if (smn2n.msgtype() == OBNSimMsg::SMN2N_MSGTYPE_SIM_EVENT_ACK) {
                         if (smn2n.has_data() && smn2n.data().has_i() && smn2n.data().i() == 0) {
                             // OK
-                            // report_info(0, "Irregular event request accepted.");
+                            report_info(0, "Irregular event request accepted.");
                         }
                         else {
                             // Error

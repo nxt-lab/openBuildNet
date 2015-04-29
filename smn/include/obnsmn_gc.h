@@ -35,12 +35,12 @@
 namespace OBNsmn {
     /** \brief Define a GC thread.
      
-     This class defines a GC thread for one simulation. It contains the main thread function, the event queue, system request support, etc.
+         This class defines a GC thread for one simulation. It contains the main thread function, the event queue, system request support, etc.
      */
     class GCThread {
     public:
         
-        GCThread(): OBNEventQueue(mWakeupCondition) {}
+        GCThread(): OBNEventQueue(mWakeupCondition), rtNodeGraph(nullptr) {}
         
         virtual ~GCThread() {
             if (_gcthread) {
@@ -222,10 +222,6 @@ namespace OBNsmn {
          */
         volatile bool simple_thread_terminate = false;
         
-        
-        friend class RegUpdateListIterator;
-        friend class IrregUpdateListIterator;
-        
     private:
         // =========== Event queue ============
 
@@ -315,18 +311,10 @@ namespace OBNsmn {
         // ============ Data and methods related to one simulation iteration ===========
         
         /** \name UpdateListGroup
-         *  Manage the list of updating nodes, using a pre-allocated array of 3 columns to specify the current update.
+         *  Manage the list of updating nodes, using a pre-allocated array of NodeUpdateInfo to specify the current updates.
          *  See file comment for more details.
          */
         ///@{
-        struct NodeUpdateInfo {
-            int nodeID;             ///< ID of the node
-            unsigned char type;     ///< Update type: 1 if regular only, 2 if irregular only, 3 if both
-            outputmask_t irMask;    ///< Output group mask for the irregular update, if applicable
-        };
-        
-        typedef std::vector<NodeUpdateInfo> NodeUpdateInfoList;
-        
         /** A pre-allocated array of update info list. */
         NodeUpdateInfoList gc_update_list;
         
@@ -335,25 +323,25 @@ namespace OBNsmn {
          */
         size_t gc_update_size;
 
-        /** Number of irregular updates. */
-        size_t gc_update_irregular_size;
+        /* Number of irregular updates.
+        size_t gc_update_irregular_size; */
         
-        /** Number of regular updates */
-        size_t gc_update_regular_size;
+        /* Number of regular updates
+        size_t gc_update_regular_size; */
         
         /** \brief Start the next update. */
         bool startNextUpdate();
         ///@}
         
         
-        /** Smart pointer to the run-time node graph, created in each simulation iteration. */
-        std::unique_ptr<RTNodeDepGraph> rtNodeGraph;
+        /** Pointer to the run-time node graph, created in each simulation iteration. */
+        RTNodeDepGraph* rtNodeGraph;
         
-        /** \brief Send regular UPDATEY to certain nodes and start wait-for for them. */
+        /** \brief Send UPDATEY to certain nodes and start wait-for for them. */
         bool gc_send_update_y();
         
-        /** \brief Send irregular UPDATEY to certain nodes and start wait-for for them. */
-        bool gc_send_update_y_irregular();
+        /* \brief Send irregular UPDATEY to certain nodes and start wait-for for them.
+        bool gc_send_update_y_irregular(); */
 
         /** \brief Send UPDATEX to certain nodes and start wait-for for them. */
         bool gc_send_update_x();

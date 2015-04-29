@@ -17,58 +17,85 @@
 using namespace OBNsmn;
 
 /**
- Calculates the next (periodic) update/sync instants of specified output groups as well as of the node.
+ Finish the current update:
+ - If the current update involves regular update types: calculates the next periodic update instants of update types in next_regupdate_mask, and updates next_regupdate_time and next_regupdate_mask.
+ - If the current update involves an irregular update: pop/remove it from the list of irregular updates.
  
- \param grps Bit mask value to specify the output groups that will be calculated.
+ This method should be called by the GC after each update iteration, particularly after getNextUpdate() for the current iteration.
  */
-void OBNNode::calcNextUpdateTime(outputmask_t grps) {
-    // temporary variables for node's next periodic update
-    simtime_t t = -1;
-    outputmask_t m = 0;
-    
-    // Each node's bit-mask must be unique and non-zero, so we iterate until grps becomes 0
-    for (auto it = output_groups.begin(); it != output_groups.end(); ++it) {
-        if (it->period <= 0) {
-            continue;    // if period <= 0, the output is non-periodic, so skip it
+void OBNNode::finishCurrentUpdate() {
+    if (next_update_type != IRREGULAR_UPDATE_ONLY) {
+        // The current update involves regular update types
+        
+        // temporary variables for node's next periodic update
+        simtime_t t = -1;
+        updatemask_t m = 0;
+        
+        // Recalculate the update types that are in next_regupdate_mask
+        // Each node's bit-mask must be unique and non-zero, so we iterate until next_regupdate_mask becomes 0
+        for (auto it = update_types.begin(); it != update_types.end(); ++it) {
+            if (it->period <= 0) {
+                continue;    // if period <= 0, the output is non-periodic, so skip it
+            }
+            
+            if (next_regupdate_mask && ((next_regupdate_mask & it->mask) == it->mask)) {
+                it->next_update += it->period;
+                next_regupdate_mask ^= it->mask;  // remove the mask from grps
+            }
+            
+            if (it->next_update == t) {
+                m |= it->mask;  // include this update type in the mask
+            }
+            else if ((it->next_update < t) || (t < 0)) {
+                // Found an earlier time, or not yet set
+                t = it->next_update;
+                m = it->mask;
+            }
         }
         
-        if (grps && ((grps & it->mask) == it->mask)) {
-            it->next_update += it->period;
-            grps ^= it->mask;  // remove the mask from grps
-        }
-        
-        if (it->next_update == t) {
-            m |= it->mask;  // include this group in the mask
-        }
-        else if ((it->next_update < t) || (t < 0)) {
-            // Found an earlier time, or not yet set
-            t = it->next_update;
-            m = it->mask;
-        }
+        next_regupdate_time = t;
+        next_regupdate_mask = m;
     }
     
-    next_update_time = t;
-    next_update_grps = m;
+    if (next_update_type != REGULAR_UPDATE_ONLY) {
+        // The current update involves an irregular update, so we must pop/remove it from the list of irregular updates
+        assert(!irreg_updates.empty());
+        irreg_updates.erase(irreg_updates.begin());
+    }
 }
 
 
-/** This method does not recalculate the update time. It simply calculate the smaller of the regular and irregular update instants.
+/** This method does not recalculate the update time. It calculates the smaller of the regular and irregular update instants, calculates the combined update mask, and records whether the update is a regular one, or an irregular one, or both.
  
- Note that the returned update time can be < 0 if there is no periodic output group and no irregular update.
- \return A tuple of (1) the next update time, (2) 1 if regular update only, 2 if irregular update only, 3 if both, (3) irregular update mask>
+ This method is called when the GC calculates the next update instant.  The result may become invalid after the node requests for an irregular update, so this method should be called everytime the GC needs to calculate the next update instant.
+ 
+ Note that the returned update time can be < 0 if there is no periodic update and no irregular update.
+ \return The next update time.
  */
-std::tuple<simtime_t, unsigned char, outputmask_t> OBNNode::getNextUpdateTime() const {
+simtime_t OBNNode::getNextUpdate() {
     simtime_t irTime;
-    outputmask_t mask;
+    updatemask_t mask;
     
     // NOTE THAT next_update_time can be < 0 if no output groups are periodic
     if (nextIrregularUpdate(irTime, mask)) {
         // There is an irregular update, which must be >= 0
-        if ((irTime <= next_update_time) || (next_update_time < 0)) {
-            return std::make_tuple(irTime, (irTime==next_update_time)?3:2, mask);
+        if ((irTime <= next_regupdate_time) || (next_regupdate_time < 0)) {
+            if (irTime==next_regupdate_time) {
+                // Both of them at the same time
+                next_update_type = BOTH_UPDATES;
+                next_update_mask = next_regupdate_mask | mask;
+            } else {
+                next_update_type = IRREGULAR_UPDATE_ONLY;
+                next_update_mask = mask;
+            }
+            return irTime;
         }
     }
-    return std::make_tuple(next_update_time, 1, 0);
+    
+    // Only regular update
+    next_update_type = REGULAR_UPDATE_ONLY;
+    next_update_mask = next_regupdate_mask;
+    return next_regupdate_time;
 }
 
 
@@ -82,15 +109,15 @@ std::tuple<simtime_t, unsigned char, outputmask_t> OBNNode::getNextUpdateTime() 
 bool OBNsmn::OBNNode::initialize() {
     // std::cout << "Initialize node..." << std::endl;
     
-    next_update_grps = 0;
-    next_update_time = -1;  // initialized to -1, in case all output groups are irregular
+    next_regupdate_mask = 0;
+    next_regupdate_time = -1;  // initialized to -1, in case all update types are irregular
     
     // Reset the next update time of all output groups, and collect the mask bits of all periodic groups
-    for (auto it = output_groups.begin(); it != output_groups.end(); ++it) {
+    for (auto it = update_types.begin(); it != update_types.end(); ++it) {
         it->next_update = 0;
         if (it->period > 0) {
-            next_update_grps |= it->mask;
-            next_update_time = 0;
+            next_regupdate_mask |= it->mask;
+            next_regupdate_time = 0;
         }
     }
     

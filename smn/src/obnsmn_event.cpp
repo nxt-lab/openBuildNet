@@ -36,11 +36,11 @@ bool OBNsmn::GCThread::pushNodeEvent(const OBNSimMsg::N2SMN& msg, int defaultID,
     switch (type) {
         case OBNSimMsg::N2SMN::SIM_Y_ACK:
         case OBNSimMsg::N2SMN::SIM_X_ACK:
-        case OBNSimMsg::N2SMN::SIM_YI_ACK:
             pushEvent(new SMNNodeEvent(ID, type, OBNsmn::SMNNodeEvent::EVT_ACK));
             return true;
             
         case OBNSimMsg::N2SMN::SIM_INIT_ACK:
+        case OBNSimMsg::N2SMN::SYS_OUTPUT_NBR_ACK:
             cat = OBNsmn::SMNNodeEvent::EVT_ACK;
             break;
             
@@ -48,6 +48,7 @@ bool OBNsmn::GCThread::pushNodeEvent(const OBNSimMsg::N2SMN& msg, int defaultID,
             cat = OBNsmn::SMNNodeEvent::EVT_SIM;
     }
     
+    // For complex events with attached data
     OBNsmn::SMNNodeEvent* pe = new OBNsmn::SMNNodeEvent(ID, type, cat);
     if (msg.has_data()) {
         OBNSimMsg::MSGDATA data = msg.data();
@@ -62,6 +63,10 @@ bool OBNsmn::GCThread::pushNodeEvent(const OBNSimMsg::N2SMN& msg, int defaultID,
         if (data.has_i()) {
             pe->has_i = 1;
             pe->i = data.i();
+        }
+        if (data.has_ix()) {
+            pe->has_ix = 1;
+            pe->ix = data.ix();
         }
     }
     

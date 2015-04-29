@@ -60,8 +60,8 @@ int main() {
     
     // In this test, we create one node
     OBNsmn::YARP::OBNNodeYARP* pnode = new OBNsmn::YARP::OBNNodeYARP("Node1", 2, &gcPort);
-    pnode->setOutputGroup(0, 10);  // bit mask 0
-    pnode->setOutputGroup(1, 15);  // bit mask 1
+    pnode->setUpdateType(0, 10);  // bit mask 0
+    pnode->setUpdateType(1, 15);  // bit mask 1
 
     gc.insertNode(pnode);
     

@@ -12,7 +12,6 @@
 
 #include <iostream>
 #include <algorithm>
-#include <obnsmn_iterators.h>
 #include <obnsmn_gc.h>
 #include <obnsmn_report.h>
 
@@ -103,23 +102,11 @@ void GCThread::GCThreadMain() {
             break;
         }
         
-        // Send irregular updates
-        if (gc_update_irregular_size > 0) {
-            if (!gc_send_update_y_irregular()) {
-                // Error, stop simulation
-                break;
-            }
-            
-            // Wait for ACKs while processing all events: returns true if there is an error (e.g. timeout)
-            if (!gc_wait_for_ack()) {
-                break;
-            }
-        }
         
-        // Regular update-y
-        if (gc_update_regular_size > 0) {
+        // Update-Y
+        if (gc_update_size > 0) {
             // Create the run-time node graph, for regular updates
-            rtNodeGraph = _nodeGraph->getRTNodeDepGraph(RegUpdateListIterator(this), gc_update_regular_size);
+            rtNodeGraph = _nodeGraph->getRTNodeDepGraph(gc_update_list.begin(), gc_update_size);
             
             // Send regular UPDATE_Y messages to nodes in the run-time graph, in correct order
             bool success;
@@ -261,8 +248,6 @@ bool GCThread::initialize() {
     // Pre-allocate the update info list
     gc_update_list.resize(_nodes.size());
     gc_update_size = 0;
-    gc_update_regular_size = 0;
-    gc_update_irregular_size = 0;
     
     return true;
 }
@@ -281,24 +266,18 @@ bool GCThread::startNextUpdate() {
     simtime_t t_node;
     
     // Reset the update info list
-    gc_update_size = gc_update_regular_size = gc_update_regular_size = 0;
+    gc_update_size = 0;
     auto updateIt = gc_update_list.begin();
     
     // Iterate the node list and find the next update time, while filling in the update info list
     int nodeID = 0;
     for (auto it = _nodes.begin(); it != _nodes.end(); ++it) {
-        std::tie(t_node, updateIt->type, updateIt->irMask) = (*it)->getNextUpdateTime();
+        t_node = (*it)->getNextUpdate();
         
         // NOTE THAT node's update time can be < 0, which means it is completely irregular and no next update time
         if (t_node >= 0) {
             if (t_node == t) {
                 // Add the node to the list
-                if (updateIt->type != 2) {
-                    gc_update_regular_size++;
-                }
-                if (updateIt->type != 1) {
-                    gc_update_irregular_size++;
-                }
                 gc_update_size++;  // increase total nodes
                 
                 (updateIt++)->nodeID = nodeID;
@@ -306,11 +285,9 @@ bool GCThread::startNextUpdate() {
             else if ((t_node < t) || (t < 0)) {
                 // Found earlier update (or first one), reset everything and add node
                 t = t_node;
-                gc_update_regular_size = (updateIt->type != 2)?1:0;
-                gc_update_irregular_size = (updateIt->type != 1)?1:0;
                 gc_update_size = 1;
                 
-                *(gc_update_list.begin()) = *updateIt;  // copy record to first
+                //*(gc_update_list.begin()) = *updateIt;  // copy record to first
                 updateIt = gc_update_list.begin();      // reset pointer
                 (updateIt++)->nodeID = nodeID;
             }
@@ -326,6 +303,12 @@ bool GCThread::startNextUpdate() {
     if (t > final_sim_time) {
         report_info(0, "Reached final simulation time; stop now.");
         return false;
+    }
+    
+    // Now that the list of updating nodes is determined, we populate the update type masks of these nodes into the list
+    updateIt = gc_update_list.begin();
+    for (int k = 0; k < gc_update_size; ++k, ++updateIt) {
+        updateIt->updateMask = _nodes[updateIt->nodeID]->getNextUpdateMask();
     }
     
     // Update simulation time, and continue the simulation
@@ -480,8 +463,6 @@ bool GCThread::gc_wait_for_ack(F f) {
  \return false if the simulation must stop unexpectedly (e.g. error); true otherwise.
  */
 bool GCThread::gc_process_node_events(OBNsmn::SMNNodeEvent* pEv) {
-    auto nodeID = pEv->nodeID;
-    
     switch (pEv->type) {
         case OBNSimMsg::N2SMN_MSGTYPE_SIM_EVENT:
         {
@@ -499,32 +480,33 @@ bool GCThread::gc_process_node_events(OBNsmn::SMNNodeEvent* pEv) {
                 if (pEv->t > current_sim_time) {
                     // Requested time is in the future: it's accepted
                     data->set_i(0);  // OK
-                    _nodes[nodeID]->insertIrregularUpdate(pEv->t, (pEv->has_i)?pEv->i:0);
+                    _nodes[pEv->nodeID]->insertIrregularUpdate(pEv->t, (pEv->has_i)?pEv->i:0);
+                    //report_info(0, "Accept event for node " + _nodes[pEv->nodeID]->name + " for mask " + std::to_string((pEv->has_i)?pEv->i:0) + " at time " + std::to_string(pEv->t));
                 }
                 else {
                     // Requested time is invalid: denied
-                    report_warning(0, "An invalid irregular update request from node " + std::to_string(nodeID) +
-                                   " (" + _nodes[nodeID]->name + ") with past time.");
+                    report_warning(0, "An invalid irregular update request from node " + std::to_string(pEv->nodeID) +
+                                   " (" + _nodes[pEv->nodeID]->name + ") with past time.");
 
                     data->set_i(1);  // Error code 1 = invalid requested time (past time)
                 }
             }
             else {
-                report_warning(0, "An irregular update request from node " + std::to_string(nodeID) +
-                               " (" + _nodes[nodeID]->name + ") doesn't specify time; it is ignored.");
+                report_warning(0, "An irregular update request from node " + std::to_string(pEv->nodeID) +
+                               " (" + _nodes[pEv->nodeID]->name + ") doesn't specify time; it is ignored.");
                 data->set_t(0);
                 data->set_i(2);  // Error code 2 = no time requested
             }
             
             msg.set_allocated_data(data);
-            _nodes[nodeID]->sendMessage(nodeID, msg);
+            _nodes[pEv->nodeID]->sendMessage(pEv->nodeID, msg);
             
             break;
         }
     
         default:
             report_warning(0, "Unrecognized and unprocessed message of type " + std::to_string(pEv->type) +
-                           " from node " + std::to_string(nodeID) + " (" + _nodes[nodeID]->name + ")");
+                           " from node " + std::to_string(pEv->nodeID) + " (" + _nodes[pEv->nodeID]->name + ")");
             break;
     }
     
@@ -583,7 +565,13 @@ bool GCThread::gc_send_update_y() {
     
     auto updateList = rtNodeGraph->getAndRemoveIndependentNodes();  // Get the list of updating nodes
     if (updateList.empty()) {
-        return true;
+        // If no nodes are removed but the graph is non-empty, there is a cyclic condition (algebraic loop), which is an error
+        if (rtNodeGraph->empty()) {
+            return true;
+        }
+
+        report_error(0, "An algebraic loop (dependency cycle) occurs at time " + std::to_string(current_sim_time));
+        return false;
     }
     
     // Send the UPDATE_Y messages to the nodes
@@ -595,14 +583,13 @@ bool GCThread::gc_send_update_y() {
         // We don't set ID here because it's dependent on the comm protocol (see node.sendMessage())
         // msg.set_id(node);
 
-        outputmask_t grp = _nodes[node]->next_update_grps;
         OBNSimMsg::MSGDATA *msgdata = new OBNSimMsg::MSGDATA();
-        msgdata->set_i(grp);
+        msgdata->set_i(_nodes[node]->getNextUpdateMask());
         msg.set_allocated_data(msgdata);
         _nodes[node]->sendMessage(node, msg);
         
         // Because the regular update of this node is used, we update it to the next regular update.
-        _nodes[node]->calcNextUpdateTime(grp);
+        _nodes[node]->finishCurrentUpdate();
     }
     
     // Set up wait-for
@@ -622,13 +609,14 @@ bool GCThread::gc_send_update_y() {
 }
 
 
-/** This method sends irregular UPDATE_Y to nodes in the updating list.
+/* This method sends irregular UPDATE_Y to nodes in the updating list.
  Only if messages are sent to nodes, it will start wait-for for them and may start a new timer event if timeout is used for UPDATE_Y.
  Here we will directly start the wait-for event without using the method gc_waitfor_start().
 
  \sa gc_update_list
  \return true if successful; false if not (error)
  */
+/*
 bool GCThread::gc_send_update_y_irregular() {
     if (gc_waitfor_active) {
         // It's an error that wait-for is still active
@@ -679,7 +667,8 @@ bool GCThread::gc_send_update_y_irregular() {
     }
     
     return true;
-}
+}*/
+
 
 /** This method sends UPDATE_X to nodes in the updating list and start wait-for for them.
  Here we will directly start the wait-for event without using the method gc_waitfor_start().
@@ -698,6 +687,8 @@ bool GCThread::gc_send_update_x() {
     
     
     // Send the UPDATE_X messages to all nodes in gc_update_list
+    int numUpdateX = 0;    // Number of nodes receiving UPDATE_X
+    
     OBNSimMsg::SMN2N msg;
     msg.set_msgtype(OBNSimMsg::SMN2N_MSGTYPE_SIM_X);
     msg.set_time(current_sim_time);
@@ -705,28 +696,32 @@ bool GCThread::gc_send_update_x() {
     for (size_t k = 0; k < gc_update_size; ++k) {
         auto ID = gc_update_list[k].nodeID;
         
-        // We don't set ID here because it's dependent on the comm protocol (see node.sendMessage())
-        // msg.set_id(ID);
-        
-        _nodes[ID]->sendMessage(ID, msg);
-        
-        // Mark the corresponding bit for wait-for event
-        gc_waitfor_bits[ID] = false;
+        if (_nodes[ID]->needUPDATEX) {
+            // We don't set ID here because it's dependent on the comm protocol (see node.sendMessage())
+            // msg.set_id(ID);
+            
+            _nodes[ID]->sendMessage(ID, msg);
+            
+            // Mark the corresponding bit for wait-for event
+            gc_waitfor_bits[ID] = false;
+            
+            ++numUpdateX;
+        }
     }
 
-    // We are guaranteed that there must be nodes to be updated
-    
-    // Set up wait-for
-    gc_waitfor_num = gc_update_size;
-    gc_waitfor_active = true;
-    gc_waitfor_type = OBNSimMsg::N2SMN::SIM_X_ACK;
-    
-    // Set up timeout if necessary
-    if (ack_timeout > 0) {
-        gc_timer_start(ack_timeout);
-    }
-    else {
-        gc_timer_reset();
+    if (numUpdateX > 0) {
+        // Set up wait-for
+        gc_waitfor_num = numUpdateX;
+        gc_waitfor_active = true;
+        gc_waitfor_type = OBNSimMsg::N2SMN::SIM_X_ACK;
+        
+        // Set up timeout if necessary
+        if (ack_timeout > 0) {
+            gc_timer_start(ack_timeout);
+        }
+        else {
+            gc_timer_reset();
+        }
     }
     
     return true;

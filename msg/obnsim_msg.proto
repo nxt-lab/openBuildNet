@@ -13,16 +13,19 @@ package OBNSimMsg;  // package or namespace
 message MSGDATA {
   optional int64 T = 1;  // time stamp
   optional int64 I = 2;  // an integer value
-  optional bytes B = 3;  // a string of bytes, for binary data
+  optional int64 IX = 3; // another integers
+  optional bytes B = 4;  // a string of bytes, for binary data
 }
 
 // Message from the SMN to a node
 message SMN2N {
   enum MSGTYPE {
-    SIM_INIT = 0x0100;
+    SYS_OUTPUT_NBR = 0x00A0;	// set ACK number of an output
+    SYS_OUTPUT_NBR_DEC = 0x00A1;   // decrease the ACK number of an output
+    SYS_OUTPUT_NBR_INC = 0x00A2;   // increase the ACK number of an output
+    SIM_INIT = 0x0100;  // initialization before simulation
     SIM_Y = 0x0101;	// regular update-y
     SIM_X = 0x0102;	// update-x (for both regular and irregular update iterations)
-    SIM_YI = 0x0103;	// irregular update-y
     SIM_EVENT_ACK = 0x0110;
     SIM_TERM = 0x010F;
   }
@@ -36,10 +39,10 @@ message SMN2N {
 // Message from a node to the SMN
 message N2SMN {
   enum MSGTYPE {
+    SYS_OUTPUT_NBR_ACK = 0x00A0;
     SIM_INIT_ACK = 0x0100;
     SIM_Y_ACK = 0x0101;
     SIM_X_ACK = 0x0102;
-    SIM_YI_ACK = 0x0103;
     SIM_EVENT = 0x0110;
   }
   
