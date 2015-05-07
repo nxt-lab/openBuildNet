@@ -59,8 +59,9 @@ public:
         // block execution here, if other thread already locked mMute!
         std::unique_lock<std::mutex> mlock(mMut);
         // if we are here no other thread is owned/locked mMute. so we can modify the internal data
-        item_type v(&pValue);
-        mData.push(v);
+        //item_type v(&pValue);
+        //mData.push(v);
+        mData.emplace(&pValue);
         mlock.unlock();  // unlock before notifying to reduce contention
         mEmptyCondition.notify_all();
     }
@@ -70,8 +71,9 @@ public:
         // block execution here, if other thread already locked mMute!
         std::unique_lock<std::mutex> mlock(mMut);
         // if we are here no other thread is owned/locked mMute. so we can modify the internal data
-        item_type v(pValue);
-        mData.push(v);
+        //item_type v(pValue);
+        //mData.push(v);
+        mData.emplace(pValue);
         mlock.unlock();  // unlock before notifying to reduce contention
         mEmptyCondition.notify_all();
     }
@@ -141,7 +143,7 @@ public:
         }
         
         // if we are are here, mData is not empty and mMut is locked !
-        item_type val = mData.front();
+        item_type val = mData.front();  // copy the shared_ptr to val, which is still valid even when the element is popped
         mData.pop();
         return val;
     }

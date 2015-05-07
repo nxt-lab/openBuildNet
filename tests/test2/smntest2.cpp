@@ -69,7 +69,8 @@ int main() {
     gc.insertNode(pnode);
     
     pnode = new OBNsmn::YARP::OBNNodeYARP("setpoint", 1, &spPort);
-    pnode->setUpdateType(0, 200);  // bit mask 0
+    pnode->setUpdateType(0, 200);   // bit mask 0
+    pnode->needUPDATEX = false;     // this setpoint node doesn't need UPDATE_X
     gc.insertNode(pnode);
     
     // NOTE the index: 0 - motor, 1 - ctrl, 2 - setpoint

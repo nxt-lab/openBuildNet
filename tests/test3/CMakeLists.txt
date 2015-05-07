@@ -15,6 +15,9 @@ set(OBNSMN_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/../../smn/include")
 set(OBNNODE_SRC_DIR "${PROJECT_SOURCE_DIR}/../../nodecpp/src")
 set(OBNNODE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/../../nodecpp/include")
 
+## Include directories for the general OBNSim project
+set (OBNSIM_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
+
 
 ## Generate code for the message formats using Google ProtoBuf, see http://www.cmake.org/cmake/help/v3.0/module/FindProtobuf.html
 ## The source files and header files are listed in PROTO_SRCS and PROTO_HDRS respectively
@@ -66,6 +69,7 @@ INCLUDE_DIRECTORIES(
   ${OBNSMN_SRC_DIR}
   ${OBNNODE_INCLUDE_DIR}
   ${OBNNODE_SRC_DIR}
+  ${OBNSIM_INCLUDE_DIR}
 )
 
 IF(CMAKE_COMPILER_IS_GNUCXX)
@@ -117,11 +121,13 @@ set(OBNSMN_CORE_HDRFILES
 	${OBNSMN_INCLUDE_DIR}/obnsmn_nodegraph.h
 	${OBNSMN_INCLUDE_DIR}/sharedqueue.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_report.h
+	${OBNSIM_INCLUDE_DIR}/obnsim_basic.h
 	${OBNSMN_COMM_HDR}
 )
 
 set(OBNNODE_CORE_HDRFILES
 	${OBNNODE_INCLUDE_DIR}/obnnode_basic.h
+	${OBNSIM_INCLUDE_DIR}/obnsim_basic.h
 	${OBNNODE_COMM_HDR}
 )
 

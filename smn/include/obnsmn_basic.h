@@ -1,6 +1,6 @@
 /* -*- mode: C++; indent-tabs-mode: nil; -*- */
 /** \file
- * \brief Basic definitions.
+ * \brief Basic definitions for the SMN.
  *
  * This file is part of the openBuildNet simulation framework
  * (OBN-Sim) developed at EPFL.
@@ -8,14 +8,14 @@
  * \author Truong X. Nghiem (xuan.nghiem@epfl.ch)
  */
 
-#ifndef OBNSIM_BASIC_H
-#define OBNSIM_BASIC_H
+#ifndef OBNSMN_BASIC_H
+#define OBNSMN_BASIC_H
 
-#include <cstdint>
+#include <obnsim_basic.h>
 
 namespace OBNsmn {
-    typedef int64_t simtime_t;  ///< Simulation time type, as number of nano-seconds from beginning.
-    typedef int64_t updatemask_t;  ///< Update mask type: each bit corresponds to one update, so the width of the type is the maximum number of updates.
+    typedef OBNsim::simtime_t simtime_t;  ///< Simulation time type, as number of nano-seconds from beginning.
+    typedef OBNsim::updatemask_t updatemask_t;  ///< Update mask type: each bit corresponds to one update, so the width of the type is the maximum number of updates.
     
     /* Contains configuration information about the SMN program.
     struct SMN_CONFIGURATION_INFO {
@@ -27,5 +27,5 @@ namespace OBNsmn {
 }
 
 
-#endif // OBNSIM_BASIC_H
+#endif // OBNSMN_BASIC_H
 

@@ -9,16 +9,114 @@ option optimize_for = LITE_RUNTIME;
 
 package OBNSimIOMsg;  // package or namespace
 
-// ********** between nodes **********
 
-// A scalar of type double (real number)
-message DoubleScalar {
-  required int64 time = 1;     // time stamp
-  required double value = 2;   // the scalar
+// ********** Acknowledgement message *********
+message IOAck {
+  required bool success = 1;	// should be true if successful
 }
 
-// A vector of type double (real numbers)
-message DoubleVector {
-  required int64 time = 1;     // time stamp
-  repeated double value = 2 [packed=true];   // the vector (may contain 0 elements)
+// ********** Common types between nodes **********
+
+// Scalar value messages
+message ScalarDouble {
+  required double value = 1;   // the scalar
 }
+
+message ScalarFloat {
+  required float value = 1;   // the scalar
+}
+
+message ScalarInt32 {
+  required int32 value = 1;   // the scalar
+}
+
+message ScalarUInt32 {
+  required uint32 value = 1;   // the scalar
+}
+
+message ScalarInt64 {
+  required int64 value = 1;   // the scalar
+}
+
+message ScalarUInt64 {
+  required uint64 value = 1;   // the scalar
+}
+
+message ScalarBool {
+  required bool value = 1;   // the scalar
+}
+
+
+// Vector value messages
+message VectorDouble {
+  repeated double value = 1 [packed=true];   // the vector (may contain 0 elements)
+}
+
+message VectorFloat {
+  repeated float value = 1 [packed=true];   // the vector (may contain 0 elements)
+}
+
+message VectorInt32 {
+  repeated int32 value = 1 [packed=true];   // the vector (may contain 0 elements)
+}
+
+message VectorUInt32 {
+  repeated uint32 value = 1 [packed=true];   // the vector (may contain 0 elements)
+}
+
+message VectorInt64 {
+  repeated int64 value = 1 [packed=true];   // the vector (may contain 0 elements)
+}
+
+message VectorUInt64 {
+  repeated uint64 value = 1 [packed=true];   // the vector (may contain 0 elements)
+}
+
+message VectorBool {
+  repeated bool value = 1 [packed=true];   // the vector (may contain 0 elements)
+}
+
+// Matrix value messages
+// STORED IN COLUMN-MAJOR ORDER, that is columns by columns, so iterating each column is faster that iterating each row
+message MatrixDouble {
+  required uint32 nrows = 1;  // number of rows
+  required uint32 ncols = 2;  // number of columns
+  repeated double value = 3 [packed=true];   // the matrix (may contain 0 elements)
+}
+
+message MatrixFloat {
+  required uint32 nrows = 1;  // number of rows
+  required uint32 ncols = 2;  // number of columns
+  repeated float value = 3 [packed=true];   // the matrix (may contain 0 elements)
+}
+
+message MatrixInt32 {
+  required uint32 nrows = 1;  // number of rows
+  required uint32 ncols = 2;  // number of columns
+  repeated int32 value = 3 [packed=true];   // the matrix (may contain 0 elements)
+}
+
+message MatrixUInt32 {
+  required uint32 nrows = 1;  // number of rows
+  required uint32 ncols = 2;  // number of columns
+  repeated uint32 value = 3 [packed=true];   // the matrix (may contain 0 elements)
+}
+
+message MatrixInt64 {
+  required uint32 nrows = 1;  // number of rows
+  required uint32 ncols = 2;  // number of columns
+  repeated int64 value = 3 [packed=true];   // the matrix (may contain 0 elements)
+}
+
+message MatrixUInt64 {
+  required uint32 nrows = 1;  // number of rows
+  required uint32 ncols = 2;  // number of columns
+  repeated uint64 value = 3 [packed=true];   // the matrix (may contain 0 elements)
+}
+
+message MatrixBool {
+  required uint32 nrows = 1;  // number of rows
+  required uint32 ncols = 2;  // number of columns
+  repeated bool value = 3 [packed=true];   // the matrix (may contain 0 elements)
+}
+
