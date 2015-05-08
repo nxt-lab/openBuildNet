@@ -27,7 +27,7 @@ template <typename T>
 class shared_queue
 {
 public:
-    typedef typename std::shared_ptr <T> item_type; ///< Smart pointer type to the objects.
+    typedef typename std::shared_ptr<T> item_type; ///< Smart pointer type to the objects.
 
 private :
     std::queue<item_type> mData;
@@ -55,6 +55,15 @@ public:
         yarp::os::LockGuard mlock(mMut);
         // if we are here no other thread is owned/locked mMute. so we can modify the internal data
         mData.push(pValue);
+        mCount.post();
+    }
+    
+    void push(T* pValue) // The object of type T must be dynamically allocated
+    {
+        // block execution here, if other thread already locked mMute!
+        yarp::os::LockGuard mlock(mMut);
+        // if we are here no other thread is owned/locked mMute. so we can modify the internal data
+        mData.emplace(pValue);
         mCount.post();
     }
     

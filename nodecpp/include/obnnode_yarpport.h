@@ -47,7 +47,7 @@ namespace OBNnode {
         + If FORMAT is OBN_BIN then DATATYPE is irrelevant because the data read from this input port will be a binary string.
      - STRICT is a boolean value: if it is false (default), the input port is nonstrict, which means that any new incoming data will immediately replace the current datum (even if it has not been accessed); if it is true, the input port is strict, i.e. new incoming messages will not replace past messages but be queued to be accessed later.
      */
-    template <typename F, typename D, const bool S>
+    template <typename F, typename D, const bool S=false>
     class YarpInput;
     
     

@@ -16,6 +16,7 @@
 using namespace std;
 using namespace yarp::os;
 using namespace OBNnode;
+using namespace OBNSimMsg;
 
 
 // The main network object
@@ -172,4 +173,34 @@ void YarpNode::run(double timeout) {
     }
     
     // Looping to process events until the simulation stops or a timeout occurs
+}
+
+/** This is a very important method. It takes an SMN2N message (system message) and generates an appropriate node event.
+In the case the system message is urgent and important (e.g. an urgent shutdown, a system-wide error), it will immediately act on the event.
+ \param msg Reference to the SMN2N message.
+*/
+void YarpNode::postEvent(const OBNSimMsg::SMN2N& msg) {
+    // The cases should be ordered in the frequency of the message types
+    switch (msg.msgtype()) {
+        case SMN2N_MSGTYPE_SIM_Y:
+            _event_queue.push(new NodeEvent_UPDATEY(msg));
+            break;
+            
+        case SMN2N_MSGTYPE_SIM_X:
+            _event_queue.push(new NodeEvent_UPDATEX(msg));
+            break;
+            
+        case SMN2N_MSGTYPE_SIM_TERM:
+            // Stop the simulation (often at the end of the simulation time, or requested by the user, but not because of a system error
+            _event_queue.push(new NodeEvent_TERMINATE(msg));
+            break;
+            
+        case SMN2N_MSGTYPE_SIM_INIT:
+            _event_queue.push(new NodeEvent_INITIALIZE(msg));
+            break;
+            
+        default:
+            onOBNWarning("Unrecognized system message from SMN with type " + std::to_string(msg.msgtype()));
+            break;
+    }
 }

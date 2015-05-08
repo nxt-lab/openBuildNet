@@ -79,33 +79,48 @@ namespace OBNnode {
         /** The event queue, which contains smart pointers to event objects. */
         shared_queue<NodeEvent> _event_queue;
         
-        struct NodeEvent_UPDATEY: public NodeEvent {
-            virtual void execute(YarpNode*);
+        struct NodeEventSMN: public NodeEvent {
             simtime_t _time;
             bool _hasID;
             int32_t _id;
+
+            /** Populate basic info of an event from an SMN2N message. */
+            NodeEventSMN(const OBNSimMsg::SMN2N& msg) {
+                _time = msg.time();
+                if ((_hasID = msg.has_id())) { _id = msg.id(); }
+            }
+        };
+        
+        struct NodeEvent_UPDATEY: public NodeEventSMN {
+            virtual void execute(YarpNode*);
             updatemask_t _updates;
+            NodeEvent_UPDATEY(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
+                _updates = (msg.has_data() && msg.data().has_i())?msg.data().i():0;
+            }
         };
         friend NodeEvent_UPDATEY;
         
-        struct NodeEvent_UPDATEX: public NodeEvent {
+        struct NodeEvent_UPDATEX: public NodeEventSMN {
             virtual void execute(YarpNode*);
-            simtime_t _time;
-            bool _hasID;
-            int32_t _id;
+            NodeEvent_UPDATEX(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) { }
         };
         friend NodeEvent_UPDATEX;
         
-        struct NodeEvent_INITIALIZE: public NodeEvent {
+        struct NodeEvent_INITIALIZE: public NodeEventSMN {
             virtual void execute(YarpNode*);
-            bool _hasID;
-            int32_t _id;
+            NodeEvent_INITIALIZE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) { }
         };
         friend NodeEvent_INITIALIZE;
         
+        struct NodeEvent_TERMINATE: public NodeEventSMN {
+            virtual void execute(YarpNode*);
+            NodeEvent_TERMINATE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) { }
+        };
+        friend NodeEvent_TERMINATE;
+        
     public:
-        /** Push a system openBuildNet event to the queue (from an SMN2N message). */
-        void pushEvent(const OBNSimMsg::SMN2N& msg);
+        /** Post a system openBuildNet event to the end of the queue (from an SMN2N message). */
+        void postEvent(const OBNSimMsg::SMN2N& msg);
         
         /* Methods for pushing events of other types (node internal events) will be put here */
         
@@ -185,6 +200,20 @@ namespace OBNnode {
         /** Callback for error when sending the values (typically happens when serializing the message to be sent). */
         virtual void onSendMessageError(YarpOutputPortBase * port) {
             // Currently doing nothing
+        }
+        
+        /** Callback for error interacting with the SMN and openBuildNet system.  Used for serious errors.
+         \param msg A string containing the error message.
+         */
+        virtual void onOBNError(const std::string msg) {
+            
+        }
+        
+        /** Callback for warning issues interacting with the SMN and openBuildNet system, e.g. an unrecognized system message from the SMN.  Usually the simulation may continue without any serious consequence.
+         \param msg A string containing the warning message.
+         */
+        virtual void onOBNWarning(const std::string msg) {
+            
         }
     };
 }
