@@ -2,7 +2,7 @@ This test is a simple demo of ADMM using the openBuildNet simulation framework. 
 
 A slave node listens to messages from the master node.  As soon as it receives a new message, it will extract the mean x vector, updates its states, and sends its new x vector to the master node.  A slave node is also a normal node in the simulation network.  To make the demo more interesting, every 1000 time units, each slave node will change its reference vector, causing the optimal solution to change.
 
-The master dumps the values of the mean x vector over time to a tab-separated log file "admm.txt". It also plots the values using gnuplot.
+The master dumps the values of the mean x vector over time to a tab-separated log file "admm.txt".
 
 To run the demo:
 - Requires YARP network: start yarpserver.
@@ -15,4 +15,3 @@ To run the demo:
       ./nodeslave 3
       ./nodeslave 4
 - Run the SMN: ./smntest3
-- If gnuplot is available, after the simulation finishes, gnuplot will be called by nodeadmm to plot the results; press ENTER to close the plot window and exit.

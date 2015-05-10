@@ -173,10 +173,19 @@ namespace OBNnode {
         
     public:
         /* =========== Simulation callbacks =========== */
-//        virtual bool onUpdateY(ARGUMENTS HERE time update type, etc) {
-//            
-//        }
-//        
+        
+        /** \brief Callback for UPDATE_Y event
+         
+         This callback is called whenever the node receives an UPDATE_Y event.
+         A node class should always override this callback and implement the node's computation for updating its outputs.
+         The default callback is empty. The current simulation time can be obtained from the node object.
+         There is a mechanism to define updates using template methods, which can be used instead of directly implementing this callback.
+         \param m The update type mask.
+         */
+        virtual void onUpdateY(updatemask_t m) {
+            
+        }
+        
 //        virtual bool onUpdateX(time ) {
 //            
 //        }
@@ -217,5 +226,16 @@ namespace OBNnode {
         }
     };
 }
+
+/* Below is a mechanism to define methods for individual updates to perform their computations. */
+#define OBN_DECLARE_UPDATE(...) template<const int N> void doUpdate(); \
+    template<const bool temp, const int Arg1, const int... Args> void performUpdates(OBNnode::updatemask_t& m) { \
+    static_assert(Arg1 >= 0 && Arg1 <= OBNnode::MAX_UPDATE_INDEX, "Update index must be positive."); \
+    if (m & (1 << Arg1)) { doUpdate<Arg1>(); m ^= (1 << Arg1); } \
+    performUpdates<temp, Args...>(m); } \
+    template<const bool temp> void performUpdates(OBNnode::updatemask_t& m) { } \
+    virtual void onUpdateY(OBNnode::updatemask_t m) { performUpdates<true, __VA_ARGS__>(m); }
+
+#define OBN_DEFINE_UPDATE(CLS,N) template<> void CLS::doUpdate<N>()
 
 #endif /* OBNNODE_YARPNODE_H_ */

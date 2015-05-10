@@ -204,3 +204,20 @@ void YarpNode::postEvent(const OBNSimMsg::SMN2N& msg) {
             break;
     }
 }
+
+
+void YarpNode::NodeEvent_UPDATEX::execute(YarpNode* pnode) {
+    
+}
+
+void YarpNode::NodeEvent_UPDATEY::execute(YarpNode* pnode) {
+    
+}
+
+void YarpNode::NodeEvent_INITIALIZE::execute(YarpNode* pnode) {
+    
+}
+
+void YarpNode::NodeEvent_TERMINATE::execute(YarpNode* pnode) {
+    
+}

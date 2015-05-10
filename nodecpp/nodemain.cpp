@@ -17,8 +17,26 @@
 
 using namespace OBNnode;
 
+#define UPDATENUMBER0 0
+#define UPDATENUMBER1 1
+
+class MyNodeClass: public YarpNode {
+public:
+    MyNodeClass(const std::string name): YarpNode(name) { }
+    OBN_DECLARE_UPDATE(UPDATENUMBER0,UPDATENUMBER1)
+};
+
+OBN_DEFINE_UPDATE(MyNodeClass,UPDATENUMBER1) {
+    std::cout << "Update 1" << std::endl;
+}
+
+OBN_DEFINE_UPDATE(MyNodeClass,UPDATENUMBER0) {
+    std::cout << "Update 0" << std::endl;
+}
+
+
 int main() {
-    YarpNode mynode("mynode");
+    MyNodeClass mynode("mynode");
     
     // Create ports to test
     YarpInput<OBN_PB, double, false> myport1("input1");
@@ -62,6 +80,8 @@ int main() {
     
     // Read the value
     std::cout << "Input:" << std::endl << myport2() << std::endl;
+    
+    mynode.onUpdateY(3);
     
     return 0;
 }
