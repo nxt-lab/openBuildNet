@@ -48,7 +48,7 @@ int main() {
     // The individual ports to send to nodes
     OBNsmn::YARP::YARPPort motorPort, ctrlPort, spPort;
     
-    bool ok = motorPort.open("/test2/_gc_/motor") && ctrlPort.open("/test2/_gc_/ctrl") && spPort.open("/test2/_gc_/sp");
+    bool ok = motorPort.open("/test2/_smn_/motor") && ctrlPort.open("/test2/_smn_/ctrl") && spPort.open("/test2/_smn_/sp");
     if (!ok) {
         std::cout << "Failed to create ports." << std::endl;
         return 1;
@@ -92,21 +92,21 @@ int main() {
 
     
     // The YARP communication thread for GC's incoming port
-    OBNsmn::YARP::YARPPollingThread yarpThread(&gc, "/test2/_gc_");
+    OBNsmn::YARP::YARPPollingThread yarpThread(&gc, "/test2/_smn_/_gc_");
     if (!yarpThread.startThread()) {
         std::cout << "Error: cannot start GC thread." << std::endl;
         return 1;
     }
 
     // The GC has a dedicated output port for each node
-    yarp.connect("/test2/_gc_/motor", "/test2/_motor_");
-    yarp.connect("/test2/_gc_/ctrl", "/test2/_ctrl_");
-    yarp.connect("/test2/_gc_/sp", "/test2/_sp_");
+    yarp.connect("/test2/_smn_/motor", "/test2/motor/_gc_");
+    yarp.connect("/test2/_smn_/ctrl", "/test2/ctrl/_gc_");
+    yarp.connect("/test2/_smn_/sp", "/test2/sp/_gc_");
     
     // However, each node has only one IO port to communicate with GC, and all nodes send to the same GC input port
-    yarp.connect("/test2/_motor_", "/test2/_gc_");
-    yarp.connect("/test2/_ctrl_", "/test2/_gc_");
-    yarp.connect("/test2/_sp_", "/test2/_gc_");
+    yarp.connect("/test2/motor/_gc_", "/test2/_smn_/_gc_");
+    yarp.connect("/test2/ctrl/_gc_", "/test2/_smn_/_gc_");
+    yarp.connect("/test2/sp/_gc_", "/test2/_smn_/_gc_");
     
     // Now, connect the inputs and outputs of the node
     yarp.connect("/test2/sp/sp", "/test2/ctrl/sp");  // sp.sp -> ctrl.sp

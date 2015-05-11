@@ -2,6 +2,7 @@
 /** \file
  * \brief Node that implements a simple controller.
  *
+ * Uses the node.cpp framework.
  * Requires YARP.
  *
  * This file is part of the openBuildNet simulation framework
@@ -10,221 +11,140 @@
  * \author Truong X. Nghiem (xuan.nghiem@epfl.ch)
  */
 
-#include <iostream>
-#include <sstream>
 #include <fstream>
-
-#include <obnnode_basic.h>
+#include <obnnode.h>
 
 #ifndef OBNSIM_COMM_YARP
 #error This test requires YARP to run
 #endif
-
-#include <obnnode_comm_yarp.h>
-#include <obnsim_io.pb.h>
-
-// Implement reporting functions for the SMN
-void report_error(int code, std::string msg) {
-    std::cerr << "ERROR (" << code << "): " << msg << std::endl;
-}
-
-void report_warning(int code, std::string msg) {
-    std::cout << "WARNING (" << code << "): " << msg << std::endl;
-}
-
-void report_info(int code, std::string msg) {
-    std::cout << "INFO (" << code << "): " << msg << std::endl;
-}
-
-
 
 /** The following macros are defined by CMake to indicate which libraries this SMN build supports:
  - OBNSIM_COMM_YARP: if YARP is supported for communication.
  - OBNSIM_SMN_COMM_MQTT: if MQTT is supported for communication.
  */
 
-void sendACK(int myid, OBNSimMsg::N2SMN::MSGTYPE type, OBNSimMsg::N2SMN& n2smn, OBNnode::YARP::smnPort &port) {
-    OBNnode::YARP::smnMsg& msg = port.prepare();
-    
-    n2smn.set_msgtype(type);
-    n2smn.set_id(myid);
-    
-    msg.setMessage(n2smn);
-    port.writeStrict();
-}
+using namespace OBNnode;
 
-/* Read inputs */
-void readInput(yarp::os::BufferedPort< OBNnode::YARP::YARPMsg<OBNSimIOMsg::DoubleScalar> > &port, double &val) {
-    OBNnode::YARP::YARPMsg<OBNSimIOMsg::DoubleScalar> * input = port.read(false);
-    if (input) {
-        // There is a message, extract the value
-        OBNSimIOMsg::DoubleScalar msg;
-        input->getMessage(msg);
-        val = msg.value();
+#define MAIN_UPDATE 0
+
+/* The controller node class */
+class Controller: public YarpNode {
+    /* Two inputs: velocity and setpoint */
+    YarpInput<OBN_PB, double> velocity, setpoint;
+    
+    /* Output: the control value */
+    YarpOutput<OBN_PB, double> command;
+    
+    /* The state variable */
+    Eigen::Vector3d x;
+    
+    /* The state matrix */
+    Eigen::Matrix3d A;
+    
+    /* The output matrix */
+    Eigen::RowVector3d C;
+    
+    std::ofstream dump;
+    const char tab = '\t';
+    
+public:
+    Controller(const std::string& name, const std::string& ws = ""): YarpNode(name, ws),
+    velocity("v"), setpoint("sp"), command("u"), dump("controller.txt")
+    { }
+    
+    virtual ~Controller() {
+        dump.close();
     }
-}
-
-/* Send output */
-void sendOutput(yarp::os::BufferedPort< OBNnode::YARP::YARPMsg<OBNSimIOMsg::DoubleScalar> > &port, double val,
-                OBNnode::simtime_t t) {
-    OBNSimIOMsg::DoubleScalar msg;
-    msg.set_value(val);
-    msg.set_time(t);
     
-    OBNnode::YARP::YARPMsg<OBNSimIOMsg::DoubleScalar> & output = port.prepare();
-    output.setMessage(msg);
-    port.writeStrict();
+    /* Add ports to node, hardware components may be started, etc. */
+    bool initialize() {
+        bool success;
+        
+        // Add the ports to the node
+        if (!(success = addInput(&velocity))) {
+            std::cerr << "Error while adding velocity input." << std::endl;
+        }
+        
+        if (success && !(success = addInput(&setpoint))) {
+            std::cerr << "Error while adding setpoint input." << std::endl;
+        }
+        
+        if (success && !(success = addOutput(&command))) {
+            std::cerr << "Error while adding control output." << std::endl;
+        }
+        
+        // Open the SMN port
+        success = success && openSMNPort();
+        
+        // Initialize the state matrix
+        if (success) {
+            A <<
+            -0.82, 1.0, 0.82,
+            1.0 , 0.0, 0.0,
+            0.0 , 1.0, 0.0;
+            
+            C << 12.62, -19.75, 7.625;
+        }
+        
+        return success;
+    }
+    
+    /* Implement this callback to process UPDATE_X. */
+    virtual void onUpdateX() {
+        // Update the state
+        x = A * x;
+        x(0) += 32.0 * (setpoint() - velocity());
+        
+        // At this point, the inputs are all up-to-date, regardless of the order, so we can dump log data
+        dump << _current_sim_time << tab << setpoint() << tab << velocity() << tab << command() << tab << x.transpose() << std::endl;
+        std::cout << "At " << _current_sim_time << " UPDATE_X" << std::endl;
+    }
+    
+    /* This callback is called everytime this node's simulation starts or restarts.
+     This is different from initialize() above. */
+    virtual void onInitialization() {
+        // Initial state and output
+        x.setZero();
+        command = 0.0;
+        std::cout << "At " << _current_sim_time << " INIT" << std::endl;
+    }
+    
+    /* This callback is called when the node's current simulation is about to be terminated. */
+    virtual void onTermination() {
+        std::cout << "At " << _current_sim_time << " TERMINATED" << std::endl;
+    }
+    
+    /* There are other callbacks for reporting errors, etc. */
+    
+    /* Declare the update types of the node by listing their index constants in the macro OBN_DECLARE_UPDATES(...)
+     Their listing order determines the order in which the corresponding update callbacks are called. */
+    OBN_DECLARE_UPDATES(MAIN_UPDATE)
+};
+
+/* For each update type, define the update callback function OUTSIDE the class declaration.
+ Each callback is defined by OBN_DEFINE_UPDATE(<Your node class name>, <Index of the update type>) { code here; } */
+
+OBN_DEFINE_UPDATE(Controller, MAIN_UPDATE) {
+    command = C * x;
+    std::cout << "At " << _current_sim_time << " UPDATE_Y" << std::endl;
 }
 
 int main() {
     std::cout << "This is controller node." << std::endl;
     
-    yarp::os::Network yarp;
-    
-    OBNnode::YARP::smnPort smnPort;  // The SMN control port
-    
-    // Input ports for velocity and setpoint
-    yarp::os::BufferedPort< OBNnode::YARP::YARPMsg<OBNSimIOMsg::DoubleScalar> > veloPort, setpointPort;
-    
-    // Output port for control value
-    yarp::os::BufferedPort< OBNnode::YARP::YARPMsg<OBNSimIOMsg::DoubleScalar> > ctrlPort;
-    
-    bool ok = smnPort.open("/test2/_ctrl_");
-    ok = ok && veloPort.open("/test2/ctrl/v") && setpointPort.open("/test2/ctrl/sp") && ctrlPort.open("/test2/ctrl/u");
-    
-    if (!ok) {
-        std::cout << "Failed to create ports." << std::endl;
+    Controller ctrl("ctrl", "test2");       // Node "ctrl" inside workspace "test2"
+
+    if (!ctrl.initialize()) {
         return 1;
     }
+    
+    // Here we will not connect the node to the GC, let the SMN do it
+    
+    std::cout << "Starting simulation..." << std::endl;
 
-    // Make sure that no system messages from SMN are dropped
-    smnPort.setStrict();
+    ctrl.run();
     
-    std::cout << "SMN Port opened." << std::endl;
-    
-    enum NODESTATE {
-        NODE_INIT,  // Node hasn't been initialized yet (or has been terminated)
-        NODE_RUN    // Node is running
-    } nodeState = NODE_INIT;
-
-    OBNnode::YARP::smnMsg* msg;
-    OBNSimMsg::SMN2N smn2n;
-    OBNSimMsg::N2SMN n2smn;
-    
-    double x1, x2, x3, x1_new, x2_new, x3_new;  // The state variables
-    double v;  // This is the velocity input, saved to be used in calculation later
-    double sp;  // This is the setpoint input, saved to be used in calculation later
-    double u;       // The control value, to be sent out
-    
-    bool simRunning = true;
-    OBNnode::simtime_t curTime;
-    int myID;
-    
-    std::ofstream dump("controller.txt");
-    const char tab = '\t';
-    
-    std::cout << "Simulation started." << std::endl;
-    
-    while (simRunning) {
-        // Waiting for the next message from GC
-        msg = smnPort.read();
-        
-        if (msg) {
-            msg->getMessage(smn2n);
-            
-            curTime = smn2n.time();
-            
-            if (smn2n.has_id()) {
-                myID = smn2n.id();
-            }
-            
-            // std::cout << "Got a message: id=" << myID << " type=" << smn2n.msgtype() << std::endl;
-            
-            switch (nodeState) {
-                case NODE_RUN:
-                    switch (smn2n.msgtype()) {
-                        case OBNSimMsg::SMN2N_MSGTYPE_SIM_Y: {
-                            readInput(veloPort, v);
-                            readInput(setpointPort, sp);
-
-                            // Calculate output and send out
-                            u = 12.62 * x1 - 19.75 * x2 + 7.625 * x3;
-                            
-                            sendOutput(ctrlPort, u, curTime);
-
-                            std::ostringstream message;
-                            message << "At " << curTime << " UPDATE_Y mask = 0x" << std::hex << smn2n.data().i();
-                            report_info(0, message.str());
-
-                            sendACK(myID, OBNSimMsg::N2SMN_MSGTYPE_SIM_Y_ACK, n2smn, smnPort);
-                            
-                            break;
-                        }
-                            
-                        case OBNSimMsg::SMN2N_MSGTYPE_SIM_X:
-                            readInput(veloPort, v);
-                            readInput(setpointPort, sp);
-                            
-                            // Update the state
-                            x1_new = -0.82 * x1 + x2 + 0.82 * x3 + 32.0*(sp - v);
-                            x2_new = x1;
-                            x3_new = x2;
-                            x1 = x1_new;
-                            x2 = x2_new;
-                            x3 = x3_new;
-                            
-                            // At this point, the inputs are all up-to-date, regardless of the order, so we can dump log data
-                            dump << curTime << tab << sp << tab << v << std::endl;
-                            
-                            sendACK(myID, OBNSimMsg::N2SMN_MSGTYPE_SIM_X_ACK, n2smn, smnPort);
-                            report_info(0, "At " + std::to_string(curTime) + " UPDATE_X");
-                            break;
-                            
-                        case OBNSimMsg::SMN2N_MSGTYPE_SIM_TERM:
-                            report_info(0, "At " + std::to_string(curTime) + " TERMINATE");
-                            nodeState = NODE_INIT;
-                            simRunning = false;
-                            break;
-                            
-                        default:
-                            report_warning(0, "Unknown message type " + std::to_string(smn2n.msgtype()) + " during RUNNING.");
-                            break;
-                    }
-                    break;
-                case NODE_INIT:
-                    switch (smn2n.msgtype()) {
-                        case OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT:
-                            // Initialization
-                            x1 = 0.0;
-                            x2 = 0.0;
-                            x3 = 0.0;
-                            v = 0.0;
-                            sp = 0.0;
-                            u = 0.0;
-                            
-                            sendACK(myID, OBNSimMsg::N2SMN_MSGTYPE_SIM_INIT_ACK, n2smn, smnPort);
-                            report_info(0, "At " + std::to_string(curTime) + " INIT");
-                            nodeState = NODE_RUN;
-                            break;
-                            
-                        case OBNSimMsg::SMN2N_MSGTYPE_SIM_TERM:
-                            report_info(0, "At " + std::to_string(curTime) + " TERMINATE");
-                            simRunning = false;
-                            break;
-                            
-                        default:
-                            report_warning(0, "Unknown message type " + std::to_string(smn2n.msgtype()) + " during INIT.");
-                            break;
-                    }
-                    break;
-            }
-        }
-    }
-    
-    std::cout << "Simulation finished." << std::endl;
-    
-    
-    std::cout << "Goodbye!" << std::endl;
+    std::cout << "Simulation finished. Goodbye!" << std::endl;
     
     
     //////////////////////
@@ -232,8 +152,5 @@ int main() {
     //////////////////////
     google::protobuf::ShutdownProtobufLibrary();
     
-    dump.close();
-    system("gnuplot ../../plot.plg");
-    
-    return 0;
+    return ctrl.hasError()?3:0;
 }

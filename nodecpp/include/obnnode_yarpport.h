@@ -436,7 +436,7 @@ namespace OBNnode {
         
         
         /** Send data synchronously */
-        virtual bool sendSync() {
+        virtual void sendSync() {
             // Convert data to message
             OBN_DATA_TYPE_CLASS<D>::writePBMessage(_cur_value, _PBMessage);
             
@@ -445,13 +445,12 @@ namespace OBNnode {
             if (!output.setMessage(_PBMessage)) {
                 // Error while serializing the raw message
                 _theNode->onSendMessageError(this);
-                return false;
+                return;
             }
             
             // Actually send the message
             this->writeStrict();
             _isChanged = false;
-            return true;
         }
         
         virtual std::string fullPortName() const {

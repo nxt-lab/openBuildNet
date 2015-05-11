@@ -14,13 +14,12 @@
 #include <obnnode_yarpnode.h>
 
 using namespace std;
-using namespace yarp::os;
 using namespace OBNnode;
 using namespace OBNSimMsg;
 
 
 // The main network object
-Network _the_yarp_network;
+yarp::os::Network YarpNode::yarp_network;
 
 // Trim a string from spaces at both ends
 string trim(const string& s0) {
@@ -37,6 +36,37 @@ string trim(const string& s0) {
     return s;
 }
 
+
+/* =============================================================================
+        Implementation of the SMNPort class for communication with the SMN
+   ============================================================================= */
+
+/** Callback of the GC port on the node, which posts SMN events to the node's queue. */
+void YarpNode::SMNPort::onRead(SMNMsg& b) {
+    // printf("Callback[%s]\n", getName().c_str());
+    
+    // Parse the ProtoBuf message
+    if (!b.getMessage(_smn_message)) {
+        // Error while parsing the raw message
+        _the_node->onOBNError("Error while parsing a system message from the SMN.");
+        return;
+    }
+    
+    // Post the corresponding event to the queue
+    _the_node->postEvent(_smn_message);
+}
+
+bool YarpNode::openSMNPort() {
+    if (_smn_port.isClosed()) {
+        bool success = _smn_port.open(_workspace + _nodeName + "/_gc_");
+        if (success) {
+            _smn_port.useCallback();        // Always use callback for the SMN port
+            _smn_port.setStrict();          // Make sure that no messages from the SMN are dropped
+        }
+        return success;
+    }
+    return true;
+}
 
 bool YarpNode::attachAndOpenPort(YarpPortBase * port) {
     assert(port != nullptr);
@@ -98,14 +128,24 @@ bool YarpNode::addOutput(YarpOutputPortBase* port) {
     return result;
 }
 
-
-YarpNode::YarpNode(const string _name) {
+/** The constructor of a node object. It initializes the node object with name, optional workspace name, and initial state.
+ \param name The required name of the node; must be a valid identifier.
+ \param ws The optional workspace; must be a valid identifier. The workspace name is prepended to all names used by this node, including the SMN. Default workspace is "" (i.e. no workspace).
+ */
+YarpNode::YarpNode(const string& _name, const string& ws): _smn_port(this) {
     _nodeName = trim(_name);
     assert(!_nodeName.empty());
     
+    _workspace = trim(ws);
+    if (_workspace.empty()) {
+        _workspace = "/";
+    } else {
+        _workspace.append("/").insert(_workspace.begin(), '/');     // Prepend and append it with '/'
+    }
+    
     // Initialize the node (setting its internal parameters)
     _node_id = 0;
-    _node_state = NODE_RUNNING;
+    _node_state = NODE_STOPPED;
 }
 
 YarpNode::~YarpNode() {
@@ -161,6 +201,71 @@ void YarpNode::removePort(YarpOutputPortBase* port) {
 //}
 //
 
+
+bool YarpNode::connectWithSMN(const char *carrier) {
+    if (!openSMNPort()) { return false; }
+    if (carrier) {
+        return yarp_network.connect(fullPortName("_gc_"), _workspace + "_smn_/_gc_", carrier) &&   // Connect from node to SMN
+        yarp_network.connect(_workspace + "_smn_/" + _nodeName, fullPortName("_gc_"), carrier);    // Connect from SMN to node
+    } else {
+        return yarp_network.connect(fullPortName("_gc_"), _workspace + "_smn_/_gc_") &&   // Connect from node to SMN
+        yarp_network.connect(_workspace + "_smn_/" + _nodeName, fullPortName("_gc_"));    // Connect from SMN to node
+    }
+}
+
+
+/** This method sends a simple ACK message to the SMN.
+ \param type The type of the ACK message.
+ */
+void YarpNode::sendACK(OBNSimMsg::N2SMN::MSGTYPE type) {
+    YarpNode::SMNMsg& msg = _smn_port.prepare();
+    
+    _n2smn_message.set_msgtype(type);
+    _n2smn_message.set_id(_node_id);
+    
+    msg.setMessage(_n2smn_message);
+    _smn_port.writeStrict();
+}
+
+/** This method sends a simple ACK message to the SMN.
+ \param type The type of the ACK message.
+ \param I Integer value for MSGDATA.I
+ */
+void YarpNode::sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I) {
+    YarpNode::SMNMsg& msg = _smn_port.prepare();
+    
+    _n2smn_message.set_msgtype(type);
+    _n2smn_message.set_id(_node_id);
+    
+    auto *data = new OBNSimMsg::MSGDATA;
+    data->set_i(I);
+    _n2smn_message.set_allocated_data(data);
+    
+    msg.setMessage(_n2smn_message);
+    _smn_port.writeStrict();
+}
+
+
+/** This method sends a simple ACK message to the SMN.
+ \param type The type of the ACK message.
+ \param I Integer value for MSGDATA.I
+ \param IX Integer value for MSGDATA.IX
+ */
+void YarpNode::sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I, int64_t IX) {
+    YarpNode::SMNMsg& msg = _smn_port.prepare();
+    
+    _n2smn_message.set_msgtype(type);
+    _n2smn_message.set_id(_node_id);
+    
+    auto *data = new OBNSimMsg::MSGDATA;
+    data->set_i(I);
+    data->set_ix(IX);
+    _n2smn_message.set_allocated_data(data);
+    
+    msg.setMessage(_n2smn_message);
+    _smn_port.writeStrict();
+}
+
 /** This method runs the node in the openBuildNet simulation network.
  The node must start from state NODE_STOPPED, otherwise it will return immediately.
  A timeout in seconds can be given (default: -1). If the timeout is positive, the node will wait for new events (from the network) only up to that timeout. If a timeout occurs, the callback for timeout will be called and the simulation will stopped.
@@ -168,12 +273,45 @@ void YarpNode::removePort(YarpOutputPortBase* port) {
  \param timeout The timeout value; non-positive if there is no timeout.
  */
 void YarpNode::run(double timeout) {
-    if (_node_state != NODE_STOPPED) {
+    // Make sure that the SMN port is opened (but won't connect it)
+    if (!openSMNPort()) {
+        // Error
+        onReportInfo("[NODE] Could not open the SMN port. Check the network and the name server.");
+        _node_state = NODE_ERROR;
         return;
     }
     
+    // Must start from the STOPPED state
+    if (_node_state != NODE_STOPPED) {
+        onReportInfo("[NODE] Node can't be started from a non-STOPPED state. Make sure the node is stopped before starting it.");
+        return;
+    }
+
+    _current_sim_time = 0;
+    _node_state = NODE_STARTED;     // Node has started, but not yet initialized
+    
     // Looping to process events until the simulation stops or a timeout occurs
+    std::shared_ptr<NodeEvent> pEvent;
+    if (timeout <= 0.0) {
+        // Without timeout
+        while (_node_state == NODE_RUNNING || _node_state == NODE_STARTED) {
+            pEvent = _event_queue.wait_and_pop();
+            assert(pEvent);
+            pEvent->execute(this);  // Execute the event
+        }
+    } else {
+        // With timeout
+        while (_node_state == NODE_RUNNING || _node_state == NODE_STARTED) {
+            pEvent = _event_queue.wait_and_pop_timeout(timeout);
+            assert(pEvent);
+            pEvent->execute(this);  // Execute the event
+        }
+    }
+    
+    // This is the end of the simulation
+    onReportInfo("[NODE] Node's execution has stopped.");
 }
+
 
 /** This is a very important method. It takes an SMN2N message (system message) and generates an appropriate node event.
 In the case the system message is urgent and important (e.g. an urgent shutdown, a system-wide error), it will immediately act on the event.
@@ -206,18 +344,103 @@ void YarpNode::postEvent(const OBNSimMsg::SMN2N& msg) {
 }
 
 
+/** Handle UPDATE_X events. */
 void YarpNode::NodeEvent_UPDATEX::execute(YarpNode* pnode) {
+    // Skip if the node is not RUNNING
+    if (pnode->_node_state != YarpNode::NODE_RUNNING) {
+        return;
+    }
+
+    basic_processing(pnode);
+
+    // Call the callback to perform UPDATE_X
+    pnode->onUpdateX();
     
+    // Send ACK to the SMN
+    pnode->sendACK(OBNSimMsg::N2SMN_MSGTYPE_SIM_X_ACK);
 }
 
+/** Handle UPDATE_Y events. */
 void YarpNode::NodeEvent_UPDATEY::execute(YarpNode* pnode) {
+    // Skip if the node is not RUNNING; this should never happen if the node is used properly
+    if (pnode->_node_state != YarpNode::NODE_RUNNING) {
+        return;
+    }
     
+    basic_processing(pnode);
+    
+    // Save the current update type mask, just in case UPDATE_X needs it
+    pnode->_current_updates = _updates;
+    
+    // Call the callback to perform UPDATE_Y
+    pnode->onUpdateY(_updates);
+    
+    // Send out values from output ports which have been updated
+    for (auto port: pnode->_output_ports) {
+        if (port->isChanged()) {
+            //TODO: Should change this to asynchronous send.
+            port->sendSync();
+            if (pnode->hasError()) {
+                break;
+            }
+        }
+    }
+    
+    // Send ACK to the SMN, regardless of whether it had an error or not
+    // If an error happened and the node should stop, it should also send an error message to the SMN to notify it
+    pnode->sendACK(OBNSimMsg::N2SMN_MSGTYPE_SIM_Y_ACK);
 }
 
+/** Handle Initialization before simulation. */
 void YarpNode::NodeEvent_INITIALIZE::execute(YarpNode* pnode) {
+    // Skip if the node is not STARTED.
+    // This actually should never happen if the node is used properly, because the run() method will not let the node run unless it's in a proper state.
+    if (pnode->_node_state != YarpNode::NODE_STARTED) {
+        return;
+    }
     
+    basic_processing(pnode);
+    
+    pnode->onInitialization();
+    
+    // Send out values from output ports, whether updated or not
+    for (auto port: pnode->_output_ports) {
+        //TODO: Should change this to asynchronous send.
+        port->sendSync();
+        if (pnode->hasError()) {
+            break;
+        }
+    }
+    
+    // Set the node's state to RUNNING if it's still STARTED (if it's ERROR, we won't change it)
+    if (pnode->_node_state == YarpNode::NODE_STARTED) {
+        pnode->_node_state = YarpNode::NODE_RUNNING;
+    }
+    
+    // Send an ACK message to the SMN
+    if (pnode->_node_state == YarpNode::NODE_RUNNING) {
+        // Successful
+        pnode->sendACK(OBNSimMsg::N2SMN::MSGTYPE::N2SMN_MSGTYPE_SIM_INIT_ACK);
+    } else {
+        // Unsuccessful => ACK with data.I > 0
+        pnode->sendACK(OBNSimMsg::N2SMN::MSGTYPE::N2SMN_MSGTYPE_SIM_INIT_ACK, 1);
+    }
 }
 
 void YarpNode::NodeEvent_TERMINATE::execute(YarpNode* pnode) {
+    // Skip if the node is not RUNNING
+    if (pnode->_node_state != YarpNode::NODE_RUNNING) {
+        return;
+    }
+
+    basic_processing(pnode);
     
+    pnode->onTermination();
+    
+    // Set the node's state to STOPPED
+    if (pnode->_node_state == YarpNode::NODE_RUNNING) {
+        pnode->_node_state = YarpNode::NODE_STOPPED;
+    }
+    
+    // No ACK is needed
 }

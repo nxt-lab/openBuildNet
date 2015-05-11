@@ -217,9 +217,9 @@ namespace OBNnode {
         /** Send the data out in a synchronous manner.
          The function should wait until the data has been sent out successfully and, if ACK is required, all ACKs have been received.
          For asynchronous sending (does not wait until writing is complete and/or all ACKs have been received), \see sendAsync().
-         \return true if successful, false if error (network error, timeout while waiting for ACKs.
+         The method does not return the status of the sending (successful or failed), but it may call the error handlers of the node object (which centralize the error handling of each node).
          */
-        virtual bool sendSync() = 0;
+        virtual void sendSync() = 0;
     };
 }
 
