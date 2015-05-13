@@ -91,12 +91,16 @@ public:
     /* There are other callbacks for reporting errors, etc. */
     
     /* Declare the update types of the node by listing their index constants in the macro OBN_DECLARE_UPDATES(...)
-     Their listing order determines the order in which the corresponding update callbacks are called. */
+     Their listing order determines the order in which the corresponding UPDATE_Y callbacks are called. */
     OBN_DECLARE_UPDATES(FIRST_UPDATE, SECOND_UPDATE)
+    
+    /* A similar mechanism exists for UPDATE_X, with macro OBN_DECLARE_UPDATES_X; however in this example we directly implement the master callback onUpdateX() above. */
 };
 
 /* For each update type, define the update callback function OUTSIDE the class declaration.
- Each callback is defined by OBN_DEFINE_UPDATE(<Your node class name>, <Index of the update type>) { code here; } */
+ Each callback is defined by OBN_DEFINE_UPDATE(<Your node class name>, <Index of the update type>) { code here; }
+ A similar macro named OBN_DEFINE_UPDATE_X exists for UPDATE_X callbacks if OBN_DECLARE_UPDATES_X() is used above.
+ */
 
 OBN_DEFINE_UPDATE(MyNodeClass,FIRST_UPDATE) {
     std::cout << "Update 0" << std::endl;
