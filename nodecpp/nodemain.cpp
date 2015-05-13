@@ -10,6 +10,16 @@
  * \author Truong X. Nghiem (xuan.nghiem@epfl.ch)
  */
 
+/* This file can be used as a template for creating openBuildNet nodes with the C++ framework.
+ * For typed input and output ports (see YarpInput and YarpOutput classes), vectors and matrices are created and stored using the Eigen template library (http://eigen.tuxfamily.org).
+ * A very important note to keep in mind when using Eigen is the problem with the alignment of fixed-size vectorizable types; see http://eigen.tuxfamily.org/dox/group__TopicUnalignedArrayAssert.html for details.
+ * A fixed-size vectorizable Eigen type (http://eigen.tuxfamily.org/dox/group__TopicFixedSizeVectorizable.html) has its size fixed at compile-time (vs. run-time) and its byte size is a multiple of 16.
+ * To avoid these issues, do one of the following:
+ *  - Disable vectorization completely (see http://eigen.tuxfamily.org/index.php?title=FAQ#I_disabled_vectorization.2C_but_I.27m_still_getting_annoyed_about_alignment_issues.21)
+ *  - Take care of the alignment of these objects by: always pass Eigen objects to functions by references not by values, take special consideration when using STL containers and Eigen objects (http://eigen.tuxfamily.org/dox/group__TopicStlContainers.html), and modify code of any structure/class that contains Eigen objects (http://eigen.tuxfamily.org/dox/group__TopicStructHavingEigenMembers.html).
+ */
+
+
 #include <obnnode.h>
 
 using namespace OBNnode;

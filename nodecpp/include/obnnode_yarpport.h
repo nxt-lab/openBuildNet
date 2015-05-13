@@ -229,7 +229,7 @@ namespace OBNnode {
         static_assert(N > 0, "Vector length must be positive.");
         
         /** The input data type, e.g. a vector or a scalar or a matrix. */
-        using input_data_type = Eigen::Matrix<T, N, 1>;
+        using input_data_type = Eigen::Matrix<T, N, 1, Eigen::DontAlign>; // Disable alignment to be safe
         
         /** The class type of the ProtoBuf message. */
         using PB_message_class = typename obn_vector_PB_message_class<T>::theclass;
@@ -265,7 +265,7 @@ namespace OBNnode {
         static_assert((NR > 0) && (NC > 0), "Matrix dimensions must be positive.");
         
         /** The input data type, e.g. a vector or a scalar or a matrix. */
-        using input_data_type = Eigen::Matrix<T, NR, NC>;
+        using input_data_type = Eigen::Matrix<T, NR, NC, Eigen::DontAlign>; // Disable alignment to be safe
         
         /** The class type of the ProtoBuf message. */
         using PB_message_class = typename obn_matrix_PB_message_class<T>::theclass;
@@ -355,8 +355,20 @@ namespace OBNnode {
             
         }
         
-        /** Get the current value of the port. If no message has been received, the value is undefined. */
+        /** Get the current value of the port. If no message has been received, the value is undefined.
+         The value is copied out, which may be inefficient for large data (e.g. a large vector or matrix).
+         */
         ValueType operator() () {
+            yarp::os::LockGuard mlock(_valueMutex);
+            _pending_value = false; // the value has been read
+            return _cur_value;
+        }
+
+        /** Get direct read-only access the current value of the port. If no message has been received, the value is undefined.
+         A direct reference to the internal value is returned, so there is no copying, which is more efficient for large data.
+         If the value is a fixed-size Eigen vector/matrix and is going to be accessed many times, it will be a good idea to copy it to a local variable because the internal value variable in the port is not aligned for vectorization.
+            */
+        const ValueType& get() {
             yarp::os::LockGuard mlock(_valueMutex);
             _pending_value = false; // the value has been read
             return _cur_value;
@@ -416,12 +428,17 @@ namespace OBNnode {
         YarpOutput(const std::string& _name): YarpOutputPortBase(_name) {
         }
         
-        /** Get the current value of the port. */
+        /** Get the current (read-only) value of the port.
+         The value is copied out, which may be inefficient for large data (e.g. a large vector or matrix).
+         */
         ValueType operator() () const {
             return _cur_value;
         }
         
-        /** Directly access the value stored in this port; can change it (so it'll be marked as changed). */
+        /** Directly access the value stored in this port; can change it (so it'll be marked as changed).
+         If the value is a fixed-size Eigen vector/matrix and is going to be accessed many times, it will be a good idea to copy it to a local variable because the internal value variable in the port is not aligned for vectorization.
+         Once all computations are done, the new value can be assigned to the port using either this operator or the assignment operator.
+         */
         ValueType& operator* () {
             _isChanged = true;
             return _cur_value;
