@@ -305,6 +305,7 @@ namespace OBNnode {
     template <typename D>
     using OBN_DATA_TYPE_CLASS = typename std::conditional<std::is_arithmetic<D>::value, obn_scalar<D>, D>::type;
     
+    /** Implementation of YarpInput for fixed data type encoded with ProtoBuf (OBN_PB), non-strict reading. */
     template <typename D>
     class YarpInput<OBN_PB, D, false>: public YarpPortBase,
     protected yarp::os::BufferedPort< YARPMsgPB<OBNSimIOMsg::IOAck, typename OBN_DATA_TYPE_CLASS<D>::PB_message_class> >
@@ -396,6 +397,139 @@ namespace OBNnode {
             return true;
         }
     };
+
+    
+    /** Implementation of YarpInput for custom ProtoBuf messages, non-strict reading. */
+    template <typename PBCLS>
+    class YarpInput<OBN_PB_USER, PBCLS, false>: public YarpPortBase,
+    protected yarp::os::BufferedPort< YARPMsgPB<OBNSimIOMsg::IOAck, PBCLS> >
+    {
+        typedef YARPMsgPB<OBNSimIOMsg::IOAck, PBCLS> _port_content_type;
+
+        PBCLS _cur_message;    ///< The current ProtoBuf data message stored in this port
+        bool _pending_value;    ///< If a new value is pending (hasn't been read)
+        
+        mutable yarp::os::Mutex _valueMutex;    ///< Mutex for accessing the value
+        
+        virtual void onRead(_port_content_type& b) {
+            // printf("Callback[%s]\n", getName().c_str());
+            
+            // This managed input port does not generate events in the main thread
+            // It simply saves the value in the message to the value
+            
+            // Parse the ProtoBuf message
+            _valueMutex.lock();
+            bool result = b.getMessage(_cur_message);
+            if (result) {
+                _pending_value = true;
+            }
+            _valueMutex.unlock();
+            
+            if (!result) {
+                // Error while parsing the raw message
+                _theNode->onRawMessageError(this);
+            }
+        }
+        
+    public:
+        YarpInput(const std::string& _name): YarpPortBase(_name), _pending_value(false) {
+            
+        }
+        
+        /** Get direct read-only access the current message in the port. If no message has been received, the value is undefined.
+         A direct reference to the internal value is returned, so there is no copying, which is more efficient for large data.
+         */
+        const PBCLS& get() {
+            yarp::os::LockGuard mlock(_valueMutex);
+            _pending_value = false; // the value has been read
+            return _cur_message;
+        }
+        
+        /** Return the full port name in the network. */
+        virtual std::string fullPortName() const {
+            return this->getName();
+        }
+        
+        /** Check if there is a pending input value (that hasn't been read). */
+        bool isValuePending() const {
+            return _pending_value;
+        }
+        
+        
+    protected:
+        virtual yarp::os::Contactable& getYarpPort() {
+            return *this;
+        }
+        
+        virtual bool configure() {
+            // Turn on callback
+            this->useCallback();
+            return true;
+        }
+    };
+    
+    
+    /** Implementation of YarpInput for binary data, non-strict reading. */
+    template <typename D>
+    class YarpInput<OBN_BIN, D, false>: public YarpPortBase,
+    protected yarp::os::BufferedPort<YARPMsgBin>
+    {
+        typedef YARPMsgBin _port_content_type;
+        
+        std::string _cur_message;    ///< The current binary data message stored in this port
+        bool _pending_value;    ///< If a new value is pending (hasn't been read)
+        
+        mutable yarp::os::Mutex _valueMutex;    ///< Mutex for accessing the value
+        
+        virtual void onRead(_port_content_type& b) {
+            // printf("Callback[%s]\n", getName().c_str());
+            
+            // This managed input port does not generate events in the main thread
+            // It simply saves the value in the message to the value
+            
+            // Copy the binary data to _cur_message
+            _valueMutex.lock();
+            _cur_message.assign(b.getBinaryData(), b.getBinaryDataSize());
+            _pending_value = true;
+            _valueMutex.unlock();
+        }
+        
+    public:
+        YarpInput(const std::string& _name): YarpPortBase(_name), _pending_value(false) {
+            
+        }
+        
+        /** Get direct read-only access the current binary data in the port, as a std::string. If no message has been received, the value is undefined.
+         A direct reference to the internal value is returned, so there is no copying, which is more efficient for large data.
+         */
+        const std::string& get() {
+            yarp::os::LockGuard mlock(_valueMutex);
+            _pending_value = false; // the value has been read
+            return _cur_message;
+        }
+        
+        /** Return the full port name in the network. */
+        virtual std::string fullPortName() const {
+            return this->getName();
+        }
+        
+        /** Check if there is a pending input value (that hasn't been read). */
+        bool isValuePending() const {
+            return _pending_value;
+        }
+        
+        
+    protected:
+        virtual yarp::os::Contactable& getYarpPort() {
+            return *this;
+        }
+        
+        virtual bool configure() {
+            // Turn on callback
+            this->useCallback();
+            return true;
+        }
+    };
     
 //    template <typename D>
 //    class YarpInput<OBN_PB, D, true>: public YarpPortBase {
@@ -408,14 +542,16 @@ namespace OBNnode {
     
     
     
-    
+    /** Implementation of YarpOutput for fixed data type encoded with ProtoBuf (OBN_PB).
+     This class of YarpOutput is not thread-safe because usually it's accessed in the main thread only.
+     */
     template <typename D>
     class YarpOutput<OBN_PB, D>: public YarpOutputPortBase,
     protected yarp::os::BufferedPort< YARPMsgPB<typename OBN_DATA_TYPE_CLASS<D>::PB_message_class, OBNSimIOMsg::IOAck> >
     {
         typedef OBN_DATA_TYPE_CLASS<D> _obn_data_type_class;
         typedef YARPMsgPB<typename OBN_DATA_TYPE_CLASS<D>::PB_message_class, OBNSimIOMsg::IOAck> _port_content_type;
-        
+
     public:
         typedef typename _obn_data_type_class::input_data_type ValueType;
         
@@ -481,8 +617,112 @@ namespace OBNnode {
         }
         
     };
+    
+    
+    /** Implementation of YarpOutput for custom ProtoBuf data message (OBN_PB_USER).
+     This class of YarpOutput is not thread-safe because usually it's accessed in the main thread only.
+     */
+    template <typename PBCLS>
+    class YarpOutput<OBN_PB_USER, PBCLS>: public YarpOutputPortBase,
+    protected yarp::os::BufferedPort< YARPMsgPB<PBCLS, OBNSimIOMsg::IOAck> >
+    {
+        typedef YARPMsgPB<PBCLS, OBNSimIOMsg::IOAck> _port_content_type;
+        PBCLS _cur_message;    ///< The ProtoBuf message stored in this port
+        
+    public:
+        YarpOutput(const std::string& _name): YarpOutputPortBase(_name) {
+        }
+        
+        /** Directly access the ProtoBuf message stored in this port; can change it (so it'll be marked as changed). */
+        PBCLS& message() {
+            _isChanged = true;
+            return _cur_message;
+        }
+        
+        /** Send data synchronously */
+        virtual void sendSync() {
+            // Prepare the Yarp message to send
+            _port_content_type & output = this->prepare();
+            if (!output.setMessage(_cur_message)) {
+                // Error while serializing the raw message
+                _theNode->onSendMessageError(this);
+                return;
+            }
+            
+            // Actually send the message
+            this->writeStrict();
+            _isChanged = false;
+        }
+
+        
+        virtual std::string fullPortName() const {
+            return this->getName();
+        }
+        
+        
+    protected:
+        virtual yarp::os::Contactable& getYarpPort() {
+            return *this;
+        }
+        
+    };
 
     
+    /** Implementation of YarpOutput for binary data message (OBN_BIN).
+     This class of YarpOutput is not thread-safe because usually it's accessed in the main thread only.
+     */
+    template <typename D>
+    class YarpOutput<OBN_BIN, D>: public YarpOutputPortBase,
+    protected yarp::os::BufferedPort< YARPMsgBin >
+    {
+        typedef YARPMsgBin _port_content_type;
+        std::string _cur_message;    ///< The binary data message stored in this port
+        
+    public:
+        YarpOutput(const std::string& _name): YarpOutputPortBase(_name) {
+        }
+        
+        /** Directly access the ProtoBuf message stored in this port; can change it (so it'll be marked as changed). */
+        std::string& message() {
+            _isChanged = true;
+            return _cur_message;
+        }
+        
+        /** Set the binary data content to a std::string */
+        std::string& message(const std::string &s) {
+            _isChanged = true;
+            return _cur_message.assign(s);
+        }
+        
+        /** Set the binary data content to n characters starting from a pointer. */
+        std::string& message(const char* s, std::size_t n) {
+            _isChanged = true;
+            return _cur_message.assign(s, n);
+        }
+        
+        /** Send data synchronously */
+        virtual void sendSync() {
+            // Prepare the Yarp message to send
+            _port_content_type & output = this->prepare();
+            output.setBinaryData(_cur_message);
+            
+            // Actually send the message
+            this->writeStrict();
+            _isChanged = false;
+        }
+        
+        
+        virtual std::string fullPortName() const {
+            return this->getName();
+        }
+        
+        
+    protected:
+        virtual yarp::os::Contactable& getYarpPort() {
+            return *this;
+        }
+        
+    };
     
 }
 

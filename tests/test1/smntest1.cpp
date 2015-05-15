@@ -47,7 +47,7 @@ int main() {
     
     OBNsmn::YARP::YARPPort gcPort;
     
-    bool ok = gcPort.open("/test1/_gc_/node1");
+    bool ok = gcPort.open("/test1/_smn_/node1");
     if (!ok) {
         std::cout << "Failed to create ports." << std::endl;
         return 1;
@@ -59,9 +59,9 @@ int main() {
     // ======== Creating node =========
     
     // In this test, we create one node
-    OBNsmn::YARP::OBNNodeYARP* pnode = new OBNsmn::YARP::OBNNodeYARP("Node1", 2, &gcPort);
+    OBNsmn::YARP::OBNNodeYARP* pnode = new OBNsmn::YARP::OBNNodeYARP("node1", 2, &gcPort);
     pnode->setUpdateType(0, 10);  // bit mask 0
-    pnode->setUpdateType(1, 15);  // bit mask 1
+    pnode->setUpdateType(1, 0);  // bit mask 1 -> irregular update
 
     gc.insertNode(pnode);
     
@@ -72,21 +72,21 @@ int main() {
     
     // Configure the GC
     gc.ack_timeout = 0;
-    gc.setFinalSimulationTime(1000);
+    gc.setFinalSimulationTime(100);
 
     
     // The YARP communication thread for GC's incoming port
-    OBNsmn::YARP::YARPPollingThread yarpThread(&gc, "/test1/_gc_");
+    OBNsmn::YARP::YARPPollingThread yarpThread(&gc, "/test1/_smn_/_gc_");
     if (!yarpThread.startThread()) {
         std::cout << "Error: cannot start GC thread." << std::endl;
         return 1;
     }
 
     // The GC has a dedicated output port for each node
-    yarp.connect("/test1/_gc_/node1", "/test1/_node1_");
+    yarp.connect("/test1/_smn_/node1", "/test1/node1/_gc_");
     
     // However, each node has only one IO port to communicate with GC, and all nodes send to the same GC input port
-    yarp.connect("/test1/_node1_", "/test1/_gc_");
+    yarp.connect("/test1/node1/_gc_", "/test1/_smn_/_gc_");
     
     // Start running the GC thread
     if (!gc.startThread()) {

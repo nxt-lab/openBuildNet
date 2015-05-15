@@ -11,12 +11,15 @@ PROJECT(${PROJECT_NAME})
 set(OBNSMN_SRC_DIR "${PROJECT_SOURCE_DIR}/../../smn/src")
 set(OBNSMN_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/../../smn/include")
 
-## Directories of the node-cpp source
-set(OBNNODE_SRC_DIR "${PROJECT_SOURCE_DIR}/../../nodecpp/src")
-set(OBNNODE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/../../nodecpp/include")
+## Change OBN_MAIN_DIR to the path to the main directory of openBuildNet
+set (OBN_MAIN_DIR ../../)
+
+## This will set the header and source directories for the node.cpp framework
+set (OBN_NODECPP_INCLUDE_DIR ${OBN_MAIN_DIR}/nodecpp/include)
+set (OBN_NODECPP_SOURCE_DIR ${OBN_MAIN_DIR}/nodecpp/src)
 
 ## Include directories for the general OBNSim project
-set (OBNSIM_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
+set (OBNSIM_INCLUDE_DIR ${OBN_MAIN_DIR}/include)
 
 
 ## Generate code for the message formats using Google ProtoBuf, see http://www.cmake.org/cmake/help/v3.0/module/FindProtobuf.html
@@ -24,7 +27,7 @@ set (OBNSIM_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
 ## The libraries and header files of the ProtoBuf framework (not the generated files) are in PROTOBUF_LITE_LIBRARIES and PROTOBUF_INCLUDE_DIRS respectively, because we will generate lite code instead of the full ProtoBuf code.
 
 find_package(Protobuf REQUIRED)
-PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS ../../msg/obnsim_msg.proto)
+PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS ../../msg/obnsim_msg.proto ../../msg/obnsim_io.proto)
 
 
 ## To use Boost library
@@ -52,8 +55,16 @@ if(YARP_FOUND)
   link_libraries(${YARP_LIBRARIES})
   set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${OBNSMN_SRC_DIR}/obnsmn_comm_yarp.cpp)
   set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${OBNSMN_INCLUDE_DIR}/obnsmn_comm_yarp.h)
-  set(OBNNODE_COMM_SRC ${OBNNODE_COMM_SRC} ${OBNNODE_SRC_DIR}/obnnode_comm_yarp.cpp)
-  set(OBNNODE_COMM_HDR ${OBNNODE_COMM_HDR} ${OBNNODE_INCLUDE_DIR}/obnnode_comm_yarp.h)  
+  set(OBNNODE_COMM_SRC ${OBN_COMM_SRC}
+	${OBN_NODECPP_SOURCE_DIR}/obnnode_yarpnode.cpp
+	${OBN_NODECPP_SOURCE_DIR}/obnnode_yarpport.cpp
+  )
+  set(OBNNODE_COMM_HDR ${OBN_COMM_HDR}
+	${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpnode.h
+	${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpportbase.h
+	${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpport.h
+	${OBN_NODECPP_INCLUDE_DIR}/sharedqueue_yarp.h
+  )
   add_definitions(-DOBNSIM_COMM_YARP)
   message("Found YARP library; will build SMN with YARP support.")
 endif()
@@ -67,8 +78,7 @@ INCLUDE_DIRECTORIES(
   ${PROJECT_BINARY_DIR}
   ${OBNSMN_INCLUDE_DIR}
   ${OBNSMN_SRC_DIR}
-  ${OBNNODE_INCLUDE_DIR}
-  ${OBNNODE_SRC_DIR}
+  ${OBN_NODECPP_INCLUDE_DIR}
   ${OBNSIM_INCLUDE_DIR}
 )
 
@@ -107,9 +117,11 @@ set(OBNSMN_CORE_SRCFILES
 	${OBNSMN_SRC_DIR}/obnsmn_nodegraph.cpp
     	${OBNSMN_SRC_DIR}/obnsmn_gc.cpp
 	${OBNSMN_COMM_SRC}
+	${PROTO_SRCS}
 )
 
 set(OBNNODE_CORE_SRCFILES
+	${PROTO_SRCS}
 	${OBNNODE_COMM_SRC}
 )
 
@@ -123,11 +135,14 @@ set(OBNSMN_CORE_HDRFILES
 	${OBNSMN_INCLUDE_DIR}/obnsmn_report.h
 	${OBNSIM_INCLUDE_DIR}/obnsim_basic.h
 	${OBNSMN_COMM_HDR}
+	${PROTO_HDRS}
 )
 
 set(OBNNODE_CORE_HDRFILES
-	${OBNNODE_INCLUDE_DIR}/obnnode_basic.h
+	${OBN_NODECPP_INCLUDE_DIR}/obnnode.h
+	${OBN_NODECPP_INCLUDE_DIR}/obnnode_basic.h
 	${OBNSIM_INCLUDE_DIR}/obnsim_basic.h
+	${PROTO_HDRS}
 	${OBNNODE_COMM_HDR}
 )
 
@@ -143,13 +158,11 @@ endif()
 ADD_EXECUTABLE(smntest1
 	smntest1.cpp
 	${OBNSMN_CORE_SRCFILES}
-	${PROTO_SRCS}
 )
 
 ADD_EXECUTABLE(nodetest1
 	nodetest1.cpp
 	${OBNNODE_CORE_SRCFILES}
-	${PROTO_SRCS}
 )
 
 ## Make sure that C++ 11 is used (for thread, mutex...)
@@ -168,7 +181,6 @@ TARGET_LINK_LIBRARIES(smntest1
 
 TARGET_LINK_LIBRARIES(nodetest1
   ${PROTOBUF_LITE_LIBRARIES}
-  ${Boost_LIBRARIES}
 )
 
 ## The auxiliary doxygen files (.dox) should be placed in the 'doc'

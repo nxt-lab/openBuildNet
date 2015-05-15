@@ -1,6 +1,6 @@
 /* -*- mode: C++; indent-tabs-mode: nil; -*- */
 /** \file
- * \brief A test SMN which implements nodes inside the SMN itself.
+ * \brief A test node, which doesn't do anything except testing the messages with SMN.
  *
  * Requires YARP.
  *
@@ -11,29 +11,11 @@
  */
 
 #include <iostream>
-#include <sstream>
-
-#include <obnnode_basic.h>
+#include <obnnode.h>
 
 #ifndef OBNSIM_COMM_YARP
 #error This test requires YARP to run
 #endif
-
-#include <obnnode_comm_yarp.h>
-
-// Implement reporting functions for the SMN
-void report_error(int code, std::string msg) {
-    std::cerr << "ERROR (" << code << "): " << msg << std::endl;
-}
-
-void report_warning(int code, std::string msg) {
-    std::cout << "WARNING (" << code << "): " << msg << std::endl;
-}
-
-void report_info(int code, std::string msg) {
-    std::cout << "INFO (" << code << "): " << msg << std::endl;
-}
-
 
 
 /** The following macros are defined by CMake to indicate which libraries this SMN build supports:
@@ -41,130 +23,118 @@ void report_info(int code, std::string msg) {
  - OBNSIM_SMN_COMM_MQTT: if MQTT is supported for communication.
  */
 
-void sendACK(int myid, OBNSimMsg::N2SMN::MSGTYPE type, OBNSimMsg::N2SMN& n2smn, OBNnode::YARP::smnPort &port) {
-    OBNnode::YARP::smnMsg& msg = port.prepare();
+using namespace OBNnode;
+using std::cout;
+using std::endl;
+
+#define MAIN_UPDATE 0
+#define IRREG_UPDATE 1
+
+/* The main node class */
+class MyNode: public YarpNode {
+    int counter;
+    WaitForCondition* pWaitFor;
+public:
+    MyNode(const std::string& name, const std::string& ws = ""): YarpNode(name, ws), counter(0)
+    { }
     
-    n2smn.set_msgtype(type);
-    n2smn.set_id(myid);
+    virtual ~MyNode() {
+        cout << "Node program exits." << endl;
+    }
     
-    msg.setMessage(n2smn);
-    port.writeStrict();
+    /* Add ports to node, hardware components may be started, etc. */
+    bool initialize() {
+        bool success = true;
+        
+        // Add the ports to the node
+//        if (!(success = addInput(&velocity))) {
+//            std::cerr << "Error while adding velocity input." << std::endl;
+//        }
+//        
+//        if (success && !(success = addInput(&setpoint))) {
+//            std::cerr << "Error while adding setpoint input." << std::endl;
+//        }
+//        
+//        if (success && !(success = addOutput(&command))) {
+//            std::cerr << "Error while adding control output." << std::endl;
+//        }
+        
+        // Open the SMN port
+        success = success && openSMNPort();
+        
+        return success;
+    }
+    
+    /* Implement this callback to process UPDATE_X. */
+    virtual void onUpdateX() {
+        std::cout << "At " << _current_sim_time << " UPDATE_X" << std::endl;
+        if (pWaitFor) {
+            // Check the result of future update request
+            auto r = resultFutureUpdate(pWaitFor);
+            if (r != 0) {
+                cout << "At " << _current_sim_time << " Event request was rejected." << endl;
+            } else {
+                cout << "At " << _current_sim_time << " Event request was accepted." << endl;
+            }
+            pWaitFor = nullptr;
+        }
+    }
+    
+    /* This callback is called everytime this node's simulation starts or restarts.
+     This is different from initialize() above. */
+    virtual void onInitialization() {
+        // Initial state and output
+        std::cout << "At " << _current_sim_time << " INIT" << std::endl;
+    }
+    
+    /* This callback is called when the node's current simulation is about to be terminated. */
+    virtual void onTermination() {
+        std::cout << "At " << _current_sim_time << " TERMINATED" << std::endl;
+    }
+    
+    /* There are other callbacks for reporting errors, etc. */
+    
+    /* Declare the update types of the node by listing their index constants in the macro OBN_DECLARE_UPDATES(...)
+     Their listing order determines the order in which the corresponding update callbacks are called. */
+    OBN_DECLARE_UPDATES(MAIN_UPDATE, IRREG_UPDATE)
+};
+
+/* For each update type, define the update callback function OUTSIDE the class declaration.
+ Each callback is defined by OBN_DEFINE_UPDATE(<Your node class name>, <Index of the update type>) { code here; } */
+
+OBN_DEFINE_UPDATE(MyNode, MAIN_UPDATE) {
+    if (counter++ % 3 == 2) {
+        // Request for future update (event)
+        pWaitFor = requestFutureUpdate(_current_sim_time + 13, 1 << IRREG_UPDATE, false);
+        if (!pWaitFor) {
+            cout << "At " << _current_sim_time << " Problem: could not request event." << endl;
+        }
+    } else {
+        pWaitFor = nullptr;
+    }
+    std::cout << "At " << _current_sim_time << " Main UPDATE_Y" << std::endl;
 }
 
+OBN_DEFINE_UPDATE(MyNode, IRREG_UPDATE) {
+    std::cout << "At " << _current_sim_time << " Irregular UPDATE_Y" << std::endl;
+}
 
 int main() {
     std::cout << "This is nodetest1, a very simple node." << std::endl;
     
-    yarp::os::Network yarp;
+    MyNode mynode("node1", "test1");
     
-    OBNnode::YARP::smnPort smnPort;
-    
-    bool ok = smnPort.open("/test1/_node1_");
-    
-    if (!ok) {
-        std::cout << "Failed to create ports." << std::endl;
+    if (!mynode.initialize()) {
         return 1;
     }
     
-    // Make sure that no system messages from SMN are dropped
-    smnPort.setStrict();
-
-    std::cout << "Port opened." << std::endl;
+    // Here we will not connect the node to the GC, let the SMN do it
     
-    enum NODESTATE {
-        NODE_INIT,  // Node hasn't been initialized yet (or has been terminated)
-        NODE_RUN    // Node is running
-    } nodeState = NODE_INIT;
-
-    OBNnode::YARP::smnMsg* msg;
-    OBNSimMsg::SMN2N smn2n;
-    OBNSimMsg::N2SMN n2smn;
+    std::cout << "Starting simulation..." << std::endl;
     
-    while (true) {
-        bool simRunning = true;
-        OBNnode::simtime_t curTime;
-        int myID;
-
-        std::cout << "Simulation started." << std::endl;
-        std::cout.flush();
-        
-        while (simRunning) {
-            // Waiting for the next message from GC
-            msg = smnPort.read();
-            
-            if (msg) {
-                msg->getMessage(smn2n);
-                
-                curTime = smn2n.time();
-                
-                if (smn2n.has_id()) {
-                    myID = smn2n.id();
-                }
-                
-                switch (nodeState) {
-                    case NODE_RUN:
-                        switch (smn2n.msgtype()) {
-                            case OBNSimMsg::SMN2N_MSGTYPE_SIM_Y: {
-                                sendACK(myID, OBNSimMsg::N2SMN_MSGTYPE_SIM_Y_ACK, n2smn, smnPort);
-                                
-                                std::ostringstream message;
-                                message << "At " << curTime << " UPDATE_Y mask = 0x" << std::hex << smn2n.data().i();
-                                report_info(0, message.str());
-                                break;
-                            }
-                                
-                            case OBNSimMsg::SMN2N_MSGTYPE_SIM_X:
-                                sendACK(myID, OBNSimMsg::N2SMN_MSGTYPE_SIM_X_ACK, n2smn, smnPort);
-                                report_info(0, "At " + std::to_string(curTime) + " UPDATE_X");
-                                break;
-                                
-                            case OBNSimMsg::SMN2N_MSGTYPE_SIM_TERM:
-                                report_info(0, "At " + std::to_string(curTime) + " TERMINATE");
-                                nodeState = NODE_INIT;
-                                simRunning = false;
-                                break;
-                                
-                            default:
-                                report_warning(0, "Unknown message type " + std::to_string(smn2n.msgtype()) + " during RUNNING.");
-                                break;
-                        }
-                        break;
-                    case NODE_INIT:
-                        switch (smn2n.msgtype()) {
-                            case OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT:
-                                sendACK(myID, OBNSimMsg::N2SMN_MSGTYPE_SIM_INIT_ACK, n2smn, smnPort);
-                                report_info(0, "At " + std::to_string(curTime) + " INIT");
-                                nodeState = NODE_RUN;
-                                break;
-                            
-                            case OBNSimMsg::SMN2N_MSGTYPE_SIM_TERM:
-                                report_info(0, "At " + std::to_string(curTime) + " TERMINATE");
-                                simRunning = false;
-                                break;
-
-                            default:
-                                report_warning(0, "Unknown message type " + std::to_string(smn2n.msgtype()) + " during INIT.");
-                                break;
-                        }
-                        break;
-                }
-            }
-        }
-        
-        char cmd;
-        std::cout << "Simulation finished." << std::endl;
-
-        do {
-            std::cout << "Do you want to continue (c) or quit (q)? ";
-            std::cin >> cmd;
-        } while (cmd != 'c' && cmd != 'C' && cmd != 'q' && cmd != 'Q');
-        
-        if (cmd == 'q' || cmd == 'Q') {
-            break;
-        }
-    }
+    mynode.run();
     
-    std::cout << "Goodbye!" << std::endl;
+    std::cout << "Simulation finished. Goodbye!" << std::endl;
     
     
     //////////////////////
@@ -172,5 +142,5 @@ int main() {
     //////////////////////
     google::protobuf::ShutdownProtobufLibrary();
     
-    return 0;
+    return mynode.hasError()?3:0;
 }

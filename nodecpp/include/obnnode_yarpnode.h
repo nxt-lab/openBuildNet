@@ -17,6 +17,7 @@
 #include <memory>               // shared_ptr
 //#include <unordered_map>         // std::unordered_map
 #include <forward_list>
+#include <functional>
 
 #include <obnnode_basic.h>
 #include <obnnode_yarpportbase.h>
@@ -164,6 +165,72 @@ namespace OBNnode {
         
         /** The current update type mask, of the latest UPDATE_Y. */
         updatemask_t _current_updates;
+        
+        
+        
+        /* ================== Support for asynchronuous waiting for conditions ================== */
+        /* We use a vector of fields: bool inuse, a semaphore, and a function object std::function<bool (...)>.
+         * The function object can be assigned to a function or lambda (most of the cases) or a functor (if memory is needed).
+         * We will not create and delete condition objects all the time. We create new conditions in the list/vector but do not delete them. Instead, reuse them with inuse (= true if being used, = false if not and can be reused now), so as to minimize the number of creating/deleting objects => much better for memory. Only create new object when no one can be reused.
+         */
+    public:
+        class WaitForCondition {
+            /** Status of the condition: active (waiting for), cleared (but not yet fetched), inactive (can be reused) */
+            enum { ACTIVE, CLEARED, INACTIVE } status;
+            yarp::os::Event _event;     ///< The event condition to wait on
+            OBNSimMsg::MSGDATA _data;   ///< The data record (if available) of the message that cleared the condition
+            /** Returns true if the condition is cleared. */
+            typedef std::function<bool (const OBNSimMsg::SMN2N&)> the_checker;
+            the_checker _check_func;    ///< The function to check for the condition
+
+            friend class YarpNode;
+            
+            /** Make the condition inactive, to be reused later. */
+            void reset() {
+                status = INACTIVE;
+                _event.reset();
+                _data.Clear();
+            }
+        public:
+            template<typename F>
+            WaitForCondition(F f): status(ACTIVE), _event(false), _check_func(f) { }
+            
+            // virtual ~WaitForCondition() { std::cout << "~WaitForCondition" << std::endl; }
+
+            /** Wait (blocking) for the condition to hold. */
+            void wait() { _event.wait(); }
+            
+            /** Return the data of the message that cleared the condition. Make sure that the condition was cleared before accessing the data. */
+            const OBNSimMsg::MSGDATA& getData() const { return _data; }
+        };
+        
+        /** Check if an wait-for condition is cleared. */
+        bool isWaitForCleared(const WaitForCondition& c) {
+            yarp::os::LockGuard lock(_waitfor_conditions_mutex);
+            return c.status == WaitForCondition::CLEARED;
+        }
+        
+        /** Reset wait-for condition. If the condition isn't reset implicitly, it should be reset by calling this function after it was cleared and its result has been used. */
+        void resetWaitFor(WaitForCondition& c) {
+            yarp::os::LockGuard lock(_waitfor_conditions_mutex);
+            c.reset();
+        }
+
+        /** \brief Request a future irregular update from the Global Clock. */
+        WaitForCondition* requestFutureUpdate(simtime_t t, updatemask_t m, bool waiting=true);
+        
+        /** \brief Get the result of a pending request for a future update. */
+        int64_t resultFutureUpdate(WaitForCondition*);
+        
+        /** \brief Wait until a wait-for condition cleared and returns its I field. */
+        int64_t resultWaitForCondition(WaitForCondition*);
+        
+    protected:
+        std::forward_list<WaitForCondition> _waitfor_conditions;
+        yarp::os::Mutex _waitfor_conditions_mutex;
+        
+        /** Check the given message against the list of wait-for conditions. */
+        void checkWaitForCondition(const OBNSimMsg::SMN2N&);
 
 
         /* ================== Support for Node Events ================= */

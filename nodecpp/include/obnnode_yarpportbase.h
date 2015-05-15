@@ -61,6 +61,15 @@ namespace OBNnode {
             memcpy(_data, msg, len);
         }
         
+        /** \brief Set the contents of the message by a std::string.
+         
+         \param s The std::string to copy from.
+         */
+        void setBinaryData(const std::string &s) {
+            allocateData(s.length());
+            s.copy(_data, s.length());
+        }
+        
         /** \brief Get the pointer to the binary contents of the message. */
         const char* getBinaryData() const {
             return _data;
@@ -207,7 +216,7 @@ namespace OBNnode {
          */
         bool _isChanged;
     public:
-        YarpOutputPortBase(const std::string& _name): YarpPortBase(_name) { }
+        YarpOutputPortBase(const std::string& _name): YarpPortBase(_name), _isChanged(false) { }
         virtual ~YarpOutputPortBase();
         
         bool isChanged() const {
