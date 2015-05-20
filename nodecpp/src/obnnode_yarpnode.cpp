@@ -395,8 +395,8 @@ void YarpNode::run(double timeout) {
     // Make sure that the SMN port is opened (but won't connect it)
     if (!openSMNPort()) {
         // Error
-        onReportInfo("[NODE] Could not open the SMN port. Check the network and the name server.");
         _node_state = NODE_ERROR;
+        onReportInfo("[NODE] Could not open the SMN port. Check the network and the name server.");
         return;
     }
     
@@ -422,8 +422,15 @@ void YarpNode::run(double timeout) {
         // With timeout
         while (_node_state == NODE_RUNNING || _node_state == NODE_STARTED) {
             pEvent = _event_queue.wait_and_pop_timeout(timeout);
-            assert(pEvent);
-            pEvent->execute(this);  // Execute the event
+            if (pEvent) {
+                pEvent->execute(this);  // Execute the event if not timeout
+            } else {
+                // If timeout then we stop
+                _node_state = NODE_ERROR;
+                onRunTimeout();
+                onReportInfo("[NODE] Node's execution has timeout error. Node stopped.");
+                return;
+            }
         }
     }
     

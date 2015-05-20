@@ -359,6 +359,13 @@ namespace OBNnode {
             // Currently doing nothing
         }
         
+        /** Callback for timeout error when running the node's simulation.
+         \sa run() with timeout.
+         */
+        virtual void onRunTimeout() {
+            // Currently doing nothing
+        }
+        
         /** Callback for error interacting with the SMN and openBuildNet system.  Used for serious errors.
          \param msg A string containing the error message.
          */

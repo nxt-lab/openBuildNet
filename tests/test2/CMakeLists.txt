@@ -117,7 +117,7 @@ set(OBNSMN_CORE_SRCFILES
 	${OBNSMN_SRC_DIR}/obnsmn_nodegraph.cpp
     	${OBNSMN_SRC_DIR}/obnsmn_gc.cpp
 	${OBNSMN_COMM_SRC}
-	${PROTO_SRCS}	
+	${PROTO_SRCS}
 )
 
 set(OBNNODE_CORE_SRCFILES
