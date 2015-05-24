@@ -196,7 +196,7 @@ int YarpNodeMatlab::createOutputPort(char container, const std::string &element,
 
 YarpNodeMatlab::~YarpNodeMatlab() {
     // If the node is still running, we need to stop it first
-    stopRunningNode();
+    stopSimulation();
     
     // Delete all port objects belonging to this node
     for (auto p:_all_ports) {
@@ -204,18 +204,98 @@ YarpNodeMatlab::~YarpNodeMatlab() {
     }
 }
 
-/** This method stops the current simulation if it is running.
- If a simulation is on-going, it sets the internal state of the node to stop the simulation, and notify the SMN/GC to stop.
- */
-void YarpNodeMatlab::stopRunningNode() {
-    
-}
-
 
 /** This method runs the simulation until the next event that requires a callback (e.g. an UPDATE_Y message from the GC), or until the node stops (because the simulation terminates, because of errors...).
- \return 0 if everything is going well, 1 if timeout (but the simulation won't stop automatically), 2 if the simulation has stopped (for any reason).
+ \return 0 if everything is going well and there is an event pending, 1 if timeout (but the simulation won't stop automatically, it's still running), 2 if the simulation has stopped (properly, not because of an error), 3 if the simulation has stopped due to an error (the node's state becomes NODE_ERROR)
  */
 int YarpNodeMatlab::runStep(double timeout) {
+    if (_node_state == NODE_ERROR) {
+        // We can't continue in error state
+        reportError("YARPNODE:runStep", "Node is in error state; can't continue simulation; please stop the node (restart it) to clear the error state before continuing.");
+        return 3;
+    }
+
+    // If there is a pending event, which means the current event has just been processed in Matlab, we must resume the execution of the event object to finish it, then we can continue
+    if (_ml_pending_event) {
+        assert(_current_node_event);    // It must store a valid event object
+        _current_node_event->executePost(this);
+        _ml_pending_event = false;      // Clear the current event
+    }
+
+    // Run until there is a pending ML event
+    while (!_ml_pending_event) {
+        switch (_node_state) {
+            case NODE_RUNNING:  // Node is running normally, so keep running it until the next event
+            case NODE_STARTED:
+                // Wait for the next event and process it
+                if (timeout <= 0.0) {
+                    // Without timeout
+                    _current_node_event = _event_queue.wait_and_pop();
+                    assert(_current_node_event);
+                    _current_node_event->executeMain(this);  // Execute the event
+                    
+                    // if there is no pending event, we must finish the event's execution now
+                    // if there is, we don't need to because it will be finished later when this function is resumed
+                    if (!_ml_pending_event) {
+                        _current_node_event->executePost(this);
+                    }
+                } else {
+                    // With timeout
+                    _current_node_event = _event_queue.wait_and_pop_timeout(timeout);
+                    if (_current_node_event) {
+                        _current_node_event->executeMain(this);  // Execute the event if not timeout
+                        
+                        // if there is no pending event, we must finish the event's execution now
+                        // if there is, we don't need to because it will be finished later when this function is resumed
+                        if (!_ml_pending_event) {
+                            _current_node_event->executePost(this);
+                        }
+                    } else {
+                        // If timeout then we return but won't stop
+                        onRunTimeout();
+                        return 1;
+                    }
+                }
+                
+                break;
+                
+            case NODE_STOPPED:  // Start the simulation from beginning
+                // Make sure that the SMN port is opened (but won't connect it)
+                if (!openSMNPort()) {
+                    // Error
+                    _node_state = NODE_ERROR;
+                    reportError("YARPNODE:runStep", "Could not open the SMN port. Check the network and the name server.");
+                    break;
+                }
+                
+                // Initialize the node's state
+                initializeForSimulation();
+                
+                // Switch to STARTED to wait for INIT message from the SMN
+                _node_state = NODE_STARTED;
+                break;
+                
+            default:
+                reportError("YARPNODE:runStep", "Internal error: invalid node's state.");
+                break;
+        }
+        
+        // At this point, if node state is not RUNNING or STARTED, we must stop it
+        if (_node_state != NODE_RUNNING && _node_state != NODE_STARTED) {
+            break;
+        }
+    }
+    
+    // Return appropriate value depending on the current state
+    if (_node_state == NODE_STOPPED) {
+        // Stopped (properly)
+        return 2;
+    } else if (_node_state == NODE_ERROR) {
+        // error
+        return 3;
+    }
+    
+    // this can only be reached if there is a pending event
     return 0;
 }
 
@@ -651,6 +731,112 @@ namespace {
 
     /* === YarpNode interface === */
     
+    
+    // Runs the node's simulation until the next event, or until the node stops or has errors
+    // Args: node object pointer, timeout (double, can be <= 0)
+    // Returns: status (see YarpNodeMatlab::runStep()), event type (a string), event argument (of an appropriate data type depending on the event type)
+    MEX_DEFINE(runStep) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 2);
+        OutputArguments output(nlhs, plhs, 3);
+        
+        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+
+        // Call node's runStep
+        int result = ynode->runStep(input.get<double>(1));
+        
+        
+        // Convert the result to outputs of this MEX function
+        output.set(0, result);
+        if (ynode->_ml_pending_event) {
+            switch (ynode->_ml_current_event.type) {
+                case OBNnode::YarpNodeMatlab::MLE_Y:
+                    output.set(1, "Y");
+                    output.set(2, ynode->_ml_current_event.arg.mask);
+                    break;
+                    
+                case OBNnode::YarpNodeMatlab::MLE_X:
+                    output.set(1, "X");
+                    output.set(2, ynode->_ml_current_event.arg.mask);   // This mask is set to the current update mask
+                    break;
+                    
+                case OBNnode::YarpNodeMatlab::MLE_INIT:
+                    output.set(1, "INIT");
+                    output.set(2, 0);
+                    break;
+                    
+                case OBNnode::YarpNodeMatlab::MLE_TERM:
+                    output.set(1, "TERM");
+                    output.set(2, 0);
+                    break;
+                    
+                default:
+                    reportError("YARPNODE:runStep", "Internal error: unrecognized Matlab event type.");
+                    break;
+            }
+        } else {
+            output.set(1, "");
+            output.set(2, 0);
+        }
+    }
+    
+    // Request/notify the SMN to stop, then terminate the node's simulation regardless of whether the request was accepted or not. See YarpNodeMatlab::stopSimulation for details.
+    // Args: node object pointer
+    // Return: none
+    MEX_DEFINE(stopSim) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 1);
+        OutputArguments output(nlhs, plhs, 0);
+        
+        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        ynode->stopSimulation();
+    }
+    
+    // This method requests the SMN/GC to stop the simulation (by sending a request message to the SMN).
+    // See YarpNodeMatlab::requestStopSimulation() for details.
+    // Args: node object pointer
+    // Return: none
+    MEX_DEFINE(requestStopSim) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 1);
+        OutputArguments output(nlhs, plhs, 0);
+        
+        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        ynode->requestStopSimulation();
+    }
+
+    
+    // Check if the current state of the node is ERROR
+    // Args: node object pointer
+    // Returns: true/false
+    MEX_DEFINE(isNodeErr) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 1);
+        OutputArguments output(nlhs, plhs, 1);
+        
+        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        output.set(0, ynode->hasError());
+    }
+    
+    // Check if the current state of the node is RUNNING
+    // Args: node object pointer
+    // Returns: true/false
+    MEX_DEFINE(isNodeRunning) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 1);
+        OutputArguments output(nlhs, plhs, 1);
+        
+        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        output.set(0, ynode->nodeState() == OBNnode::YarpNode::NODE_RUNNING);
+    }
+    
+    // Check if the current state of the node is STOPPED
+    // Args: node object pointer
+    // Returns: true/false
+    MEX_DEFINE(isNodeStopped) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 1);
+        OutputArguments output(nlhs, plhs, 1);
+        
+        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        output.set(0, ynode->nodeState() == OBNnode::YarpNode::NODE_STOPPED);
+    }
+    
+        
     // Defines MEX API for wait
     // Block until one of the ports signals ready
     // Return the event type and ID of the port
@@ -805,6 +991,17 @@ namespace {
         }
         output.set(3, portinfo.strict);
     }
+    
+    // Returns the maximum ID allowed for an update type.
+    // Args: none
+    // Returns: an integer
+    MEX_DEFINE(maxUpdateID) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 0);
+        OutputArguments output(nlhs, plhs, 1);
+        
+        output.set(0, OBNnode::MAX_UPDATE_INDEX);
+    }
+    
 
     /* === General Yarp interface === */
     

@@ -11,6 +11,66 @@ classdef OBNNode < handle
         id_     % pointer to the C++ node object
         inputPorts     % map nodes' names to their IDs
         outputPorts     % map nodes' names to their IDs
+        
+        % These are the callbacks for events receiving from the node object
+        % Each callback may receive some arguments, and returns nothing.
+        
+        % For both UPDATE_X and UPDATE_Y, we have an ordered list of
+        % callbacks, each for a unique update type. Each has an ID (the ID
+        % of the update type, an integer from 0 to MAX of update ID), a
+        % function handle 'func' to call, and optional custom arguments
+        % 'args' as a cell array. The callback is called with
+        %       func(args{:})
+        callbacks_update_y = struct('id', {}, 'func', {}, 'args', {});
+        callbacks_update_x = struct('id', {}, 'func', {}, 'args', {});
+        
+        % For other simple events, there is a single callback function with
+        % optional custom arguments. The callback is called with
+        %       func(args{:})
+        callback_init = struct('func', {}, 'args', {});
+        callback_term = struct('func', {}, 'args', {});
+    end
+    
+    methods (Access=protected)
+        % These are the event handler for events sent from the MEX (node
+        % object).
+        function onUpdateY(this, mask)
+            k = 1;
+            while mask ~= 0 && k <= length(this.callbacks_update_y)
+                if bitget(mask, this.callbacks_update_y(k).id+1) == 1
+                    this.callbacks_update_y(k).func(this.callbacks_update_y(k).args{:});
+                    mask = bitset(mask, this.callbacks_update_y(k).id+1, 0);    % reset that bit
+                end
+                k = k + 1;
+            end
+        end
+        
+        function onUpdateX(this, mask)
+            k = 1;
+            while mask ~= 0 && k <= length(this.callbacks_update_x)
+                if bitget(mask, this.callbacks_update_x(k).id+1) == 1
+                    this.callbacks_update_x(k).func(this.callbacks_update_x(k).args{:});
+                    mask = bitset(mask, this.callbacks_update_x(k).id+1, 0);    % reset that bit
+                end
+                k = k + 1;
+            end
+        end
+        
+        function onSimInit(this)
+            if ~isempty(this.callback_init)
+                this.callback_init.func(this.callback_init.args{:});
+            end
+        end
+        
+        function onSimTerm(this)
+            if ~isempty(this.callback_term)
+                this.callback_term.func(this.callback_term.args{:});
+            end
+        end
+    end
+    
+    properties (Constant)
+        MaxUpdateID = obnsim_yarp_('maxUpdateID');
     end
     
     methods (Access=protected)
@@ -351,7 +411,165 @@ classdef OBNNode < handle
 %         end
        
 
+        function addCallback(this, func, evtype, varargin)
+            % Register a callback for an event.
+            %       addCallback(this, func, evtype, ...)
+            %
+            % evtype is a non-empty string specifying the event type.
+            % func is the function handle of the callback.
+            %
+            % The following events (evtype) are supported:
+            % - 'Y' : UPDATE_Y event; the next argument must be the ID of
+            %   the update type (between 0 and MaxUpdateID), the rest are
+            %   custom arguments.
+            % - 'X' : similar to 'Y' but for UPDATE_X event
+            % - 'INIT' : SIM_INIT event when the simulation starts; the
+            %   callback should set the initial states and initial outputs.
+            % - 'TERM' : SIM_TERM event when the simulation terminates.
+            
+            narginchk(3, inf);
+            assert(isscalar(this));
+            assert(isa(func, 'function_handle'), 'func must be a function handle.');
+            assert(ischar(evtype) && ~isempty(evtype), 'Event type must be a non-empty string.');
+            
+            switch upper(evtype)
+                case {'Y', 'X'}
+                    assert(length(varargin) >= 1, 'The update type ID must be provided.');
+                    id = varargin{1};
+                    assert(id >= 0 && id <= this.MaxUpdateID && floor(id) == id,...
+                        'The update type ID must be an integer between 0 and %d', this.MaxUpdateID);
+                    if strcmpi(evtype, 'Y')
+                        tmp = this.callbacks_update_y;
+                    else
+                        tmp = this.callbacks_update_x;
+                    end
+                    
+                    % Find the update type in the list already
+                    found = find([tmp.id] == id);
+                    if ~isempty(found)
+                        % Remove it from the list
+                        tmp(found) = [];
+                    end
+                    
+                    % Add the new callback to the end
+                    if strcmpi(evtype, 'Y')
+                        this.callbacks_update_y = [tmp, struct('id', id, 'func', func, 'args', varargin{2:end})];
+                    else
+                        this.callbacks_update_x = [tmp, struct('id', id, 'func', func, 'args', varargin{2:end})];
+                    end
+                    
+                case 'INIT'
+                    this.callback_init = struct('func', func, 'args', varargin);
+                    
+                case 'TERM'
+                    this.callback_term = struct('func', func, 'args', varargin);
+                                        
+                otherwise
+                    error('OBNNode:addCallback', 'Unrecognized event type: %s.', evtype);
+            end
+        end
+        
+        function b = runSimulation(this, timeout)
+            % The main function to run the simulation of the node.
+            % An optional timeout can be given, which will set a timeout
+            % for the node to wait for messages from the SMN/GC.
+            % If a timeout occurs, the simulation of this node will stop
+            % immediately by calling stop
+            %
+            % Return false if the execution is timed out; otherwise return
+            % true.
+            narginchk(1, 2);
+            assert(isscalar(this));
+            if nargin < 2 || isempty(timeout)
+                timeout = -1;
+            else
+                assert(isscalar(timeout) && isnumeric(timeout), ...
+                    'Timeout must be a real number in seconds, or non-positive for no timeout.');
+            end
+            
+            % If the node has error, should not run it
+            if this.hasError()
+                error('OBNNode:runSimulation', 'Node currently has error and cannot run; please clear the error first by calling stopSimulation.');
+            end
+            
+            % If the node is running --> may be not right, give a warning
+            if this.isRunning()
+                warning('OBNNode:runSimulation', 'Node is currently running; may be an error but we will run it anyway.');
+            end
+            
+            status = 0;
+            b = true;
+            while status == 0
+                [status, evtype, evargs] = obnsim_yarp_('runStep', this.id_, timeout);
+                switch status
+                    case 0  % Got an event
+                        switch upper(evtype)
+                            case 'Y'
+                                this.onUpdateY(evargs);
+                            case 'X'
+                                this.onUpdateX(evargs);
+                            case 'INIT'
+                                this.onSimInit();
+                            case 'TERM'
+                                this.onSimTerm();
+                            otherwise
+                                error('OBNNode:runSimulation', 'Internal error: Unknown event type %s returned from MEX.', evtype);
+                        end
+                        
+                    case 1  % Timeout
+                        this.stopSimulation();  % stop the simulation immediately
+                        b = false;
+                        
+                    case 2  % Stop properly
+                        disp('Simulation has stopped properly.');
+                        
+                    case 3  % Stop with error
+                        disp('Simulation has stopped due to an error.');
+                        
+                    otherwise
+                        error('OBNNode:runSimulation', 'Internal error: Unknown running state returned from MEX.');
+                end
+            end
+        end
+        
+        function b = hasError(this)
+            % Test if the node currently has an error (ERROR state)
+            assert(isscalar(this));
+            b = obnsim_yarp_('isNodeErr', this.id_);
+        end
+        
+        function b = isRunning(this)
+            % Test if the node is running (RUNNING state)
+            assert(isscalar(this));
+            b = obnsim_yarp_('isNodeRunning', this.id_);
+        end
+        
+        function b = isStopped(this)
+            % Test if the node is stopped (STOPPED state)
+            assert(isscalar(this));
+            b = obnsim_yarp_('isNodeStopped', this.id_);
+        end        
+                
+        function stopSimulation(this)
+            % If this node is running, request/notify the SMN to stop, then
+            % terminate the current node's simulation regardless of whether
+            % the request was accepted or not.  This method also clear any
+            % error in the node.  It's guaranteed that after this method,
+            % the node's state is STOPPED.
+            assert(isscalar(this));
+            obnsim_yarp_('stopSim', this.id_);
+        end
 
+        function requestStopSimulation(this)
+            % If this node is running, requests the SMN/GC to stop the
+            % simulation (by sending a request message to the SMN).
+            % However, the SMN/GC may deny the request and continue the
+            % simulation.  This method will not stop the current node, so
+            % if the request is not accepted, the node will continue
+            % running.
+            assert(isscalar(this));
+            obnsim_yarp_('requestStopSim', this.id_);
+        end
 
 %         % Wait until a new event is received and process it (one event only)
 %         function wait(this)
@@ -408,55 +626,6 @@ classdef OBNNode < handle
 %             end
 %         end
 %         
-%         function C = OnRead(this, ports, nums)
-%             %ONREAD Create event conditions for YarpEvent on receiving messages.
-%             %       C = node.YOnRead(ports, nums)
-%             %ports specifies the ports, which can be one of:
-%             %   + a number: the ID of a port
-%             %   + a string: the name of a port
-%             %   + a vector: list of IDs of ports
-%             %   + a cell array of strings: list of names of ports
-%             %nums specifies the number of event occurences for each port, can be:
-%             %   + a number >= 1: the number is used for all ports.
-%             %   + a vector of the same length as ports: the numbers for each
-%             %               corresponding ports.
-%             %   + if num is omitted, it's 1 by default.
-%             
-%             assert(isscalar(this));
-%             narginchk(2, 3);
-% 
-%             if ~exist('nums', 'var')
-%                 nums = 1;
-%             end
-%             assert(isnumeric(nums), 'nums must be numeric.');
-%             
-%             [ports, nums] = this.triggerEventPortsNums(ports, nums);
-%             
-%             % Construct the structure array
-%             C = struct('type', 0, 'id', ports, 'num', nums);
-%         end
-% 
-%         function ev = registerEvent(this, varargin)
-%             % Register an event (see YarpEvent) for this node.
-%             % The arguments are passed to YarpEvent().
-%             % Returns an YarpEvent object, to which listeners can be added
-%             assert(isscalar(this));
-%             ev = YarpEvent(varargin{:});
-%             this.allEvents = [this.allEvents, ev];
-%         end
-%         
-%         function deregisterEvent(this, ev)
-%             % Remove (and delete) an event, specified by YarpEvent object
-%             % ev, from the node.
-%             assert(isscalar(this));
-%             assert(isa(ev, 'YarpEvent') && isscalar(ev));
-%             for k = 1:length(this.allEvents)
-%                 if this.allEvents(k) == ev
-%                     this.allEvents(k) = [];
-%                     delete(ev);
-%                     return;
-%                 end
-%             end
-%         end
+
     end
 end

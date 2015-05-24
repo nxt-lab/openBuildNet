@@ -35,10 +35,10 @@ namespace OBNnode {
         
         /** Type of the node's state. */
         enum NODE_STATE {
-            NODE_STOPPED,   ///< Node hasn't run yet, or has stopped
-            NODE_STARTED,   ///< Node has been started (from STOPPED) but not yet running, it must be initialized first
-            NODE_RUNNING,   ///< The node is running (simulation is going on)
-            NODE_ERROR      ///< The node has had an error, which caused it to stop. The error must be cleared before the node can restart
+            NODE_STOPPED = 0,   ///< Node hasn't run yet, or has stopped
+            NODE_STARTED = 1,   ///< Node has been started (from STOPPED) but not yet running, it must be initialized first
+            NODE_RUNNING = 2,   ///< The node is running (simulation is going on)
+            NODE_ERROR = 3     ///< The node has had an error, which caused it to stop. The error must be cleared before the node can restart
         };
         
         /** Returns true if the node has had an error causing it to stop. An error must be cleared for the node to restart. */
@@ -81,8 +81,14 @@ namespace OBNnode {
             return _node_state;
         }
         
-        /** Run the node (simulation in the network) */
+        /** \brief Run the node (simulation in the network) */
         void run(double timeout = -1.0);
+        
+        /** \brief Stop the simulation if it's running. */
+        void stopSimulation();
+        
+        /** \brief Request the SMN/GC to stop the current simulation. */
+        void requestStopSimulation();
         
         /* ========== Methods to add ports ============ */
         
@@ -167,6 +173,9 @@ namespace OBNnode {
         updatemask_t _current_updates;
         
         
+        /** \brief Initialize node for simulation. */
+        void initializeForSimulation();
+        
         
         /* ================== Support for asynchronuous waiting for conditions ================== */
         /* We use a vector of fields: bool inuse, a semaphore, and a function object std::function<bool (...)>.
@@ -240,9 +249,11 @@ namespace OBNnode {
          A child class is created for each type of events, with the appropriate implementation of execute() and data.
          Any specialized event class should be declared as a friend of the node class.
          The event will be executed on the main thread only. Events are posted to the queue by the threads of the ports.
+         The execution of the event handler consists of two functions, in the following order: executeMain, executePost.
          */
         struct NodeEvent {
-            virtual void execute(YarpNode*) = 0;     ///< Execute the event
+            virtual void executeMain(YarpNode*) = 0;     ///< Main Execution of the event
+            virtual void executePost(YarpNode*) = 0;     ///< Post-Execution of the event
         };
         
         /** The event queue, which contains smart pointers to event objects. */
@@ -270,7 +281,8 @@ namespace OBNnode {
         
         /** Event class for cosimulation's UPDATE_Y messages. */
         struct NodeEvent_UPDATEY: public NodeEventSMN {
-            virtual void execute(YarpNode*);
+            virtual void executeMain(YarpNode*);
+            virtual void executePost(YarpNode*);
             updatemask_t _updates;
             NodeEvent_UPDATEY(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
                 _updates = (msg.has_data() && msg.data().has_i())?msg.data().i():0;
@@ -280,21 +292,24 @@ namespace OBNnode {
         
         /** Event class for cosimulation's UPDATE_X messages. */
         struct NodeEvent_UPDATEX: public NodeEventSMN {
-            virtual void execute(YarpNode*);
+            virtual void executeMain(YarpNode*);
+            virtual void executePost(YarpNode*);
             NodeEvent_UPDATEX(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) { }
         };
         friend NodeEvent_UPDATEX;
         
         /** Event class for cosimulation's INITIALIZE messages. */
         struct NodeEvent_INITIALIZE: public NodeEventSMN {
-            virtual void execute(YarpNode*);
+            virtual void executeMain(YarpNode*);
+            virtual void executePost(YarpNode*);
             NodeEvent_INITIALIZE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) { }
         };
         friend NodeEvent_INITIALIZE;
         
         /** Event class for cosimulation's TERMINATE messages. */
         struct NodeEvent_TERMINATE: public NodeEventSMN {
-            virtual void execute(YarpNode*);
+            virtual void executeMain(YarpNode*);
+            virtual void executePost(YarpNode*);
             NodeEvent_TERMINATE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) { }
         };
         friend NodeEvent_TERMINATE;

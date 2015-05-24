@@ -333,6 +333,13 @@ bool YarpNode::connectWithSMN(const char *carrier) {
 }
 
 
+/** This method initializes the node before a simulation starts. This is different from the callback for the INIT message. This method is called before the node even starts waiting for the INIT message. */
+void YarpNode::initializeForSimulation() {
+    _current_sim_time = 0;
+    _current_updates = 0;
+}
+
+
 /** This method sends a simple ACK message to the SMN.
  \param type The type of the ACK message.
  */
@@ -387,7 +394,7 @@ void YarpNode::sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I, int64_t IX) {
 
 /** This method runs the node in the openBuildNet simulation network.
  The node must start from state NODE_STOPPED, otherwise it will return immediately.
- A timeout in seconds can be given (default: -1). If the timeout is positive, the node will wait for new events (from the network) only up to that timeout. If a timeout occurs, the callback for timeout will be called and the simulation will stopped.
+ A timeout in seconds can be given (default: -1). If the timeout is positive, the node will wait for new events (from the network) only up to that timeout. If a timeout occurs, the callback for timeout will be called but the simulation will not stop automatically (not even error); it's up to the callback to decide what to do with this situation, e.g. it can change the node's state to ERROR, or simply terminate the simulation.
  Be careful using the timeout as it may terminate the node unexpectedly, e.g. when the simulation goes to Debugging mode, or some other node just needs long computation time.
  \param timeout The timeout value; non-positive if there is no timeout.
  */
@@ -406,7 +413,7 @@ void YarpNode::run(double timeout) {
         return;
     }
 
-    _current_sim_time = 0;
+    initializeForSimulation();
     _node_state = NODE_STARTED;     // Node has started, but not yet initialized
     
     // Looping to process events until the simulation stops or a timeout occurs
@@ -416,19 +423,21 @@ void YarpNode::run(double timeout) {
         while (_node_state == NODE_RUNNING || _node_state == NODE_STARTED) {
             pEvent = _event_queue.wait_and_pop();
             assert(pEvent);
-            pEvent->execute(this);  // Execute the event
+            pEvent->executeMain(this);  // Execute the event
+            pEvent->executePost(this);  // Post-Execute the event
         }
     } else {
         // With timeout
         while (_node_state == NODE_RUNNING || _node_state == NODE_STARTED) {
             pEvent = _event_queue.wait_and_pop_timeout(timeout);
             if (pEvent) {
-                pEvent->execute(this);  // Execute the event if not timeout
+                // Execute the event if not timeout
+                pEvent->executeMain(this);
+                pEvent->executePost(this);
             } else {
                 // If timeout then we stop
-                _node_state = NODE_ERROR;
                 onRunTimeout();
-                onReportInfo("[NODE] Node's execution has timeout error. Node stopped.");
+                onReportInfo("[NODE] Node's execution has a timeout.");
                 return;
             }
         }
@@ -436,6 +445,40 @@ void YarpNode::run(double timeout) {
     
     // This is the end of the simulation
     onReportInfo("[NODE] Node's execution has stopped.");
+}
+
+
+/** This method will request/notify the SMN to stop, then terminate the current node's simulation regardless of whether the request was accepted or not.
+ This is like an emergency shutdown. To simply request to stop the simulation, but may not actually stop if the request is not accepted by the SMN, use the function requestStopSimulation().
+ This method also clear any error in the node.
+ It's guaranteed that after this method, the node's state is STOPPED.
+ \sa  requestStopSimulation().
+ */
+void YarpNode::stopSimulation() {
+    if (_node_state == NODE_RUNNING) {
+        // Notify/request the SMN to stop ...
+        requestStopSimulation();
+        // ... but shutdown anyway
+        onTermination();
+    }
+
+    // Always switch to STOPPED, even if it's not running (e.g. already STOPPED, or just STARTED, or has ERROR)
+    _node_state = NODE_STOPPED;
+}
+
+
+
+/** This method requests the SMN/GC to stop the simulation (by sending a request message to the SMN).
+ However, the SMN/GC may deny the request and continue the simulation.
+ This method will not stop the current node, so if the request is not accepted, the node will continue running.
+ To stop the simulation definitely, use the function stopSimulation().
+ If the node is currently in ERROR state, this method will not clear the error, use the function stopSimulation() instead.
+ */
+void YarpNode::requestStopSimulation() {
+    // Currently doing nothing because the request message has not been designed yet.
+    if (_node_state == NODE_RUNNING || _node_state == NODE_STARTED) {
+        // Send the request
+    }
 }
 
 
@@ -474,8 +517,8 @@ void YarpNode::postEvent(const OBNSimMsg::SMN2N& msg) {
 }
 
 
-/** Handle UPDATE_X events. */
-void YarpNode::NodeEvent_UPDATEX::execute(YarpNode* pnode) {
+/** Handle UPDATE_X events: Main. */
+void YarpNode::NodeEvent_UPDATEX::executeMain(YarpNode* pnode) {
     // Skip if the node is not RUNNING
     if (pnode->_node_state != YarpNode::NODE_RUNNING) {
         return;
@@ -485,13 +528,17 @@ void YarpNode::NodeEvent_UPDATEX::execute(YarpNode* pnode) {
 
     // Call the callback to perform UPDATE_X
     pnode->onUpdateX();
-    
+}
+
+
+/** Handle UPDATE_X events: Post. */
+void YarpNode::NodeEvent_UPDATEX::executePost(YarpNode* pnode) {
     // Send ACK to the SMN
     pnode->sendACK(OBNSimMsg::N2SMN_MSGTYPE_SIM_X_ACK);
 }
 
-/** Handle UPDATE_Y events. */
-void YarpNode::NodeEvent_UPDATEY::execute(YarpNode* pnode) {
+/** Handle UPDATE_Y events: Main. */
+void YarpNode::NodeEvent_UPDATEY::executeMain(YarpNode* pnode) {
     // Skip if the node is not RUNNING; this should never happen if the node is used properly
     if (pnode->_node_state != YarpNode::NODE_RUNNING) {
         return;
@@ -504,7 +551,10 @@ void YarpNode::NodeEvent_UPDATEY::execute(YarpNode* pnode) {
     
     // Call the callback to perform UPDATE_Y
     pnode->onUpdateY(_updates);
-    
+}
+
+/** Handle UPDATE_Y events: Post. */
+void YarpNode::NodeEvent_UPDATEY::executePost(YarpNode* pnode) {
     // Send out values from output ports which have been updated
     for (auto port: pnode->_output_ports) {
         if (port->isChanged()) {
@@ -521,8 +571,8 @@ void YarpNode::NodeEvent_UPDATEY::execute(YarpNode* pnode) {
     pnode->sendACK(OBNSimMsg::N2SMN_MSGTYPE_SIM_Y_ACK);
 }
 
-/** Handle Initialization before simulation. */
-void YarpNode::NodeEvent_INITIALIZE::execute(YarpNode* pnode) {
+/** Handle Initialization before simulation: Main. */
+void YarpNode::NodeEvent_INITIALIZE::executeMain(YarpNode* pnode) {
     // Skip if the node is not STARTED.
     // This actually should never happen if the node is used properly, because the run() method will not let the node run unless it's in a proper state.
     if (pnode->_node_state != YarpNode::NODE_STARTED) {
@@ -532,7 +582,10 @@ void YarpNode::NodeEvent_INITIALIZE::execute(YarpNode* pnode) {
     basic_processing(pnode);
     
     pnode->onInitialization();
-    
+}
+
+/** Handle Initialization before simulation: Post. */
+void YarpNode::NodeEvent_INITIALIZE::executePost(YarpNode* pnode) {
     // Send out values from output ports, whether updated or not
     for (auto port: pnode->_output_ports) {
         //TODO: Should change this to asynchronous send.
@@ -557,7 +610,8 @@ void YarpNode::NodeEvent_INITIALIZE::execute(YarpNode* pnode) {
     }
 }
 
-void YarpNode::NodeEvent_TERMINATE::execute(YarpNode* pnode) {
+/** Handle Termination: Main. */
+void YarpNode::NodeEvent_TERMINATE::executeMain(YarpNode* pnode) {
     // Skip if the node is not RUNNING
     if (pnode->_node_state != YarpNode::NODE_RUNNING) {
         return;
@@ -566,7 +620,10 @@ void YarpNode::NodeEvent_TERMINATE::execute(YarpNode* pnode) {
     basic_processing(pnode);
     
     pnode->onTermination();
-    
+}
+
+/** Handle Termination: Post. */
+void YarpNode::NodeEvent_TERMINATE::executePost(YarpNode* pnode) {
     // Set the node's state to STOPPED
     if (pnode->_node_state == YarpNode::NODE_RUNNING) {
         pnode->_node_state = YarpNode::NODE_STOPPED;

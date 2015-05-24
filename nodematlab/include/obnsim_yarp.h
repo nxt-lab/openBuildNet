@@ -33,62 +33,145 @@ void reportError(const char* msgID, const char* msg) {
 }
 
 
-/** The main node class for Matlab. */
-class YarpNodeMatlab: public OBNnode::YarpNode {
-public:
-    
-    /** Structure containing info about a port in this node. */
-    struct PortInfo {
-        OBNnode::YarpPortBase *port;
-        enum { INPUTPORT, OUTPUTPORT, DATAPORT } type;
-        char container;     ///< 's', 'v', 'm', 'b'
-        enum { NONE, DOUBLE, LOGICAL, INT32, UINT32, INT64, UINT64 } elementType;
-        bool strict;    ///< Only for input ports
+/// Report a warning
+void reportWarning(const char* msgID, const char* msg) {
+    mexWarnMsgIdAndTxt(msgID, msg);
+}
+
+namespace OBNnode {
+    /** The main node class for Matlab. */
+    class YarpNodeMatlab: public OBNnode::YarpNode {
+    public:
+        
+        /** Structure containing info about a port in this node. */
+        struct PortInfo {
+            OBNnode::YarpPortBase *port;
+            enum { INPUTPORT, OUTPUTPORT, DATAPORT } type;
+            char container;     ///< 's', 'v', 'm', 'b'
+            enum { NONE, DOUBLE, LOGICAL, INT32, UINT32, INT64, UINT64 } elementType;
+            bool strict;    ///< Only for input ports
+        };
+        
+        /** Vector of all port objects belonging to this node, which are explicitly managed by the node object. */
+        std::vector<PortInfo> _all_ports;
+        
+        /** \brief Meta-function for creating all kinds of input ports supported by this class. */
+        int createInputPort(char container, const std::string &element, const std::string &name, bool strict);
+        
+        /** \brief Meta-function for creating all kinds of output ports supported by this class. */
+        int createOutputPort(char container, const std::string &element, const std::string &name);
+        
+        YarpNodeMatlab(const std::string& name, const std::string& ws = ""): YarpNode(name, ws) {
+        }
+        
+        virtual ~YarpNodeMatlab();
+        
+        
+        // === Events between the C++ node and Matlab ===
+        
+        /** Type to pass arguments of an event */
+        union MLEventArg {
+            OBNnode::updatemask_t mask;
+        };
+        
+        /** The event type */
+        enum MLEventType {
+            MLE_INIT = OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT,
+            MLE_Y = OBNSimMsg::SMN2N_MSGTYPE_SIM_Y,
+            MLE_X = OBNSimMsg::SMN2N_MSGTYPE_SIM_X,
+            MLE_TERM = OBNSimMsg::SMN2N_MSGTYPE_SIM_TERM
+        };
+        
+        /** The current event (returned by runStep) */
+        struct {
+            MLEventType type;
+            MLEventArg arg;
+        } _ml_current_event;
+        
+        bool _ml_pending_event = false;     ///< if there is a Matlab event pending
+        
+        /** This variable stores the current node event in the event queue. This is because while this node is running, whenever it needs to execute a callback in Matlab, which is usually in the middle of an event's execution, it must return to Matlab, so later on, when the node is called again, it must resume the current event's execution. Therefore we must save the event object to return to it (to run its post-execution. */
+        std::shared_ptr<NodeEvent> _current_node_event;
+        
+        /** \brief Run the node until it stops or until a callback event. */
+        int runStep(double timeout);
+        
+        /** Override stopSimulation. */
+        void stopSimulation() {
+            YarpNode::stopSimulation();
+            _ml_pending_event = false;
+            _current_node_event.reset();
+        }
+        
+    public:
+        /* =========== Simulation callbacks =========== */
+        
+        /** \brief Callback for UPDATE_Y event */
+        virtual void onUpdateY(updatemask_t m) {
+            // Post a Matlab event for SIM_Y
+            _ml_current_event.type = MLE_Y;
+            _ml_current_event.arg.mask = m;
+            _ml_pending_event = true;
+        }
+        
+        /** \brief Callback for UPDATE_X event */
+        virtual void onUpdateX() {
+            // Post a Matlab event for SIM_X
+            _ml_current_event.type = MLE_X;
+            _ml_current_event.arg.mask = _current_updates;
+            _ml_pending_event = true;
+        }
+        
+        /** \brief Callback to initialize the node before each simulation. */
+        virtual void onInitialization() {
+            // Post a Matlab event for SIM_INIT
+            _ml_current_event.type = MLE_INIT;
+            _ml_pending_event = true;
+        }
+        
+        
+        /** \brief Callback before the node's current simulation is terminated. */
+        virtual void onTermination() {
+            // Post a Matlab event for SIM_TERM
+            _ml_current_event.type = MLE_TERM;
+            _ml_pending_event = true;
+        }
+        
+        /* =========== Callback Methods for errors ============= */
+        
+        /** Callback for error when parsing the raw binary data into a structured message (e.g. ProtoBuf or JSON) */
+        virtual void onRawMessageError(YarpPortBase * port) {
+            auto msg = "Error while parsing the raw message for port: " + port->getPortName();
+            reportError("YARPNODE:communication", msg.c_str());
+        }
+        
+        /** Callback for error when reading the values from a structured message (e.g. ProtoBuf or JSON), e.g. if the type or dimension is invalid. */
+        virtual void onReadValueError(YarpPortBase * port) {
+            auto msg = "Error while extracting value from message for port: " + port->getPortName();
+            reportError("YARPNODE:communication", msg.c_str());
+        }
+        
+        /** Callback for error when sending the values (typically happens when serializing the message to be sent). */
+        virtual void onSendMessageError(YarpOutputPortBase * port) {
+            auto msg = "Error while sending a value from port: " + port->getPortName();
+            reportError("YARPNODE:communication", msg.c_str());
+        }
+        
+        /** Callback for error interacting with the SMN and openBuildNet system.  Used for serious errors.
+         \param msg A string containing the error message.
+         */
+        virtual void onOBNError(const std::string& msg) {
+            reportError("YARPNODE:openBuildNet", msg.c_str());
+        }
+        
+        /** Callback for warning issues interacting with the SMN and openBuildNet system, e.g. an unrecognized system message from the SMN.  Usually the simulation may continue without any serious consequence.
+         \param msg A string containing the warning message.
+         */
+        virtual void onOBNWarning(const std::string& msg) {
+            reportWarning("YARPNODE:openBuildNet", msg.c_str());
+        }
     };
-    
-    /** Vector of all port objects belonging to this node, which are explicitly managed by the node object. */
-    std::vector<PortInfo> _all_ports;
-    
-    /** \brief Meta-function for creating all kinds of input ports supported by this class. */
-    int createInputPort(char container, const std::string &element, const std::string &name, bool strict);
-    
-    /** \brief Meta-function for creating all kinds of output ports supported by this class. */
-    int createOutputPort(char container, const std::string &element, const std::string &name);
-    
-    YarpNodeMatlab(const std::string& name, const std::string& ws = ""): YarpNode(name, ws) {
-    }
-    
-    virtual ~YarpNodeMatlab();
-    
-
-    // === Events between the C++ node and Matlab ===
-    
-    /** Type to pass arguments of an event */
-    union MLEventArg {
-        OBNnode::updatemask_t mask;
-    };
-    
-    /** The event type */
-    enum MLEventType {
-        MLE_INIT = OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT,
-        MLE_UPDATEY = OBNSimMsg::SMN2N_MSGTYPE_SIM_Y,
-        MLE_UPDATEX = OBNSimMsg::SMN2N_MSGTYPE_SIM_X,
-        MLE_TERM = OBNSimMsg::SMN2N_MSGTYPE_SIM_TERM
-    };
-
-    /** The current event (returned by runStep) */
-    struct {
-        MLEventType type;
-        MLEventArg arg;
-    } _current_event;
-    
-    /** \brief Run the node until it stops or until a callback event. */
-    int runStep(double timeout);
-
-    void stopRunningNode();
-private:
-
-};
+}
 
 
 #endif /* OBNSIM_YARP_H_ */
