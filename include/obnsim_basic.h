@@ -15,7 +15,7 @@
 
 namespace OBNsim {
     typedef int64_t simtime_t;  ///< Simulation time type, as number of nano-seconds from beginning.
-    typedef int64_t updatemask_t;  ///< Update mask type: each bit corresponds to one update, so the width of the type is the maximum number of updates.
+    typedef uint64_t updatemask_t;  ///< Update mask type: each bit corresponds to one update, so the width of the type is the maximum number of updates.
 }
 
 

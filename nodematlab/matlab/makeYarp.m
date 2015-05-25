@@ -4,8 +4,7 @@ if ~exist('private', 'dir')
 end
 
 % Call protoc to generate ProtoBuf files
-system /usr/local/bin/protoc -I=../../msg --cpp_out=private ...
-    ../../msg/obnsim_msg.proto ../../msg/obnsim_io.proto
+system('/usr/local/bin/protoc -I=../../msg --cpp_out=private ../../msg/obnsim_msg.proto ../../msg/obnsim_io.proto');
 
 if ~exist('private/obnsim_msg.pb.h', 'file') || ~exist('private/obnsim_io.pb.h', 'file')
     error('Could not run ProtoBuf compiler to generate message classes.');

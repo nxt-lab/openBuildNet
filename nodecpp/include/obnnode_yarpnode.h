@@ -186,7 +186,7 @@ namespace OBNnode {
         class WaitForCondition {
             /** Status of the condition: active (waiting for), cleared (but not yet fetched), inactive (can be reused) */
             enum { ACTIVE, CLEARED, INACTIVE } status;
-            yarp::os::Event _event;     ///< The event condition to wait on
+            yarp::os::Semaphore _event;     ///< The event condition to wait on
             OBNSimMsg::MSGDATA _data;   ///< The data record (if available) of the message that cleared the condition
             /** Returns true if the condition is cleared. */
             typedef std::function<bool (const OBNSimMsg::SMN2N&)> the_checker;
@@ -197,42 +197,50 @@ namespace OBNnode {
             /** Make the condition inactive, to be reused later. */
             void reset() {
                 status = INACTIVE;
-                _event.reset();
+                // reset the semaphore by decreasing it until it becomes 0
+                while (_event.check()) { }  // _event.reset();
                 _data.Clear();
             }
         public:
             template<typename F>
-            WaitForCondition(F f): status(ACTIVE), _event(false), _check_func(f) { }
+            WaitForCondition(F f): status(ACTIVE), _event(0), _check_func(f) { }
             
             // virtual ~WaitForCondition() { std::cout << "~WaitForCondition" << std::endl; }
 
-            /** Wait (blocking) for the condition to hold. */
-            void wait() { _event.wait(); }
+            /** \brief Wait (blocking or with timeout) for the condition to hold.
+             \param timeout Timeout in seconds, or non-positive if no timeout
+             \return true if successful; false if timeout
+             */
+            bool wait(double timeout) {
+                return (timeout <= 0.0)?(_event.wait(),true):_event.waitWithTimeout(timeout);
+            }
             
             /** Return the data of the message that cleared the condition. Make sure that the condition was cleared before accessing the data. */
             const OBNSimMsg::MSGDATA& getData() const { return _data; }
         };
         
         /** Check if an wait-for condition is cleared. */
-        bool isWaitForCleared(const WaitForCondition& c) {
+        bool isWaitForCleared(const WaitForCondition* c) {
+            assert(c);
             yarp::os::LockGuard lock(_waitfor_conditions_mutex);
-            return c.status == WaitForCondition::CLEARED;
+            return c->status == WaitForCondition::CLEARED;
         }
         
         /** Reset wait-for condition. If the condition isn't reset implicitly, it should be reset by calling this function after it was cleared and its result has been used. */
-        void resetWaitFor(WaitForCondition& c) {
+        void resetWaitFor(WaitForCondition* c) {
+            assert(c);
             yarp::os::LockGuard lock(_waitfor_conditions_mutex);
-            c.reset();
+            c->reset();
         }
 
         /** \brief Request a future irregular update from the Global Clock. */
         WaitForCondition* requestFutureUpdate(simtime_t t, updatemask_t m, bool waiting=true);
         
         /** \brief Get the result of a pending request for a future update. */
-        int64_t resultFutureUpdate(WaitForCondition*);
+        int64_t resultFutureUpdate(WaitForCondition*, double timeout=-1.0);
         
         /** \brief Wait until a wait-for condition cleared and returns its I field. */
-        int64_t resultWaitForCondition(WaitForCondition*);
+        int64_t resultWaitForCondition(WaitForCondition*, double timeout=-1.0);
         
     protected:
         std::forward_list<WaitForCondition> _waitfor_conditions;

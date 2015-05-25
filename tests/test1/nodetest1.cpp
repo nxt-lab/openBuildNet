@@ -46,19 +46,6 @@ public:
     bool initialize() {
         bool success = true;
         
-        // Add the ports to the node
-//        if (!(success = addInput(&velocity))) {
-//            std::cerr << "Error while adding velocity input." << std::endl;
-//        }
-//        
-//        if (success && !(success = addInput(&setpoint))) {
-//            std::cerr << "Error while adding setpoint input." << std::endl;
-//        }
-//        
-//        if (success && !(success = addOutput(&command))) {
-//            std::cerr << "Error while adding control output." << std::endl;
-//        }
-        
         // Open the SMN port
         success = success && openSMNPort();
         

@@ -1,5 +1,6 @@
 classdef OBNNode < handle
     % Class that implements an openBuildNet node in Matlab.
+    %
     % This file is part of the openBuildNet simulation framework developed
     % at EPFL.
     %
@@ -7,28 +8,8 @@ classdef OBNNode < handle
     
     % Last update: 2015-05-19
     
-    properties (Access=private)
-        id_     % pointer to the C++ node object
-        inputPorts     % map nodes' names to their IDs
-        outputPorts     % map nodes' names to their IDs
-        
-        % These are the callbacks for events receiving from the node object
-        % Each callback may receive some arguments, and returns nothing.
-        
-        % For both UPDATE_X and UPDATE_Y, we have an ordered list of
-        % callbacks, each for a unique update type. Each has an ID (the ID
-        % of the update type, an integer from 0 to MAX of update ID), a
-        % function handle 'func' to call, and optional custom arguments
-        % 'args' as a cell array. The callback is called with
-        %       func(args{:})
-        callbacks_update_y = struct('id', {}, 'func', {}, 'args', {});
-        callbacks_update_x = struct('id', {}, 'func', {}, 'args', {});
-        
-        % For other simple events, there is a single callback function with
-        % optional custom arguments. The callback is called with
-        %       func(args{:})
-        callback_init = struct('func', {}, 'args', {});
-        callback_term = struct('func', {}, 'args', {});
+    properties (Constant)
+        MaxUpdateID = obnsim_yarp_('maxUpdateID');
     end
     
     methods (Access=protected)
@@ -69,71 +50,9 @@ classdef OBNNode < handle
         end
     end
     
-    properties (Constant)
-        MaxUpdateID = obnsim_yarp_('maxUpdateID');
-    end
-    
-    methods (Access=protected)
-%         function processEvent(this, type, id)
-%             switch type
-%                 case 0  % message read
-%                     this.onDataRcvd(id);
-%                 otherwise
-%                     warning('YarpNode:unknown_event', 'An unknown event type was received.');
-%             end
-%             
-%             % Run through the list of events
-%             for k = 1:length(this.allEvents)
-%                 check(this.allEvents(k), type, id);
-%             end
-%         end
-        
-        function [portName, elementType] = checkPortSettings(this, portName, containerType, elementType)
-            % Check validity of a new physical input/output port. Used by
-            % create*Port functions.
-            [b, portName] = OBNNode.isValidIdentifier(portName);
-            assert(b, 'Invalid port''s name.');
-            assert(~this.inputPorts.isKey(portName) && ~this.outputPorts.isKey(portName),...
-                'Port with given name already exists.');
-            
-            assert(ischar(containerType) && isscalar(containerType) && ...
-                ismember(lower(containerType), 'svmb'), 'Invalid container type.');
-            
-            if containerType == 'b'
-                elementType = 'logical';
-            else
-                assert(ischar(elementType) && ~isempty(elementType), 'Element type must be a valid string.');
-                elementType = lower(elementType);
-                assert(ismember(elementType, {'logical', 'double', 'int32', 'uint32', 'int64', 'uint64'}),...
-                    'Invalid element type.');
-            end
-        end
-    end
-    
-    methods (Static)
-        function [b, vs] = isValidIdentifier(s)
-            %   [b, vs] = isValidIdentifier(s)
-            % Check if a given string is a valid identifier (name)
-            % Also tries to obtain a valid name from s and returns in vs
-            
-            if ~ischar(s)
-                vs = '';
-                b = false;
-                return;
-            end
-            
-            vs = strtrim(s);
-            b = ~isempty(vs) && vs(1) ~= '_' &&...
-                all(ismember(lower(vs), 'abcdefghijklmnopqrstuvwxyz0123456789_'));
-        end
-        
-        function b = isValidID(ID)
-            b = isnumeric(ID) && isscalar(ID) && ID >= 0 && floor(ID)==ID;
-        end
-    end
-    
     methods
         function this = OBNNode(nodeName, ws)
+            %       obj = OBNNode(nodeName, ws)
             % Create a new openBuildNet node in Matlab with a given name
             % and optionally a workspace name. The full name of the node in
             % the network will be /ws/nodeName
@@ -453,21 +372,72 @@ classdef OBNNode < handle
                     
                     % Add the new callback to the end
                     if strcmpi(evtype, 'Y')
-                        this.callbacks_update_y = [tmp, struct('id', id, 'func', func, 'args', varargin{2:end})];
+                        this.callbacks_update_y = [tmp, struct('id', id, 'func', func, 'args', {varargin(2:end)})];
                     else
-                        this.callbacks_update_x = [tmp, struct('id', id, 'func', func, 'args', varargin{2:end})];
+                        this.callbacks_update_x = [tmp, struct('id', id, 'func', func, 'args', {varargin(2:end)})];
                     end
                     
                 case 'INIT'
-                    this.callback_init = struct('func', func, 'args', varargin);
+                    this.callback_init = struct('func', func, 'args', {varargin});
                     
                 case 'TERM'
-                    this.callback_term = struct('func', func, 'args', varargin);
+                    this.callback_term = struct('func', func, 'args', {varargin});
                                         
                 otherwise
                     error('OBNNode:addCallback', 'Unrecognized event type: %s.', evtype);
             end
         end
+        
+        
+        function r = requestFutureUpdate(this, futureT, updates, timeout)
+            %   r = requestFutureUpdate(this, futureT, update, timeout)
+            % requests the SMN an irregular future event at time 'futureT'
+            % with updates specified in 'updates'. This function blocks the
+            % execution until it receives a response from the SMN for the
+            % request or until the given timeout. If timeout <= 0, no
+            % timeout can occur and this function can wait indefinitely.
+            %
+            % futureT must be an integer that specifies a time instant in
+            %   the future, that is futureT > currentSimTime; simulation
+            %   time is defined as the number of microseconds from the
+            %   start of the simulation; the request is invalid if futureT
+            %   is not in the future.
+            %
+            % updates must be a non-empty vector of indices of the desired
+            %   updates. Its entries must be integers between 0 and
+            %   MaxUpdateID.
+            %
+            % r is the result of the request; its value can be:
+            %   -2 if the request is invalid (e.g. futureT is invalid).
+            %   -1 if timeout occurred (request failed).
+            %   0  if the request was successful (accepted).
+            %   >0 if the request was rejected (failed) by the SMN; see the
+            %       OBN design document for details.
+            
+            narginchk(3, 4);
+            assert(isscalar(this));
+            assert(isvector(updates) && isnumeric(updates) && ...
+                all(updates >= 0 & updates <= this.MaxUpdateID) && ...
+                all(updates == floor(updates)),...
+                'updates must specify the indices of the desired updates.');
+            
+            if nargin < 4 || isempty(timeout)
+                timeout = -1.0;
+            else
+                assert(isscalar(timeout) && isnumeric(timeout), ...
+                    'Timeout must be a real number in seconds, or non-positive for no timeout.');
+            end
+            
+            % Construct the update mask
+            mask = uint64(0);
+            for k = 1:length(updates)
+                mask = bitset(mask, updates(k)+1);
+            end
+            
+            % Call MEX with futureT converted to int64
+            r = obnsim_yarp_('futureUpdate', this.id_, int64(futureT), mask, timeout);
+        end
+        
         
         function b = runSimulation(this, timeout)
             % The main function to run the simulation of the node.
@@ -571,6 +541,15 @@ classdef OBNNode < handle
             obnsim_yarp_('requestStopSim', this.id_);
         end
 
+        function t = currentSimTime(this)
+            %   t = node.currentSimTime()
+            %returns the current simulation time as an integer number of
+            %micro-seconds from the beginning of the simulation (when
+            %simulation time is 0).
+            assert(isscalar(this));
+            t = obnsim_yarp_('simTime', this.id_);
+        end
+        
 %         % Wait until a new event is received and process it (one event only)
 %         function wait(this)
 %             assert(isscalar(this));
@@ -627,5 +606,88 @@ classdef OBNNode < handle
 %         end
 %         
 
+    end
+    
+    properties (Access=private)
+        id_     % pointer to the C++ node object
+        inputPorts     % map nodes' names to their IDs
+        outputPorts     % map nodes' names to their IDs
+        
+        % These are the callbacks for events receiving from the node object
+        % Each callback may receive some arguments, and returns nothing.
+        
+        % For both UPDATE_X and UPDATE_Y, we have an ordered list of
+        % callbacks, each for a unique update type. Each has an ID (the ID
+        % of the update type, an integer from 0 to MAX of update ID), a
+        % function handle 'func' to call, and optional custom arguments
+        % 'args' as a cell array. The callback is called with
+        %       func(args{:})
+        callbacks_update_y = struct('id', {}, 'func', {}, 'args', {});
+        callbacks_update_x = struct('id', {}, 'func', {}, 'args', {});
+        
+        % For other simple events, there is a single callback function with
+        % optional custom arguments. The callback is called with
+        %       func(args{:})
+        callback_init = struct('func', {}, 'args', {});
+        callback_term = struct('func', {}, 'args', {});
+    end
+    
+    methods (Static)
+        function [b, vs] = isValidIdentifier(s)
+            %   [b, vs] = isValidIdentifier(s)
+            % Check if a given string is a valid identifier (name)
+            % Also tries to obtain a valid name from s and returns in vs
+            
+            if ~ischar(s)
+                vs = '';
+                b = false;
+                return;
+            end
+            
+            vs = strtrim(s);
+            b = ~isempty(vs) && vs(1) ~= '_' &&...
+                all(ismember(lower(vs), 'abcdefghijklmnopqrstuvwxyz0123456789_'));
+        end
+        
+        function b = isValidID(ID)
+            b = isnumeric(ID) && isscalar(ID) && ID >= 0 && floor(ID)==ID;
+        end
+    end
+    
+    methods (Access=protected)
+%         function processEvent(this, type, id)
+%             switch type
+%                 case 0  % message read
+%                     this.onDataRcvd(id);
+%                 otherwise
+%                     warning('YarpNode:unknown_event', 'An unknown event type was received.');
+%             end
+%             
+%             % Run through the list of events
+%             for k = 1:length(this.allEvents)
+%                 check(this.allEvents(k), type, id);
+%             end
+%         end
+        
+        function [portName, elementType] = checkPortSettings(this, portName, containerType, elementType)
+            % Check validity of a new physical input/output port. Used by
+            % create*Port functions.
+            [b, portName] = OBNNode.isValidIdentifier(portName);
+            assert(b, 'Invalid port''s name.');
+            assert(~this.inputPorts.isKey(portName) && ~this.outputPorts.isKey(portName),...
+                'Port with given name already exists.');
+            
+            assert(ischar(containerType) && isscalar(containerType) && ...
+                ismember(lower(containerType), 'svmb'), 'Invalid container type.');
+            
+            if containerType == 'b'
+                elementType = 'logical';
+            else
+                assert(ischar(elementType) && ~isempty(elementType), 'Element type must be a valid string.');
+                elementType = lower(elementType);
+                assert(ismember(elementType, {'logical', 'double', 'int32', 'uint32', 'int64', 'uint64'}),...
+                    'Invalid element type.');
+            end
+        end
     end
 end

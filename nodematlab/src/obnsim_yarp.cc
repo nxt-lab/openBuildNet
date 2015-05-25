@@ -303,8 +303,8 @@ int YarpNodeMatlab::runStep(double timeout) {
 /* ============ MEX interface ===============*/
 
 // Instance manager
-//template class mexplus::Session<YPort>;
 template class mexplus::Session<YarpNodeMatlab>;
+template class mexplus::Session<YarpNode::WaitForCondition>;
 
 #define READ_INPUT_SCALAR_HELPER(A,B,C) \
   YarpInput<A,obn_scalar<B>,C> *p = dynamic_cast<YarpInput<A,obn_scalar<B>,C>*>(portinfo.port); \
@@ -632,6 +632,17 @@ namespace {
             reportError("YARPNODE:sendSync", "Internal error: port object type does not match its declared type.");
         }
     }
+    
+    // Returns the current simulation time of the node.
+    // Args: node object pointer
+    // Returns: current simulation time as an integer
+    MEX_DEFINE(simTime) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 1);
+        OutputArguments output(nlhs, plhs, 1);
+        
+        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        output.set(0, ynode->currentSimulationTime());
+    }
 
 //    // Get full Yarp name of a port
 //    MEX_DEFINE(yarpName) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
@@ -779,6 +790,24 @@ namespace {
         }
     }
     
+    // Request an irregular future update.
+    // This is a blocking call, possibly with a timeout, that waits until it receives the response from the SMN or until a timeout.
+    // Args: node object pointer, future time (integer value in the future), update mask of the requested update (int64), timeout (double, can be <= 0)
+    // Returns: status of the request: 0 if successful (accepted), -1 if timeout (failed), -2 if request is invalid, >0 if other errors (failed, see OBN documents for details).
+    MEX_DEFINE(futureUpdate) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 4);
+        OutputArguments output(nlhs, plhs, 1);
+        
+        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        auto *pCond = ynode->requestFutureUpdate(input.get<simtime_t>(1), input.get<updatemask_t>(2), false);
+        if (pCond) {
+            output.set(0, ynode->resultFutureUpdate(pCond, input.get<double>(3)));
+        } else {
+            output.set(0, -2);
+        }
+    }
+    
+    
     // Request/notify the SMN to stop, then terminate the node's simulation regardless of whether the request was accepted or not. See YarpNodeMatlab::stopSimulation for details.
     // Args: node object pointer
     // Return: none
@@ -836,64 +865,6 @@ namespace {
         output.set(0, ynode->nodeState() == OBNnode::YarpNode::NODE_STOPPED);
     }
     
-        
-    // Defines MEX API for wait
-    // Block until one of the ports signals ready
-    // Return the event type and ID of the port
-//    MEX_DEFINE(wait) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-//        InputArguments input(nrhs, prhs, 1);
-//        OutputArguments output(nlhs, plhs, 2);
-//        
-//        YarpNode *m = Session<YarpNode>::get(input.get(0));
-//        YarpNode::Event ev = m->wait();
-//        
-//        output.set(0, ev.type);
-//        output.set(1, ev.index);
-//    }
-//    
-//    // Defines MEX API for waitTimeout
-//    // Block until one of the ports signals ready or timeout
-//    // Return [true if there is event, event type, the ID of the port]
-//    MEX_DEFINE(waitTimeout) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-//        InputArguments input(nrhs, prhs, 2);
-//        OutputArguments output(nlhs, plhs, 3);
-//        
-//        YarpNode::Event ev;
-//        YarpNode *m = Session<YarpNode>::get(input.get(0));
-//        
-//        if (m->waitTimeout(input.get<double>(1), ev)) {
-//            output.set(0, true);
-//            output.set(1, ev.type);
-//            output.set(2, ev.index);
-//        }
-//        else {
-//            output.set(0, false);
-//            output.set(1, 0);
-//            output.set(2, 0);
-//        }
-//    }
-//    
-//    // Defines MEX API for check
-//    // Similar to waitTimeout() but does not block; if there is no event pending, it will return immediately.
-//    // Return [true if there is event, event type, the ID of the port]
-//    MEX_DEFINE(check) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-//        InputArguments input(nrhs, prhs, 1);
-//        OutputArguments output(nlhs, plhs, 3);
-//        
-//        YarpNode::Event ev;
-//        YarpNode *m = Session<YarpNode>::get(input.get(0));
-//        
-//        if (m->checkEvent(ev)) {
-//            output.set(0, true);
-//            output.set(1, ev.type);
-//            output.set(2, ev.index);
-//        }
-//        else {
-//            output.set(0, false);
-//            output.set(1, 0);
-//            output.set(2, 0);
-//        }
-//    }
     
     // Create a new node object
     // Args: nodeName, workspace

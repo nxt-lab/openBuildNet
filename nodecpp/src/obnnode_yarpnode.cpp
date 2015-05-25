@@ -79,7 +79,7 @@ bool YarpNode::openSMNPort() {
  Make sure that the condition has been cleared (either after waiting for it or by calling YarpNode::isCleared()) before accessing its data, otherwise the content of the data record is undefined or it may cause a data race issue.
  \param t The time of the requested update; must be in the future t > current simulation time
  \param m The update mask requested for the update.
- \param waiting Whether the method should wait (blocking/synchronously) for the ACK to receive [default: true]
+ \param waiting Whether the method should wait (blocking/synchronously) for the ACK to receive [default: true]; if a timeout is desired, call this function with waiting=false and explicitly call wait() on the returned condition object.
  \return A pointer to the wait-for condition, which is used to wait for the ACK; or nullptr if the request is invalid.
  */
 YarpNode::WaitForCondition* YarpNode::requestFutureUpdate(simtime_t t, updatemask_t m, bool waiting) {
@@ -131,7 +131,7 @@ YarpNode::WaitForCondition* YarpNode::requestFutureUpdate(simtime_t t, updatemas
 
     // If waiting = true, we will wait (blocking) until the wait-for condition is cleared; otherwise, just return
     if (waiting) {
-        pCond->wait();
+        pCond->wait(-1.0);
     }
     
     return pCond;
@@ -140,31 +140,35 @@ YarpNode::WaitForCondition* YarpNode::requestFutureUpdate(simtime_t t, updatemas
 /** This method returns the result of a pending request for a future update. If the request hasn't been acknowledged by the SMN, this method will wait (block) until it receives the ACK for this request. It returns the value of the I field of the ACK message's data (see the OBN design document for details). Basically if it returns 0, the request was successful; otherwise there was an error and the request failed.
   This method will reset the condition after it's cleared.
  \param pCond Pointer to the condition object, as returned by requestFutureUpdate().
- \return The result of the request: 0 if successful.
+ \param timeout An optional timeout value; if a timeout occurs and the waiting failed then the returned value will be -1.
+ \return The result of the request: 0 if successful; -1 if the waiting failed (due to timeout).
  \sa requestFutureUpdate()
  */
-int64_t YarpNode::resultFutureUpdate(YarpNode::WaitForCondition* pCond) {
+int64_t YarpNode::resultFutureUpdate(YarpNode::WaitForCondition* pCond, double timeout) {
     return resultWaitForCondition(pCond);
 }
 
 /** This method waits until a wait-for condition is cleared and returns the value of the integer field I of the message data. This method does not check if the return message actually had the message data and the I field; if it did not, the default value (0) is returned.
  This method will reset the condition after it's cleared.
+ \param pCond Pointer to the condition object.
+ \param timeout An optional timeout value; if a timeout occurs and the waiting failed then the returned value will be -1.
+ \return The integer field I of the message data if the waiting is successful (default to 0 if I does not exist); or -1 if the waiting failed (due to timeout).
  */
-int64_t YarpNode::resultWaitForCondition(YarpNode::WaitForCondition* pCond) {
+int64_t YarpNode::resultWaitForCondition(YarpNode::WaitForCondition* pCond, double timeout) {
     assert(pCond);
     
     _waitfor_conditions_mutex.lock();
     auto s = pCond->status;
     _waitfor_conditions_mutex.unlock();
     assert(s != WaitForCondition::INACTIVE);
-    if (s == YarpNode::WaitForCondition::ACTIVE) {
-        pCond->wait();
+    if ((s == YarpNode::WaitForCondition::ACTIVE)?pCond->wait(timeout):true) {
+        // At this point, the status of the condition must be CLEARED => get the data and the I field
+        auto i = pCond->getData().i();
+        resetWaitFor(pCond);
+        return i;
+    } else {
+        return -1;
     }
-    
-    // At this point, the status of the condition must be CLEARED => get the data and the I field
-    auto i = pCond->getData().i();
-    resetWaitFor(*pCond);
-    return i;
 }
 
 /** This method iterates the list of wait-for conditions and check if any of them can be cleared according to the given message. If there is one, its status will be changed to CLEARED, the MSGDATA will be saved. At most one condition can be cleared. */
@@ -180,7 +184,7 @@ void YarpNode::checkWaitForCondition(const OBNSimMsg::SMN2N& msg) {
             if (msg.has_data()) {
                 c->_data.CopyFrom(msg.data());
             }
-            c->_event.signal();
+            c->_event.post();
             return;
         }
     }
@@ -618,16 +622,17 @@ void YarpNode::NodeEvent_TERMINATE::executeMain(YarpNode* pnode) {
     }
 
     basic_processing(pnode);
+
+    // Set the node's state to STOPPED
+    // We change the node's state before calling the callback onTermination() because this system message means that simulation is definitely going to terminate immediately.
+    if (pnode->_node_state == YarpNode::NODE_RUNNING) {
+        pnode->_node_state = YarpNode::NODE_STOPPED;
+    }
     
     pnode->onTermination();
 }
 
 /** Handle Termination: Post. */
 void YarpNode::NodeEvent_TERMINATE::executePost(YarpNode* pnode) {
-    // Set the node's state to STOPPED
-    if (pnode->_node_state == YarpNode::NODE_RUNNING) {
-        pnode->_node_state = YarpNode::NODE_STOPPED;
-    }
-    
     // No ACK is needed
 }
