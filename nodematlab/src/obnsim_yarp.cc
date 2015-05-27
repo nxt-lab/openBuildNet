@@ -322,6 +322,20 @@ template class mexplus::Session<YarpNode::WaitForCondition>;
   else { reportError("YARPNODE:readInput", "Internal error: port object type does not match its declared type."); }
 
 
+template <typename ETYPE, typename F>
+void read_input_vector_helper(F &FUNC, OBNnode::YarpPortBase *port, OutputArguments &output) {
+    YarpInput<OBN_PB,obn_vector<ETYPE>,false> *p = dynamic_cast<YarpInput<OBN_PB,obn_vector<ETYPE>,false>*>(port);
+    if (p) {
+        auto &pv = p->get();
+        MxArray ml(FUNC(pv.size()));
+        std::copy(pv.data(), pv.data()+pv.size(), ml.getData<ETYPE>());
+        output.set(0, ml.release());
+    } else {
+        reportError("YARPNODE:readInput", "Internal error: port object type does not match its declared type.");
+    }
+}
+
+
 #define WRITE_OUTPUT_SCALAR_HELPER(A,B) \
   YarpOutput<A,obn_scalar<B>> *p = dynamic_cast<YarpOutput<A,obn_scalar<B>>*>(portinfo.port); \
   if (p) { *p = input.get<B>(2); } \
@@ -409,7 +423,8 @@ namespace {
             case 'v':
                 switch (portinfo.elementType) {
                     case YarpNodeMatlab::PortInfo::DOUBLE: {
-                        READ_INPUT_VECTOR_HELPER(double,Numeric<double>)
+                        //READ_INPUT_VECTOR_HELPER(double,Numeric<double>)
+                        read_input_vector_helper<double>(&MxArray::Numeric<double>, portinfo.port, output);
                         break;
                     }
                         
