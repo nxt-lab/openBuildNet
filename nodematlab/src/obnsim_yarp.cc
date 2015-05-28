@@ -13,6 +13,7 @@
 #include <iostream>       // cout
 #include <vector>
 #include <algorithm>    // std::copy
+#include <functional>
 
 #include <mex.h>        // Standard MEX interface for C
 #include <mexplus.h>    // MEX interface for C++
@@ -85,8 +86,6 @@ int YarpNodeMatlab::createInputPort(char container, const std::string &element, 
             
         case 'm':
         case 'M':
-            reportError("YARPNODE:createOutputPort", "Matrix type is currently unsupported.");
-            return -1;
             if (strict) {
                 //port = YNM_PORT_CLASS_BY_NAME_STRICT(YarpPortBase,YarpInput,obn_matrix,element,true,name);
                 portinfo.port = nullptr;
@@ -154,8 +153,6 @@ int YarpNodeMatlab::createOutputPort(char container, const std::string &element,
             
         case 'm':
         case 'M':
-            reportError("YARPNODE:createOutputPort", "Matrix type is currently unsupported.");
-            return -1;
             port = YNM_PORT_CLASS_BY_NAME(YarpOutputPortBase,YarpOutput,obn_matrix,element,name);
             portinfo.container = 'm';
             break;
@@ -311,27 +308,44 @@ template class mexplus::Session<YarpNode::WaitForCondition>;
   if (p) { output.set(0, p->get()); } \
   else { reportError("YARPNODE:readInput", "Internal error: port object type does not match its declared type."); }
 
-#define READ_INPUT_VECTOR_HELPER(ETYPE,FUNC) \
-  YarpInput<OBN_PB,obn_vector<ETYPE>,false> *p = dynamic_cast<YarpInput<OBN_PB,obn_vector<ETYPE>,false>*>(portinfo.port); \
-  if (p) { \
-    auto &pv = p->get(); \
-    MxArray ml(MxArray::FUNC(pv.size())); \
-    std::copy(pv.data(), pv.data()+pv.size(), ml.getData<ETYPE>()); \
-    output.set(0, ml.release()); \
-  } \
-  else { reportError("YARPNODE:readInput", "Internal error: port object type does not match its declared type."); }
 
-
-template <typename ETYPE, typename F>
-void read_input_vector_helper(F &FUNC, OBNnode::YarpPortBase *port, OutputArguments &output) {
+// For vectors, regardless of how vectors are stored in Matlab's mxArray vs. in Eigen, we can simply copy the exact number of values from one to another.
+template <typename ETYPE>
+mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::YarpPortBase *port) {
     YarpInput<OBN_PB,obn_vector<ETYPE>,false> *p = dynamic_cast<YarpInput<OBN_PB,obn_vector<ETYPE>,false>*>(port);
     if (p) {
         auto &pv = p->get();
-        MxArray ml(FUNC(pv.size()));
+        MxArray ml(FUNC(pv.size(), 1));
         std::copy(pv.data(), pv.data()+pv.size(), ml.getData<ETYPE>());
-        output.set(0, ml.release());
+        return ml.release();
     } else {
         reportError("YARPNODE:readInput", "Internal error: port object type does not match its declared type.");
+        return nullptr;
+    }
+}
+
+// For matrices, the order in which Matlab and Eigen store matrices (column-major or row-major) will affect how data can be copied.  Because both Eigen and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.  For completeness, there are commented code lines that safely transfer data by accessing element-by-element, but this would be slower.
+template <typename ETYPE>
+mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::YarpPortBase *port) {
+    YarpInput<OBN_PB,obn_matrix<ETYPE>,false> *p = dynamic_cast<YarpInput<OBN_PB,obn_matrix<ETYPE>,false>*>(port);
+    if (p) {
+        auto &pv = p->get();
+        auto nr = pv.rows(), nc = pv.cols();
+        MxArray ml(FUNC(nr, nc));
+        
+        // The following lines copy the whole chunk of raw data from Eigen to MEX/Matlab, it's faster but requires that Matlab and Eigen must use the same order type
+        std::copy(pv.data(), pv.data()+nr*nc, ml.getData<ETYPE>());
+        return ml.release();
+        
+// // The following lines copy element-by-element: it's safe but slow.
+//        for (std::size_t c = 0; c < nc; ++c) {
+//            for (std::size_t r = 0; r < nr; ++r) {
+//                ml.set(r, c, pv.coeff(r, c));
+//            }
+//        }
+    } else {
+        reportError("YARPNODE:readInput", "Internal error: port object type does not match its declared type.");
+        return nullptr;
     }
 }
 
@@ -346,13 +360,43 @@ void read_input_vector_helper(F &FUNC, OBNnode::YarpPortBase *port, OutputArgume
 // - Use MEXPLUS to convert from mxArray to vector<D> of appropriate type
 // - Use Eigen::Map to create an Eigen's vector on the data returned by the vector object.
 // - Assign the map object to the Eigen vector object (inside the port object).
-#define WRITE_OUTPUT_VECTOR_HELPER(ETYPE) \
-  YarpOutput<OBN_PB,obn_vector<ETYPE>> *p = dynamic_cast<YarpOutput<OBN_PB,obn_vector<ETYPE>>*>(portinfo.port); \
-  if (p) { \
-    std::vector<ETYPE> v(input.get<std::vector<ETYPE>>(2)); \
-    *p = (*(*p)).Map(v.data(), v.size()); \
-  } \
-  else { reportError("YARPNODE:writeOutput", "Internal error: port object type does not match its declared type."); }
+template <typename ETYPE>
+void write_output_vector_helper(const InputArguments &input, OBNnode::YarpPortBase *port) {
+    YarpOutput<OBN_PB,obn_vector<ETYPE>> *p = dynamic_cast<YarpOutput<OBN_PB,obn_vector<ETYPE>>*>(port);
+    if (p) {
+        auto from = MxArray(input.get(2)); // MxArray object
+        auto &to = *(*p);
+        to = to.Map(from.getData<ETYPE>(), from.size());
+        
+// // Another way to copy
+//        std::vector<ETYPE> v(input.get<std::vector<ETYPE>>(2));
+//        *p = (*(*p)).Map(v.data(), v.size());
+    } else {
+        reportError("YARPNODE:writeOutput", "Internal error: port object type does not match its declared type.");
+    }
+}
+
+// For matrices, the order in which Matlab and Eigen store matrices (column-major or row-major) will affect how data can be copied.  Because both Eigen and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.  For completeness, there are commented code lines that safely transfer data by accessing element-by-element, but this would be slower.
+template <typename ETYPE>
+void write_output_matrix_helper(const InputArguments &input, OBNnode::YarpPortBase *port) {
+    YarpOutput<OBN_PB,obn_matrix<ETYPE>> *p = dynamic_cast<YarpOutput<OBN_PB,obn_matrix<ETYPE>>*>(port);
+    if (p) {
+        auto from = MxArray(input.get(2)); // MxArray object
+        auto &to = *(*p);
+        auto nr = from.rows(), nc = from.cols();
+        to = to.Map(from.getData<ETYPE>(), nr, nc);
+        
+//        // The following lines copy element-by-element: it's safe but slow.
+//        to.resize(nr, nc);
+//        for (std::size_t c = 0; c < nc; ++c) {
+//            for (std::size_t r = 0; r < nr; ++r) {
+//                to(r, c) = from.at<ETYPE>(r, c);
+//            }
+//        }
+    } else {
+        reportError("YARPNODE:writeOutput", "Internal error: port object type does not match its declared type.");
+    }
+}
 
 namespace {
     /* === Port interface === */
@@ -422,36 +466,29 @@ namespace {
                 
             case 'v':
                 switch (portinfo.elementType) {
-                    case YarpNodeMatlab::PortInfo::DOUBLE: {
-                        //READ_INPUT_VECTOR_HELPER(double,Numeric<double>)
-                        read_input_vector_helper<double>(&MxArray::Numeric<double>, portinfo.port, output);
+                    case YarpNodeMatlab::PortInfo::DOUBLE:
+                        output.set(0, read_input_vector_helper<double>(MxArray::Numeric<double>, portinfo.port));
                         break;
-                    }
                         
-                    case YarpNodeMatlab::PortInfo::LOGICAL: {
-                        READ_INPUT_VECTOR_HELPER(bool,Logical)
+                    case YarpNodeMatlab::PortInfo::LOGICAL:
+                        output.set(0, read_input_vector_helper<bool>(MxArray::Logical, portinfo.port));
                         break;
-                    }
                         
-                    case YarpNodeMatlab::PortInfo::INT32: {
-                        READ_INPUT_VECTOR_HELPER(int32_t,Numeric<int32_t>)
+                    case YarpNodeMatlab::PortInfo::INT32:
+                        output.set(0, read_input_vector_helper<int32_t>(MxArray::Numeric<int32_t>, portinfo.port));
                         break;
-                    }
                         
-                    case YarpNodeMatlab::PortInfo::INT64: {
-                        READ_INPUT_VECTOR_HELPER(int64_t,Numeric<int64_t>)
+                    case YarpNodeMatlab::PortInfo::INT64:
+                        output.set(0, read_input_vector_helper<int64_t>(MxArray::Numeric<int64_t>, portinfo.port));
                         break;
-                    }
                         
-                    case YarpNodeMatlab::PortInfo::UINT32: {
-                        READ_INPUT_VECTOR_HELPER(uint32_t,Numeric<uint32_t>)
+                    case YarpNodeMatlab::PortInfo::UINT32:
+                        output.set(0, read_input_vector_helper<uint32_t>(MxArray::Numeric<uint32_t>, portinfo.port));
                         break;
-                    }
-                        
-                    case YarpNodeMatlab::PortInfo::UINT64: {
-                        READ_INPUT_VECTOR_HELPER(uint64_t,Numeric<uint64_t>)
+                
+                    case YarpNodeMatlab::PortInfo::UINT64:
+                        output.set(0, read_input_vector_helper<uint64_t>(MxArray::Numeric<uint64_t>, portinfo.port));
                         break;
-                    }
                         
                     default:
                         reportError("YARPNODE:readInput", "Internal error: port's element type is invalid.");
@@ -460,7 +497,35 @@ namespace {
                 break;
                 
             case 'm':
-                reportError("YARPNODE:readInput", "Matrix type is not yet supported.");
+                switch (portinfo.elementType) {
+                    case YarpNodeMatlab::PortInfo::DOUBLE:
+                        output.set(0, read_input_matrix_helper<double>(MxArray::Numeric<double>, portinfo.port));
+                        break;
+                        
+                    case YarpNodeMatlab::PortInfo::LOGICAL:
+                        output.set(0, read_input_matrix_helper<bool>(MxArray::Logical, portinfo.port));
+                        break;
+                        
+                    case YarpNodeMatlab::PortInfo::INT32:
+                        output.set(0, read_input_matrix_helper<int32_t>(MxArray::Numeric<int32_t>, portinfo.port));
+                        break;
+                        
+                    case YarpNodeMatlab::PortInfo::INT64:
+                        output.set(0, read_input_matrix_helper<int64_t>(MxArray::Numeric<int64_t>, portinfo.port));
+                        break;
+                        
+                    case YarpNodeMatlab::PortInfo::UINT32:
+                        output.set(0, read_input_matrix_helper<uint32_t>(MxArray::Numeric<uint32_t>, portinfo.port));
+                        break;
+                        
+                    case YarpNodeMatlab::PortInfo::UINT64:
+                        output.set(0, read_input_matrix_helper<uint64_t>(MxArray::Numeric<uint64_t>, portinfo.port));
+                        break;
+                        
+                    default:
+                        reportError("YARPNODE:readInput", "Internal error: port's element type is invalid.");
+                        break;
+                }
                 break;
                 
             case 'b': {
@@ -548,10 +613,9 @@ namespace {
                 
             case 'v':
                 switch (portinfo.elementType) {
-                    case YarpNodeMatlab::PortInfo::DOUBLE: {
-                        WRITE_OUTPUT_VECTOR_HELPER(double)
+                    case YarpNodeMatlab::PortInfo::DOUBLE:
+                        write_output_vector_helper<double>(input, portinfo.port);
                         break;
-                    }
                         
                     case YarpNodeMatlab::PortInfo::LOGICAL: {
                         // This case is special because vector<bool> does not have data()
@@ -569,25 +633,21 @@ namespace {
                         break;
                     }
                         
-                    case YarpNodeMatlab::PortInfo::INT32: {
-                        WRITE_OUTPUT_VECTOR_HELPER(int32_t)
+                    case YarpNodeMatlab::PortInfo::INT32:
+                        write_output_vector_helper<int32_t>(input, portinfo.port);
                         break;
-                    }
                         
-                    case YarpNodeMatlab::PortInfo::INT64: {
-                        WRITE_OUTPUT_VECTOR_HELPER(int64_t)
+                    case YarpNodeMatlab::PortInfo::INT64:
+                        write_output_vector_helper<int64_t>(input, portinfo.port);
                         break;
-                    }
                         
-                    case YarpNodeMatlab::PortInfo::UINT32: {
-                        WRITE_OUTPUT_VECTOR_HELPER(uint32_t)
+                    case YarpNodeMatlab::PortInfo::UINT32:
+                        write_output_vector_helper<uint32_t>(input, portinfo.port);
                         break;
-                    }
                         
-                    case YarpNodeMatlab::PortInfo::UINT64: {
-                        WRITE_OUTPUT_VECTOR_HELPER(uint64_t)
+                    case YarpNodeMatlab::PortInfo::UINT64:
+                        write_output_vector_helper<uint64_t>(input, portinfo.port);
                         break;
-                    }
                         
                     default:
                         reportError("YARPNODE:writeOutput", "Internal error: port's element type is invalid.");
@@ -596,7 +656,35 @@ namespace {
                 break;
                 
             case 'm':
-                reportError("YARPNODE:writeOutput", "Matrix type is not yet supported.");
+                switch (portinfo.elementType) {
+                    case YarpNodeMatlab::PortInfo::DOUBLE:
+                        write_output_matrix_helper<double>(input, portinfo.port);
+                        break;
+                        
+                    case YarpNodeMatlab::PortInfo::LOGICAL:
+                        write_output_matrix_helper<bool>(input, portinfo.port);
+                        break;
+                        
+                    case YarpNodeMatlab::PortInfo::INT32:
+                        write_output_matrix_helper<int32_t>(input, portinfo.port);
+                        break;
+                        
+                    case YarpNodeMatlab::PortInfo::INT64:
+                        write_output_matrix_helper<int64_t>(input, portinfo.port);
+                        break;
+                        
+                    case YarpNodeMatlab::PortInfo::UINT32:
+                        write_output_matrix_helper<uint32_t>(input, portinfo.port);
+                        break;
+                        
+                    case YarpNodeMatlab::PortInfo::UINT64:
+                        write_output_matrix_helper<uint64_t>(input, portinfo.port);
+                        break;
+                        
+                    default:
+                        reportError("YARPNODE:writeOutput", "Internal error: port's element type is invalid.");
+                        break;
+                }
                 break;
                 
             case 'b': {
