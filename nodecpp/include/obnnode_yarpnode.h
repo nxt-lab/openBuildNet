@@ -57,6 +57,9 @@ namespace OBNnode {
         YarpNode(const std::string& _name, const std::string& ws = "");
         virtual ~YarpNode();
         
+        const std::string& name() const {
+            return _nodeName;
+        }
         
         /** Return full path to a port in this node. */
         std::string fullPortName(const std::string& portName) const {

@@ -587,6 +587,13 @@ namespace OBNnode {
             return _cur_value;
         }
         
+        /** Assign new value to the port. */
+        ValueType& operator= (const ValueType & rhs) {
+            _cur_value = rhs;
+            _isChanged = true;
+            return _cur_value;
+        }
+        
         
         /** Send data synchronously */
         virtual void sendSync() {
