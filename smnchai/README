@@ -1,0 +1,11 @@
+System Management Node (SMN) with Chaiscript support (SMNChai)
+
+* Requirements
+
+- All the requirements of the main SMN code.
+- Chaiscript (http://chaiscript.com/): the header files required to compile the SMN program with Chaiscript support are already included in the directory include/chaiscript, so there is no need to install Chaiscript to build the SMN. However, to run the compiled SMN program, the Chaiscript standard library must be present on the system, which can be installed from a recent release distribution of Chaiscript, downloadable from their website. Another option is to build the SMN with a statically linked Chaiscript standard library, embedded in the program without the need of any external library. In that case, there is no need to install Chaiscript, however the compiled SMN program will be significantly larger.
+
+* Building instructions
+
+- Use CMake to build the SMN program.
+- By default, the SMN with Chaiscript support will be built with the dynamic Chaiscript standard library, hence it requires the dynamic library to be present on the system to run. If it is preferred to link with the static standard library, turn on the flag SMNCHAI_CHAISCRIPT_STATIC before building the SMN.
