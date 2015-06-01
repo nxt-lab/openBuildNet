@@ -17,7 +17,7 @@
 #include <memory>               // shared_ptr
 //#include <unordered_map>         // std::unordered_map
 #include <forward_list>
-#include <functional>
+#include <functional>           // std::function
 
 #include <obnnode_basic.h>
 #include <obnnode_yarpportbase.h>
@@ -326,7 +326,11 @@ namespace OBNnode {
         /** Post a system openBuildNet event to the end of the queue (from an SMN2N message). */
         void postEvent(const OBNSimMsg::SMN2N& msg);
         
+        /** A node event that simply calls a given function can be post to the queue. This is the type of the callback function. */
+        typedef std::function<void (YarpNode*)> EventCallbackFunction;
+        
         /* Methods for pushing events of other types (node internal events) will be put here */
+        void postEvent(const EventCallbackFunction&);
    
         
     public:
