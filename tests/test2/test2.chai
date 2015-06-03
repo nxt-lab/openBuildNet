@@ -1,0 +1,27 @@
+var motordef = ["name" : "motor",
+		"inputs" : ["vol"],
+		"outputs" : ["v"],
+		"updates" : [["sampling" : 100*millisecond, "inputs" : ["vol" : false], "outputs" : ["v"]]
+			     ]
+		];
+var motor = node(motordef);
+
+var ctrldef = ["name" : "ctrl",
+	       "inputs" : ["v", "sp"],
+	       "outputs" : ["u"],
+	       "updates" : [["sampling" : 100*millisecond, "inputs" : ["v", "sp"], "outputs" : ["u"]]
+			    ]
+	       ];
+var ctrl = node(ctrldef, false);  // will add the node manually later
+add_node(ctrl);
+
+var sp = node(["name" : "sp", "outputs" : ["sp"], "updates" : [update("main", 0, 2*second, [], "sp")]], false);
+sp.need_updateX(false);
+add_node(sp);
+
+connect(sp.port("sp"), ctrl.port("sp"));
+connect(motor.port("v"), ctrl.port("v"));
+connect(ctrl.port("u"), motor.port("vol"));
+
+timeunit(millisecond);
+final_time(10*second);

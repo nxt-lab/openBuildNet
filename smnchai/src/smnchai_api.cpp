@@ -12,7 +12,9 @@
 
 #include <cassert>
 #include <algorithm>
+#include <cmath>
 #include <smnchai_api.h>
+#include <chaiscript/dispatchkit/bootstrap.hpp>
 
 using namespace chaiscript;
 using namespace SMNChai;
@@ -22,11 +24,19 @@ using namespace SMNChai;
  \param ws The WorkSpace object to which nodes and connections are added.
  */
 void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
+    // *********************************************
     // Register the Node class and its constructor
-    chai.add(constructor<Node (const std::string&)>(), "Node");
-    chai.add(user_type<Node>(), "Node");
+    // *********************************************
     
+    chai.add(user_type<Node>(), "Node");
+    chai.add(constructor<Node (const std::string&)>(), "new_node");
+    chai.add(bootstrap::copy_constructor<Node>("Node"));
+    
+    
+    // *********************************************
     // Methods to manipulate a node object: ports, updates, etc.
+    // *********************************************
+    
     chai.add(fun(&Node::add_input), "add_input");
     chai.add(fun(&Node::add_output), "add_output");
     chai.add(fun(&Node::add_dataport), "add_dataport");
@@ -40,18 +50,47 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     chai.add(user_type<SMNChai::PortInfo>(), "PortInfo");
     chai.add(fun(&Node::port), "port");
     
+    // *********************************************
     // Methods to work with the WorkSpace object: add nodes, connect ports...
     // These are bound with the given WorkSpace object
+    // *********************************************
+    
+    // Add a node object to the workspace:
+    // The object is COPIED to the workspace, so any later change to the Chaiscript's node object won't reflect in the workspace.
     chai.add(fun(&WorkSpace::add_node, &ws), "add_node");
+    
     chai.add(fun<void (PortInfo, PortInfo)>([&ws](PortInfo s, PortInfo t) { ws.connect(std::move(s), std::move(t)); }), "connect");
     chai.add(fun<void (WorkSpace::*)(const std::string &, const std::string &, const std::string &, const std::string &)>(&WorkSpace::connect, &ws), "connect");
     
     // Function to change the name of the workspace
     chai.add(fun(&WorkSpace::set_name, &ws), "workspace");
     
+    // *********************************************
     // Functions to configure the GC/simulation
+    // *********************************************
+    
+    /** Set timeout for ACK, in milliseconds. */
     chai.add(fun<void (int)>([&ws](int t) { ws.settings.ack_timeout = t; }), "ack_timeout");
-    chai.add(fun<void (OBNsim::simtime_t)>([&ws](OBNsim::simtime_t t) { ws.settings.final_time = t; }), "final_time");
+    
+    /** Set final simulation time, in microseconds. */
+    chai.add(fun<void (double)>([&ws](double t) {
+        if (t <= 0.0) { throw smnchai_exception("Final simulation time must be positive, but " + std::to_string(t) + " is given."); }
+        ws.settings.final_time = t;
+    }), "final_time");
+    
+    /** Set the atomic time unit, in microseconds. */
+    chai.add(fun<void (double)>([&ws](double t) {
+        if (t <= 0.0) { throw smnchai_exception("Time unit must be positive, but " + std::to_string(t) + " is given."); }
+        ws.settings.time_unit = t;
+    }), "timeunit");
+    
+    /** Defines constants for typical time values (in microseconds). */
+    chai.add(const_var(double(1.0)), "microsecond");
+    chai.add(const_var(double(1000.0)), "millisecond");
+    chai.add(const_var(double(1e6)), "second");
+    chai.add(const_var(double(60e6)), "minute");
+    chai.add(const_var(double(3.6e9)), "hour");
+    chai.add(const_var(double(24*3.6e9)), "day");
 }
 
 
@@ -60,7 +99,7 @@ bool SMNChai::Node::port_exists(const std::string &t_name) const {
 }
 
 
-OBNsmn::YARP::OBNNodeYARP* SMNChai::Node::create_yarp_node(OBNsmn::YARP::YARPPort *sys_port) const {
+OBNsmn::YARP::OBNNodeYARP* SMNChai::Node::create_yarp_node(OBNsmn::YARP::YARPPort *sys_port, const WorkSpace &ws) const {
     assert(sys_port);
     
     OBNsmn::YARP::OBNNodeYARP *p_node = new OBNsmn::YARP::OBNNodeYARP(m_name, m_updates.size(), std::unique_ptr<OBNsmn::YARP::YARPPort>(sys_port));
@@ -68,8 +107,9 @@ OBNsmn::YARP::OBNNodeYARP* SMNChai::Node::create_yarp_node(OBNsmn::YARP::YARPPor
     p_node->needUPDATEX = m_updateX;
     
     // Configure all update types in this node
+    // Note that time values are stored as real numbers of microseconds, which must be converted to integer values in time unit
     for (auto myupdate = m_updates.begin(); myupdate != m_updates.end(); ++myupdate) {
-        p_node->setUpdateType(myupdate->first, myupdate->second);
+        p_node->setUpdateType(myupdate->first, ws.get_time_value(myupdate->second));
     }
     
     return p_node;
@@ -120,7 +160,7 @@ void SMNChai::Node::add_dataport(const std::string &t_name) {
 }
 
 
-void SMNChai::Node::add_update(unsigned int t_id, OBNsim::simtime_t t_period) {
+void SMNChai::Node::add_update(unsigned int t_id, double t_period) {
     if (t_id > OBNsim::MAX_UPDATE_INDEX) {
         throw smnchai_exception("Update ID=" + std::to_string(t_id) + " on node '" + m_name + "' is out of range.");
     }
@@ -209,10 +249,8 @@ SMNChai::PortInfo SMNChai::Node::port(const std::string &t_port) const {
 }
 
 
-void SMNChai::WorkSpace::add_node(SMNChai::Node *p_node) {
-    assert(p_node);
-    
-    auto nodeName = p_node->get_name();
+void SMNChai::WorkSpace::add_node(const SMNChai::Node &p_node) {
+    auto nodeName = p_node.get_name();
     if (m_nodes.count(nodeName) != 0) {
         // Node already exists
         throw smnchai_exception("Node '" + nodeName + "' already exists in workspace '" + m_name + "'.");
@@ -256,7 +294,7 @@ void SMNChai::WorkSpace::connect(const std::string &from_node, const std::string
     }
     
     // Connect them
-    connect(itsrc->second.first->port(from_port), ittgt->second.first->port(to_port));
+    connect(itsrc->second.first.port(from_port), ittgt->second.first.port(to_port));
 }
 
 
@@ -264,7 +302,7 @@ void SMNChai::WorkSpace::print() const {
     std::cout << "Workspace '" << m_name << "'" << std::endl;
     std::cout << "List of nodes:" << std::endl;
     for (auto n: m_nodes) {
-        std::cout << n.second.first->get_name() << ' ';
+        std::cout << n.second.first.get_name() << ' ';
     }
     std::cout << "\nList of connections:" << std::endl;
     for (auto c: m_connections) {
@@ -281,6 +319,13 @@ std::string SMNChai::WorkSpace::get_full_path(const std::string &t_obj1, const s
 
 std::string SMNChai::WorkSpace::get_full_path(const SMNChai::PortInfo &t_port) const {
     return get_full_path(t_port.node_name, t_port.port_name);
+}
+
+
+OBNsim::simtime_t SMNChai::WorkSpace::get_time_value(double t) const {
+    assert(settings.time_unit > 0.0);
+    auto ti = std::llround(t / settings.time_unit);
+    return (ti < 0)?0:ti;
 }
 
 
@@ -303,7 +348,7 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
         
         // Create the node and associate the port with it
         // Note that the node object will own the port object, while the GC object will own the node object.
-        auto *p_node = mynode->second.first->create_yarp_node(p_port);
+        auto *p_node = mynode->second.first.create_yarp_node(p_port, *this);
         auto result = gc.insertNode(p_node);
         if (result.first) {
             // Record the ID of this node in GC
@@ -355,8 +400,8 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
         // (a) source is an output port and target is an input port; and
         // (b) the update masks for both of them are non-zero
         auto src_node = m_nodes.at(myconn->first.node_name), tgt_node = m_nodes.at(myconn->second.node_name);
-        OBNsim::updatemask_t src_mask = src_node.first->output_updatemask(myconn->first.port_name);
-        OBNsim::updatemask_t tgt_mask = tgt_node.first->input_updatemask(myconn->second.port_name);
+        OBNsim::updatemask_t src_mask = src_node.first.output_updatemask(myconn->first.port_name);
+        OBNsim::updatemask_t tgt_mask = tgt_node.first.input_updatemask(myconn->second.port_name);
         
         if (myconn->first.port_type == PortInfo::OUTPUT && myconn->second.port_type == PortInfo::INPUT &&
             src_mask != 0 && tgt_mask != 0)
@@ -370,7 +415,9 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
     
     // Copy the settings to GC
     gc.ack_timeout = settings.ack_timeout;
-    if (!gc.setFinalSimulationTime(settings.final_time)) {
+    
+    // Note that time values are mostly real numbers in microseconds, so we need to convert them to integer numbers in the time unit.
+    if (!gc.setFinalSimulationTime(get_time_value(settings.final_time))) {
         throw smnchai_exception("Error while setting final simulation time.");
     }
 }

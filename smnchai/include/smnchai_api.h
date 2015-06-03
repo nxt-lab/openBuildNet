@@ -31,6 +31,14 @@
 
 #include <chaiscript/chaiscript.hpp>
 
+
+/** \file
+ The SMNChai API are the basic types and functions used to define a complete OBN Simulation network using the Chaiscript language.
+ The WorkSpace class represents such a simulation network, consisting of nodes and their connections.
+ It also contains all settings for the simulation, e.g. the final time.
+ All time values in the WorkSpace are real numbers in microseconds, which will be converted to the appropriate integer time values in the specified time unit when the workspace is converted into an actual GC object for simulation.
+ */
+
 namespace SMNChai {
 
     /** The main exception class of SMNChai, for propagating errors from ChaiScript to main program. */
@@ -57,9 +65,12 @@ namespace SMNChai {
         { }
     };
     
+    class WorkSpace;
+    
     /** \brief Class that represents a node, to be created in Chaiscript
      */
     class Node {
+        // DATA MEMBERS
         std::string m_name;     ///< Name of the node
         
         bool m_updateX = true;         ///< Whether this node needs UPDATE_X messages
@@ -73,8 +84,10 @@ namespace SMNChai {
         /** Set of data ports. */
         std::unordered_set<std::string> m_dataports;
         
-        /** Set of update types: map from unique int ID to sampling period. */
-        std::unordered_map<unsigned int, OBNsim::simtime_t> m_updates;
+        /** Set of update types: map from unique int ID to sampling period (in microseconds). */
+        std::unordered_map<unsigned int, double> m_updates;
+        
+    private:
         
         /** Check if a given port's name exists. */
         bool port_exists(const std::string &t_name) const;
@@ -115,10 +128,10 @@ namespace SMNChai {
         
         /** \brief Add a new update type to the node.
          \param t_id The unique ID of the update type, which must not exist already.
-         \param t_period The sampling period of the update type, can be 0 if it's not periodic.
+         \param t_period The sampling period of the update type in microseconds, can be 0 if it's not periodic.
          \exception smnchai_exception an error happens, e.g. ID is invalid (out of range), ID already used.
          */
-        void add_update(unsigned int t_id, OBNsim::simtime_t t_period);
+        void add_update(unsigned int t_id, double t_period);
         
         /** \brief Specify an input port to an update.
          This method specifies that a given physical input port is an input to a given update.
@@ -147,9 +160,10 @@ namespace SMNChai {
         /** \brief Create an Yarp node object for this node associated with the given system port.
          Note that the new Yarp node object will own the port object, i.e. when the node is destructed, it will also delete the port.
          \param sys_port Pointer to the system port on the SMN associated with this node; must be dynamically allocated as it will be deleted.
+         \param ws The WorkSpace object to whom this node belongs (to access system settings).
          \return Pointer to the new node object; nullptr if there is any error.
          */
-        OBNsmn::YARP::OBNNodeYARP* create_yarp_node(OBNsmn::YARP::YARPPort *sys_port) const;
+        OBNsmn::YARP::OBNNodeYARP* create_yarp_node(OBNsmn::YARP::YARPPort *sys_port, const WorkSpace &ws) const;
         
         /** Returns the update mask of a given input port, exception if port does not exist. */
         OBNsim::updatemask_t input_updatemask(const std::string &port_name) const {
@@ -168,7 +182,7 @@ namespace SMNChai {
         std::string m_name;     ///< Name of the workspace: all nodes will be under this name
         
         /** Mapping nodes' names to Node objects and their IDs (to be used later on). */
-        std::unordered_map<std::string, std::pair<Node*,std::size_t> > m_nodes;
+        std::unordered_map<std::string, std::pair<Node,std::size_t> > m_nodes;
         
         /** List of all connections between ports in this workspace. */
         std::forward_list< std::pair<PortInfo, PortInfo> > m_connections;
@@ -176,18 +190,15 @@ namespace SMNChai {
     public:
         /** Settings for the GC / simulation. */
         struct {
-            int ack_timeout;
-            OBNsim::simtime_t final_time;
+            int ack_timeout = 0;        ///< Timeout for ACK, in milliseconds.
+            double final_time = std::numeric_limits<OBNsim::simtime_t>::max();      ///< The final time of simulation, real number in microseconds.
+            double time_unit = 1.0;       ///< The atomic time unit, real number in microseconds [default = 1 microseconds]
         } settings;
 
     public:
         /** Construct a workspace object with a given name. */
         WorkSpace(const std::string &t_name = "") {
             set_name(t_name);
-            
-            // Default settings
-            settings.ack_timeout = 0;
-            settings.final_time = std::numeric_limits<OBNsim::simtime_t>::max();;
         }
         
         /** Set the workspace's name (throw an exception if invalid name). Empty is a valid name. */
@@ -213,10 +224,10 @@ namespace SMNChai {
         
         
         /** Add a node to the current workspace.
-         \param p_node Valid pointer to a node object.
+         \param p_node Reference to a node object, to be copied to this workspace.
          \exception smnchai_exception an error happenned, e.g. node's name already exists.
          */
-        void add_node(Node *p_node);
+        void add_node(const Node &p_node);
 
         /** Connect 2 ports by PortInfo objects, unless they are already connected.
          \param t_from The source port.
@@ -247,6 +258,11 @@ namespace SMNChai {
          \exception smnchai_exception An error occurred; check its what() for details.
          */
         void generate_obn_system(OBNsmn::GCThread &gc);
+        
+        /** Returns the integer time value in terms of the time unit from the real time value t in microseconds.
+         Returns 0 if the integer value is negative.
+         */
+        OBNsim::simtime_t get_time_value(double t) const;
     };
     
     /********** Utility and interface functions ************/

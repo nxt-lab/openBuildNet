@@ -8,4 +8,11 @@ System Management Node (SMN) with Chaiscript support (SMNChai)
 * Building instructions
 
 - Use CMake to build the SMN program.
-- By default, the SMN with Chaiscript support will be built with the dynamic Chaiscript standard library, hence it requires the dynamic library to be present on the system to run. If it is preferred to link with the static standard library, turn on the flag SMNCHAI_CHAISCRIPT_STATIC before building the SMN.
+- By default, the SMN with Chaiscript support will be built with the dynamic Chaiscript standard library, hence it requires the dynamic library to be present on the system to run. If it is preferred to link with the static standard library, call CMake with -DBUILD_STATIC_CHAI=ON.
+
+* Running
+
+- The directory libraries/ contains all Chaiscript libraries for SMNChai, including the standard library stdlib.chai.  This directory must be available to SMNChai by
+  + Either placing it in the current working directory.
+  + Or placing it in a main SMNChai directory (e.g. ~/OBN/SMNChai) and pointing the environment variable SMNCHAI_DIR to this directory.
+  

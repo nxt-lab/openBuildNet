@@ -21,6 +21,8 @@ set(OBNSMN_INCLUDE_DIR "${OBN_MAIN_DIR}/smn/include")
 set (OBNSIM_INCLUDE_DIR ${OBN_MAIN_DIR}/include)
 
 
+option(BUILD_STATIC_CHAI "Build SMNChai with static ChaiScript standard library instead of dynamic one." OFF)
+
 ## Generate code for the message formats using Google ProtoBuf, see http://www.cmake.org/cmake/help/v3.0/module/FindProtobuf.html
 ## The source files and header files are listed in PROTO_SRCS and PROTO_HDRS respectively
 ## The libraries and header files of the ProtoBuf framework (not the generated files) are in PROTOBUF_LITE_LIBRARIES and PROTOBUF_INCLUDE_DIRS respectively, because we will generate lite code instead of the full ProtoBuf code.
@@ -37,7 +39,7 @@ PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS ${OBN_MAIN_DIR}/msg/obnsim_msg.proto
 # set(Boost_USE_STATIC_LIBS OFF) 
 # set(Boost_USE_MULTITHREADED ON)  
 # set(Boost_USE_STATIC_RUNTIME OFF) 
-find_package(Boost 1.55.0 REQUIRED COMPONENTS graph) 
+find_package(Boost 1.55.0 REQUIRED COMPONENTS graph filesystem system) 
 
 
 ## Find communication libraries and add appropriate source files
@@ -140,6 +142,11 @@ if(CMAKE_GENERATOR STREQUAL Xcode)
 endif()
 
 
+## Compile with static Chaiscript or dynamic
+if(BUILD_STATIC_CHAI)
+    add_definitions(-DSMNCHAI_CHAISCRIPT_STATIC)
+endif(BUILD_STATIC_CHAI)
+
 ADD_EXECUTABLE(smnchai
 	${SMNCHAI_SRCFILES}
 	${OBNSMN_CORE_SRCFILES}
@@ -166,3 +173,5 @@ TARGET_LINK_LIBRARIES(smnchai
 
 # ADD_SUBDIRECTORY(doc)
 
+# Select the desired build type
+set(CMAKE_BUILD_TYPE Release)

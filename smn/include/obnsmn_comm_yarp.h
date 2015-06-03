@@ -170,7 +170,12 @@ namespace OBNsmn {
             }
             
             /** \brief Return the port object. */
-            const YARPPort& getPort() { return port; }
+            const YARPPort& getPort() const { return port; }
+            
+            /** Set the port's name. */
+            void setPortName(const std::string &t_port) {
+                portName = t_port;
+            }
             
             /** \brief Open the port.
              \return True if successful.
