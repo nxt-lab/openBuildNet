@@ -13,11 +13,16 @@
 #include <cassert>
 #include <algorithm>
 #include <cmath>
+#include <obnsmn_report.h>
 #include <smnchai_api.h>
 #include <chaiscript/dispatchkit/bootstrap.hpp>
 
+#include <yarp/os/Run.h>        // YarpRun support
+
 using namespace chaiscript;
 using namespace SMNChai;
+
+const char *NODE_GC_PORT_NAME = "_gc_";
 
 /** This function register all the functions, types, etc. provided by the SMNChai API to a given ChaiScript object.
  \param chai The ChaiScript object to which the API is registered.
@@ -65,6 +70,18 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     // Function to change the name of the workspace
     chai.add(fun(&WorkSpace::set_name, &ws), "workspace");
     
+    // Function to print the workspace to screen, useful for checking it
+    chai.add(fun(&WorkSpace::print, &ws), "print_system");
+    
+    
+    // *********************************************
+    // Functions to start remote nodes, wait for nodes to go online, etc.
+    // *********************************************
+    
+    chai.add(fun(&WorkSpace::is_node_online, &ws), "is_node_online");
+    chai.add(fun(&WorkSpace::start_remote_node, &ws), "start_remote_node");
+    chai.add(fun(&run_remote_command), "run_remote_command");
+    
     // *********************************************
     // Functions to configure the GC/simulation
     // *********************************************
@@ -79,10 +96,17 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     }), "final_time");
     
     /** Set the atomic time unit, in microseconds. */
-    chai.add(fun<void (double)>([&ws](double t) {
-        if (t <= 0.0) { throw smnchai_exception("Time unit must be positive, but " + std::to_string(t) + " is given."); }
+    chai.add(fun<void (unsigned int)>([&ws](unsigned int t) {
+        if (t < 1) { throw smnchai_exception("Time unit must be positive, but " + std::to_string(t) + " is given."); }
         ws.settings.time_unit = t;
     }), "timeunit");
+    
+    /** Choose not to run the simulation.
+     By default, the simulation will automatically run; however if we set this to false, the simulation will not run.
+     This can be useful to just load, print, and check the system configuration without actually running it.
+     Note that certain commands are affected by where this command is placed, e.g. commands to start remote nodes will still run if at the time it is called the setting is still "true", however if this setting was switched off before a command to start a remote node, the latter will be disabled.  Similarly for commands to wait for nodes to come online.
+     */
+    chai.add(fun<void (bool)>([&ws](bool b) { ws.settings.run_simulation = b; }), "run_simulation");
     
     /** Defines constants for typical time values (in microseconds). */
     chai.add(const_var(double(1.0)), "microsecond");
@@ -93,6 +117,39 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     chai.add(const_var(double(24*3.6e9)), "day");
 }
 
+
+void SMNChai::run_remote_command(const std::string &t_node, const std::string &t_tag, const std::string &t_prog, const std::string &t_args) {
+    // Run a command on a remote node/computer using YarpRun
+    if (t_node.empty() || t_tag.empty() || t_prog.empty()) {
+        throw smnchai_exception("start_remote_node error: node/computer name and tag and command must be non-empty.");
+    }
+    
+    // Build the Property list for the command to run
+    yarp::os::Property prop;
+    prop.put("name", t_prog);
+    if (!t_args.empty()) {
+        prop.put("parameters", t_args);
+    }
+    
+    auto tagName = yarp::os::ConstString(t_tag);
+    if (yarp::os::Run::start(t_node, prop, tagName) != 0) {
+        // Failed
+        throw smnchai_exception("start_remote_node error: could not run the remote command.");
+    }
+}
+
+
+void SMNChai::WorkSpace::start_remote_node(const SMNChai::Node &t_node, const std::string &t_computer, const std::string &t_tag, const std::string &t_prog, const std::string &t_args) const {
+    // Only start if node is not online
+    if (settings.run_simulation && !is_node_online(t_node)) {
+        SMNChai::run_remote_command(t_computer, t_tag, t_prog, t_args);
+    }
+}
+
+
+bool SMNChai::WorkSpace::is_node_online(const SMNChai::Node &t_node) const {
+    return yarp::os::Network::exists(get_full_path(t_node.get_name(), NODE_GC_PORT_NAME));
+}
 
 bool SMNChai::Node::port_exists(const std::string &t_name) const {
     return (m_inputs.count(t_name) > 0) || (m_outputs.count(t_name) > 0) || (m_dataports.count(t_name) > 0);
@@ -323,9 +380,15 @@ std::string SMNChai::WorkSpace::get_full_path(const SMNChai::PortInfo &t_port) c
 
 
 OBNsim::simtime_t SMNChai::WorkSpace::get_time_value(double t) const {
-    assert(settings.time_unit > 0.0);
-    auto ti = std::llround(t / settings.time_unit);
-    return (ti < 0)?0:ti;
+    assert(settings.time_unit > 0);
+    auto ti = std::llround(t / double(settings.time_unit));
+    OBNsim::simtime_t result = (ti < 0)?0:ti;   // Convert to simtime_t, saturated below at 0
+    
+    // Check if a sampling time is nonzero but it's converted to 0
+    if (t > 0.0 && result == 0) {
+        OBNsmn::report_warning(0, "A non-zero sampling time is converted to 0; consider reducing the time unit.");
+    }
+    return result;
 }
 
 
@@ -361,7 +424,7 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
         
         // Connect the SMN and the ports (via their system ports)
         // Remote ports must already exist, i.e. remote nodes have already started and are waiting
-        std::string remote_gc_port = get_full_path(mynode->first, "_gc_");
+        std::string remote_gc_port = get_full_path(mynode->first, NODE_GC_PORT_NAME);
         
         // Check that the remote port exists
         if (!yarp::os::Network::exists(remote_gc_port)) {
@@ -376,7 +439,7 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
         }
         
         // However, all nodes send to the same GC input port
-        if (!yarp::os::Network::connect(remote_gc_port, get_full_path("_smn_", "_gc_"))) {
+        if (!yarp::os::Network::connect(remote_gc_port, get_full_path("_smn_", NODE_GC_PORT_NAME))) {
             // Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
             throw smnchai_exception("Could not connect from remote node " + mynode->first + " to the SMN.");
         }

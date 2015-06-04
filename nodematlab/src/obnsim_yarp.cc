@@ -1073,7 +1073,7 @@ namespace {
         InputArguments input(nrhs, prhs, 0);
         OutputArguments output(nlhs, plhs, 1);
         
-        output.set(0, OBNnode::MAX_UPDATE_INDEX);
+        output.set(0, OBNsim::MAX_UPDATE_INDEX);
     }
     
 

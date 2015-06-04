@@ -192,7 +192,8 @@ namespace SMNChai {
         struct {
             int ack_timeout = 0;        ///< Timeout for ACK, in milliseconds.
             double final_time = std::numeric_limits<OBNsim::simtime_t>::max();      ///< The final time of simulation, real number in microseconds.
-            double time_unit = 1.0;       ///< The atomic time unit, real number in microseconds [default = 1 microseconds]
+            unsigned int time_unit = 1;       ///< The atomic time unit, positive integer number in microseconds [default = 1 microseconds]
+            bool run_simulation = true;     ///< Whether automatically run the simulation after loading it
         } settings;
 
     public:
@@ -263,6 +264,17 @@ namespace SMNChai {
          Returns 0 if the integer value is negative.
          */
         OBNsim::simtime_t get_time_value(double t) const;
+        
+        /** \brief Check if the given node is online.
+         
+         This function checks if the given node is online yet by checking the availability of its GC system port.
+         Note that this function uses the current workspace name, so it's important to set the workspace name correctly before calling this function (from ChaiScrip).
+         */
+        bool is_node_online(const Node &t_node) const;
+        
+        /** Starts a remote node if it's not online.
+         This function checks if the given node is online; if it's not, SMNChai::start_remote_node() is called to start the remote node with the given arguments. */
+        void start_remote_node(const SMNChai::Node &t_node, const std::string &t_computer, const std::string &t_tag, const std::string &t_prog, const std::string &t_args) const;
     };
     
     /********** Utility and interface functions ************/
@@ -270,6 +282,15 @@ namespace SMNChai {
     /** \brief Register all API functions and types with a Chaiscript object. */
     void registerSMNAPI(chaiscript::ChaiScript &chai, WorkSpace &ws);
 
+    
+    /** \brief Run a remote program (requires and uses YarpRun, http://wiki.icub.org/yarpdoc/yarprun.html)
+     \param t_node Name of the YarpRun node to run the command on, of the form /SERVERPORT.
+     \param t_tag A unique tag of the command execution; must be unique in the network.
+     \param t_prog Name of the command/program to run on the remote node/computer.
+     \param t_args Optional argument list.
+     \exception smnchai_exception Error if the command could not be run.
+     */
+    void run_remote_command(const std::string &t_computer, const std::string &t_tag, const std::string &t_prog, const std::string &t_args);
 }
 
 

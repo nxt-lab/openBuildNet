@@ -168,6 +168,13 @@ int main(int argc, const char* argv[]) {
             throw;
         }
         
+        
+        // If it's set not to run the simulation, we can exit now
+        if (!ws.settings.run_simulation) {
+            std::cout << "THE SIMULATION IS SET NOT TO BE RUN AUTOMATICALLY (DRY-RUN)." << std::endl;
+            return 0;
+        }
+        
         // Set the GC port name on this SMN
         yarpThread.setPortName(ws.get_full_path("_smn_", "_gc_"));
         
