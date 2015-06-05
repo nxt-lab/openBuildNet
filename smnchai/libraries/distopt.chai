@@ -1,0 +1,69 @@
+// SMNChai library for Distributed optimization algorithms
+// This file is part of the openBuildNet framework, developed at EPFL.
+// Author: Truong X. Nghiem (xuan.nghiem@epfl.ch)
+
+// DISTOPT_admm
+// Creates one master node and nNodes local nodes for the ADMM distributed optimization algorithm.
+// Returns a Vector of Node objects: the first nNodes of them are the local nodes, the last one is the master node. These Node objects are for reference only; any changes to them won't affect the actual nodes in the network.
+//
+// Summary of algorithm: <to be completed>
+// Nodes created:
+// - Master node with name given by masterName:
+//    + Inputs: "U<i>" for each local node.
+//    + Outputs: "cmd" for controlling the local nodes; "Gamma<i>", "delta<i>" for each local node.
+//    + Updates: MAIN update (id=0) for the major step update (sampling = timeStep), and ITER update (id=1) for the algorithm iteration update. No direct feedthrough to these updates.
+// - Local nodes with name given by localPrefix + <i> where i ranges from 1 to nNodes:
+//    + Inputs: "cmd", "Gamma", "delta", "x" (for state feedback from the plant)
+//    + Outputs: "u" to be sent to the plant (the control decision at each step) and "U" to be sent to the master node.
+//    + Updates: MAIN update (id=0) that computes the algorithm iteration at the local node (sampling = timeStep).
+def DISTOPT_admm (int nNodes, string masterName, string localPrefix, double timeStep): nNodes > 0 {
+  var allNodes = Vector();  // Vector of all nodes, to be returned
+  
+  // We will build the aggregator and recorder nodes gradually
+  var aggregator = new_node(masterName);
+  aggregator.need_updateX(false);
+  aggregator.add_output("cmd");  // command port to control the local nodes
+  aggregator.add_update(0, timeStep);
+  aggregator.output_from_update(0, "cmd");
+  aggregator.add_update(1, 0);
+  aggregator.output_from_update(1, "cmd");
+
+  for (auto i = 1; i <= nNodes; ++i) {
+    // Create the local controller node
+    var ctrl = node(["name" : localPrefix + to_string(i),
+		     "inputs" : ["cmd", "Gamma", "delta", "x"],
+		     "outputs" : ["u", "U"],
+		     "updates" : [["sampling": timeStep,
+				   "inputs" : ["cmd", "Gamma", "delta", "x"],
+				   "outputs" : ["U", "u"]]]
+		     ], false);
+    ctrl.need_updateX(false);
+    add_node(ctrl);  // add the node to the system; after this, it can't be changed
+    allNodes.push_back(ctrl);
+  
+    // Create the ports on the aggregator that talks with the local controller
+    var Gi = "Gamma" + to_string(i);
+    var di = "delta" + to_string(i);
+    var Ui = "U" + to_string(i);
+    aggregator.add_output(Gi);
+    aggregator.add_output(di);
+    aggregator.add_input(Ui);
+
+    aggregator.output_from_update(0, Gi);
+    aggregator.output_from_update(0, di);
+    aggregator.output_from_update(1, Gi);
+    aggregator.output_from_update(1, di);
+
+    // Connect the ports between aggregator - local
+    connect(aggregator.port(Gi), ctrl.port("Gamma"));
+    connect(aggregator.port(di), ctrl.port("delta"));
+    connect(ctrl.port("U"), aggregator.port(Ui));
+    connect(aggregator.port("cmd"), ctrl.port("cmd"));
+  }
+
+  // Now we can add the aggregator and the recorder to the system
+  add_node(aggregator);
+  allNodes.push_back(aggregator);
+
+  return allNodes;
+}

@@ -13,6 +13,8 @@
 #include <cassert>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+
 #include <obnsmn_report.h>
 #include <smnchai_api.h>
 #include <chaiscript/dispatchkit/bootstrap.hpp>
@@ -78,9 +80,20 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     // Functions to start remote nodes, wait for nodes to go online, etc.
     // *********************************************
     
-    chai.add(fun(&WorkSpace::is_node_online, &ws), "is_node_online");
-    chai.add(fun(&WorkSpace::start_remote_node, &ws), "start_remote_node");
+    chai.add(fun<bool (WorkSpace::*) (const Node &) const>(&WorkSpace::is_node_online, &ws), "is_node_online");
+    chai.add(fun<bool (WorkSpace::*) (const std::string &) const>(&WorkSpace::is_node_online, &ws), "is_node_online");
+
+    chai.add(fun<void (WorkSpace::*) (const SMNChai::Node &, const std::string &, const std::string &, const std::string &, const std::string &) const>(&WorkSpace::start_remote_node, &ws), "start_remote_node");
+    chai.add(fun<void (WorkSpace::*) (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &) const>(&WorkSpace::start_remote_node, &ws), "start_remote_node");
+
+    
     chai.add(fun(&run_remote_command), "run_remote_command");
+    
+    chai.add(fun<void (WorkSpace::*)(const Node &, double) const>(&WorkSpace::waitfor_node_online, &ws), "waitfor_node");
+    chai.add(fun<void (WorkSpace::*)(const std::string &, double) const>(&WorkSpace::waitfor_node_online, &ws), "waitfor_node");
+    
+    chai.add(fun(&WorkSpace::waitfor_all_nodes_online, &ws), "waitfor_all_nodes");
+    
     
     // *********************************************
     // Functions to configure the GC/simulation
@@ -121,15 +134,16 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
 void SMNChai::run_remote_command(const std::string &t_node, const std::string &t_tag, const std::string &t_prog, const std::string &t_args) {
     // Run a command on a remote node/computer using YarpRun
     if (t_node.empty() || t_tag.empty() || t_prog.empty()) {
-        throw smnchai_exception("start_remote_node error: node/computer name and tag and command must be non-empty.");
+        throw smnchai_exception("run_remote_command error: node/computer name and tag and command must be non-empty.");
     }
     
     // Build the Property list for the command to run
+    // Current implementation of Yarprun has a bug that doesn't take the arguments into account, so we work around this by concatenating the command and the arguments.
     yarp::os::Property prop;
-    prop.put("name", t_prog);
-    if (!t_args.empty()) {
-        prop.put("parameters", t_args);
-    }
+    prop.put("name", t_prog + ' ' + t_args);
+    //if (!t_args.empty()) {
+    //    prop.put("parameters", t_args);
+    //}
     
     auto tagName = yarp::os::ConstString(t_tag);
     if (yarp::os::Run::start(t_node, prop, tagName) != 0) {
@@ -139,7 +153,8 @@ void SMNChai::run_remote_command(const std::string &t_node, const std::string &t
 }
 
 
-void SMNChai::WorkSpace::start_remote_node(const SMNChai::Node &t_node, const std::string &t_computer, const std::string &t_tag, const std::string &t_prog, const std::string &t_args) const {
+template<typename T>
+void SMNChai::WorkSpace::start_remote_node(const T &t_node, const std::string &t_computer, const std::string &t_tag, const std::string &t_prog, const std::string &t_args) const {
     // Only start if node is not online
     if (settings.run_simulation && !is_node_online(t_node)) {
         SMNChai::run_remote_command(t_computer, t_tag, t_prog, t_args);
@@ -149,6 +164,78 @@ void SMNChai::WorkSpace::start_remote_node(const SMNChai::Node &t_node, const st
 
 bool SMNChai::WorkSpace::is_node_online(const SMNChai::Node &t_node) const {
     return yarp::os::Network::exists(get_full_path(t_node.get_name(), NODE_GC_PORT_NAME));
+}
+
+bool SMNChai::WorkSpace::is_node_online(const std::string &t_node) const {
+    return yarp::os::Network::exists(get_full_path(t_node, NODE_GC_PORT_NAME));
+}
+
+void SMNChai::WorkSpace::waitfor_node_online(const std::string &t_node, double timeout) const {
+    if (!settings.run_simulation) {
+        // If not going to run simulation then we should not wait
+        return;
+    }
+    if (timeout <= 0.0) {
+        while (!is_node_online(t_node)) {
+            std::this_thread::sleep_for (std::chrono::milliseconds(100));
+        }
+    } else {
+        std::chrono::time_point<std::chrono::steady_clock> start;
+        std::chrono::duration<double> dur;
+        
+        start = std::chrono::steady_clock::now();
+        
+        while (!is_node_online(t_node)) {
+            std::this_thread::sleep_for (std::chrono::milliseconds(100));
+            
+            dur = std::chrono::steady_clock::now() - start;
+            if (dur.count() > timeout) {
+                // Timeout occurs
+                throw smnchai_exception("Waiting for node '" + t_node + "' to go online but timeout occurred.");
+            }
+        }
+    }
+}
+
+void SMNChai::WorkSpace::waitfor_node_online(const SMNChai::Node &t_node, double timeout) const {
+    waitfor_node_online(t_node.get_name(), timeout);
+}
+
+void SMNChai::WorkSpace::waitfor_all_nodes_online(double timeout) const {
+    if (!settings.run_simulation) {
+        // If not going to run simulation then we should not wait
+        return;
+    }
+
+    if (timeout <= 0.0) {
+        while (!are_all_nodes_online()) {
+            std::this_thread::sleep_for (std::chrono::milliseconds(500));
+        }
+    } else {
+        std::chrono::time_point<std::chrono::steady_clock> start;
+        std::chrono::duration<double> dur;
+        
+        start = std::chrono::steady_clock::now();
+        
+        while (!are_all_nodes_online()) {
+            std::this_thread::sleep_for (std::chrono::milliseconds(500));
+            
+            dur = std::chrono::steady_clock::now() - start;
+            if (dur.count() > timeout) {
+                // Timeout occurs
+                throw smnchai_exception("Waiting for all nodes to go online but timeout occurred.");
+            }
+        }
+    }
+}
+
+bool SMNChai::WorkSpace::are_all_nodes_online() const {
+    for (auto it = m_nodes.begin(); it != m_nodes.end(); ++it) {
+        if (!yarp::os::Network::exists(get_full_path(it->second.first.get_name(), NODE_GC_PORT_NAME))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool SMNChai::Node::port_exists(const std::string &t_name) const {

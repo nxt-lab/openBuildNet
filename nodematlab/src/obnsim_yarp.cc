@@ -202,7 +202,8 @@ YarpNodeMatlab::~YarpNodeMatlab() {
 }
 
 
-/** This method runs the simulation until the next event that requires a callback (e.g. an UPDATE_Y message from the GC), or until the node stops (because the simulation terminates, because of errors...).
+/** This method runs the simulation until the next event that requires a callback (e.g. an UPDATE_Y message from the GC), or until the node stops (because the simulation terminates, because of timeout or errors...).
+ \param timeout Timeout value in seconds; if there is no new message from the SMN after this timeout, the function will return immediately; if timeout <= 0.0, there is no timeout and the method can run indefinitely (maybe undesirable).
  \return 0 if everything is going well and there is an event pending, 1 if timeout (but the simulation won't stop automatically, it's still running), 2 if the simulation has stopped (properly, not because of an error), 3 if the simulation has stopped due to an error (the node's state becomes NODE_ERROR)
  */
 int YarpNodeMatlab::runStep(double timeout) {
@@ -860,7 +861,7 @@ namespace {
     
     
     // Runs the node's simulation until the next event, or until the node stops or has errors
-    // Args: node object pointer, timeout (double, can be <= 0)
+    // Args: node object pointer, timeout (double in seconds, can be <= 0.0 if no timeout)
     // Returns: status (see YarpNodeMatlab::runStep()), event type (a string), event argument (of an appropriate data type depending on the event type)
     MEX_DEFINE(runStep) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         InputArguments input(nrhs, prhs, 2);

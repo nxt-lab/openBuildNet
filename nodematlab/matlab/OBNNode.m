@@ -6,7 +6,7 @@ classdef OBNNode < handle
     %
     % Author: Truong X. Nghiem (xuan.nghiem@epfl.ch)
     
-    % Last update: 2015-05-19
+    % Last update: 2015-06-05
     
     properties (Constant)
         MaxUpdateID = obnsim_yarp_('maxUpdateID');
@@ -439,22 +439,35 @@ classdef OBNNode < handle
         end
         
         
-        function b = runSimulation(this, timeout)
+        function b = runSimulation(this, timeout, stopIfTimeout)
             % The main function to run the simulation of the node.
-            % An optional timeout can be given, which will set a timeout
-            % for the node to wait for messages from the SMN/GC.
-            % If a timeout occurs, the simulation of this node will stop
-            % immediately by calling stop
+            %
+            % An optional timeout (double value in seconds) can be given,
+            % which will set a timeout for the node to wait for messages
+            % from the SMN/GC. If timeout is missing or <= 0, there is no
+            % timeout and this function can run indefinitely (if the
+            % simulation hangs).
+            %
+            % An optional stopIfTimeout [bool] can be given: if it's true
+            % (default) then the simulation of this node will stop
+            % immediately if a timeout occurs by calling stopSimulation();
+            % otherwise it will simply returns without stopping the
+            % simulation (which can be resumed by calling this method
+            % again).
             %
             % Return false if the execution is timed out; otherwise return
             % true.
-            narginchk(1, 2);
+            narginchk(1, 3);
             assert(isscalar(this));
             if nargin < 2 || isempty(timeout)
                 timeout = -1;
             else
                 assert(isscalar(timeout) && isnumeric(timeout), ...
                     'Timeout must be a real number in seconds, or non-positive for no timeout.');
+            end
+            
+            if nargin < 3 || isempty(stopIfTimeout)
+                stopIfTimeout = true;
             end
             
             % If the node has error, should not run it
@@ -487,7 +500,9 @@ classdef OBNNode < handle
                         end
                         
                     case 1  % Timeout
-                        this.stopSimulation();  % stop the simulation immediately
+                        if stopIfTimeout
+                            this.stopSimulation();  % stop the simulation immediately
+                        end
                         b = false;
                         
                     case 2  % Stop properly

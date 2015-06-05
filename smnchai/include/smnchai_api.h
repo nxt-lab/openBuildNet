@@ -272,9 +272,47 @@ namespace SMNChai {
          */
         bool is_node_online(const Node &t_node) const;
         
+        /** \brief Check if the given node is online.
+         
+         This function checks if a node, given by its name, is online yet by checking the availability of its GC system port.
+         Note that this function uses the current workspace name, so it's important to set the workspace name correctly before calling this function (from ChaiScrip).
+         */
+        bool is_node_online(const std::string &t_node) const;
+        
+        /** \brief Check if all nodes in the workspace are online.
+         
+         Note that this function uses the current workspace name, so it's important to set the workspace name correctly before calling this function (from ChaiScrip).
+         */
+        bool are_all_nodes_online() const;
+        
         /** Starts a remote node if it's not online.
          This function checks if the given node is online; if it's not, SMNChai::start_remote_node() is called to start the remote node with the given arguments. */
-        void start_remote_node(const SMNChai::Node &t_node, const std::string &t_computer, const std::string &t_tag, const std::string &t_prog, const std::string &t_args) const;
+        template<typename T>
+        void start_remote_node(const T &t_node, const std::string &t_computer, const std::string &t_tag, const std::string &t_prog, const std::string &t_args) const;
+        
+
+        /** Wait until a node is online or a timeout.
+            If the simulation is not going to run, this function will return immediately.
+         \param t_node The node to wait for.
+         \param timeout The timeout value in seconds; it's ignored if timeout <= 0.
+         \exception smnchai_exception An error (timeout) happens.
+         */
+        void waitfor_node_online(const SMNChai::Node &t_node, double timeout) const;
+        
+        /** Wait until a node is online or a timeout.
+            If the simulation is not going to run, this function will return immediately.
+         \param t_node The name of the node to wait for.
+         \param timeout The timeout value in seconds; it's ignored if timeout <= 0.
+         \exception smnchai_exception An error (timeout) happens.
+         */
+        void waitfor_node_online(const std::string &t_node, double timeout) const;
+        
+        /** Wait until all nodes go online or a timeout.
+            If the simulation is not going to run, this function will return immediately.
+         \param timeout The timeout value in seconds; it's ignored if timeout <= 0.
+         \exception smnchai_exception An error (timeout) happens.
+         */
+        void waitfor_all_nodes_online(double timeout) const;
     };
     
     /********** Utility and interface functions ************/
