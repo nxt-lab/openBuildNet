@@ -366,7 +366,13 @@ void write_output_vector_helper(const InputArguments &input, OBNnode::YarpPortBa
     if (p) {
         auto from = MxArray(input.get(2)); // MxArray object
         auto &to = *(*p);
-        to = to.Map(from.getData<ETYPE>(), from.size());
+        if (from.isEmpty()) {
+            // if "from" is empty then we clear the data in the port, do not copy
+            to.resize(0);
+        } else {
+            // if "from" is not empty then we can copy the data
+            to = to.Map(from.getData<ETYPE>(), from.size());
+        }
         
 // // Another way to copy
 //        std::vector<ETYPE> v(input.get<std::vector<ETYPE>>(2));
@@ -382,9 +388,16 @@ void write_output_matrix_helper(const InputArguments &input, OBNnode::YarpPortBa
     YarpOutput<OBN_PB,obn_matrix<ETYPE>> *p = dynamic_cast<YarpOutput<OBN_PB,obn_matrix<ETYPE>>*>(port);
     if (p) {
         auto from = MxArray(input.get(2)); // MxArray object
-        auto &to = *(*p);
         auto nr = from.rows(), nc = from.cols();
-        to = to.Map(from.getData<ETYPE>(), nr, nc);
+        auto &to = *(*p);
+        
+        if (from.isEmpty()) {
+            // if "from" is empty then we clear the data in the port, do not copy
+            to.resize(nr, nc);
+        } else {
+            // if "from" is not empty then we can copy the data
+            to = to.Map(from.getData<ETYPE>(), nr, nc);
+        }
         
 //        // The following lines copy element-by-element: it's safe but slow.
 //        to.resize(nr, nc);
