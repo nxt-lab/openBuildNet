@@ -1,0 +1,132 @@
+// This is the standard library for the SMNChai server program in the openBuildNet simulation framework.
+// SMNChai provides a low-level API, which is complete for creating any OBN simulation network.
+// This standard library builds on top the low-level API a set of high-level, easier-to-use functions to create simulation networks.
+// Together with other libraries, they can define domain-specific languages for certain types of simulation systems or subsystems.
+//
+// @author: Truong X. Nghiem (xuan.nghiem@epfl.ch)
+
+// ==========================
+// Convenient functions to create nodes
+// ==========================
+
+// To define an update type, we use a Map object of the following form:
+// [ "name" : "name of update", "id" : id-of-update, "sampling" : real-number-sampling-time-in-microseconds,
+//   "inputs" : list-of-inputs-to-this-update, "outputs" : list-of-outputs-from-this-update]
+// where only "sampling" is required. The list of outputs is a Vector of names, e.g. ["y1", "y2"].
+// The list of inputs can be either a Vector of names (all of them will have direct feedthrough to this update) or
+// a Map of [name -> bool] where the boolean value specifies whether the input has direct feedthrough to this update.
+// For example: ["u1":true, "u2":true, "u3":false] is essentially the same as ["u1", "u2"] but the former provides more
+// optional information (we know that "u3" is also an input, but it doesn't affect how the simulation runs).
+//
+// A function called "update" will produce such a Map from all required arguments:
+//     update("name", id, sampling, inputs, outputs)
+
+def update(string name, uint32_t id, double sampling, inputs, outputs) {
+  var myinputs;
+  var myoutputs;
+  if (inputs.is_type("string")) { myinputs = [inputs]; } else { myinputs = inputs; }
+  if (outputs.is_type("string")) { myoutputs = [outputs]; } else { myoutputs = outputs; }
+  return ["name": name, "id": id, "sampling": sampling, "inputs": myinputs, "outputs": myoutputs];
+}
+
+
+// To define a node, we use a Map object of the following form:
+// ["name" : "node name", "inputs" : vector-of-input-ports, "outputs" : vector-of-output-ports,
+//  "dataports" : vector-of-data-ports, "updates" : vector-of-update-definitions]
+// where the definition of update types is as above.
+// Only "name" is required.
+
+def node(Map tnodedef, bool addnow) {
+  var nodedef = tnodedef;  // A bug in Chaiscript that doesn't work with in-place Map objects
+  if (nodedef.count("name") < 1) { throw ("Node definition must have a valid name."); }
+  var hasInputs = nodedef.count("inputs") > 0;
+  if (hasInputs) {
+    if (!nodedef["inputs"].is_type("Vector") || !foldl(nodedef["inputs"].range(), fun(s,b) { b && s.is_type("string");}, true)) {
+      throw ("In node definition, inputs must be a vector of names.");
+    }
+  }
+
+  var hasOutputs = nodedef.count("outputs") > 0;
+  if (hasOutputs) {
+    if (!nodedef["outputs"].is_type("Vector") || !foldl(nodedef["outputs"].range(), fun(s,b) { b && s.is_type("string");}, true)) {
+      throw ("In node definition, outputs must be a vector of names.");
+    }
+  }
+
+  var hasDataports = nodedef.count("dataports") > 0;
+  if (hasDataports) {
+    if (!nodedef["dataports"].is_type("Vector") || !foldl(nodedef["dataports"].range(), fun(s,b) { b && s.is_type("string");}, true)) {
+      throw ("In node definition, dataports must be a vector of names.");
+    }
+  }
+
+  var hasUpdates = nodedef.count("updates") > 0;
+  if (hasUpdates) {
+    if (!nodedef["updates"].is_type("Vector") || !foldl(nodedef["updates"].range(), fun(s,b) { b && s.is_type("Map");}, true)) {
+      throw ("In node definition, updates must be a vector of update definitions.");
+    }
+    if (!foldl(nodedef["updates"].range(), fun(s,b) { b && s.count("sampling") > 0;}, true)) {
+      throw ("In update definition, sampling time is required.");
+    }
+  }
+
+  var theNode = new_node(nodedef["name"]);
+
+  if (hasInputs && !nodedef["inputs"].empty()) {
+    var li = nodedef["inputs"];
+    for (auto i=0; i < li.size(); ++i) { theNode.add_input(li[i]); }
+  }
+
+  if (hasOutputs && !nodedef["outputs"].empty()) {
+    var li = nodedef["outputs"];
+    for (auto i=0; i < li.size(); ++i) { theNode.add_output(li[i]); }
+  }
+
+  if (hasDataports && !nodedef["dataports"].empty()) {
+    var li = nodedef["dataports"];
+    for (auto i=0; i < li.size(); ++i) { theNode.add_dataport(li[i]); }
+  }
+
+  if (hasUpdates && !nodedef["updates"].empty()) {
+    var li = nodedef["updates"];
+    for (auto i=0; i < li.size(); ++i) {
+      var id = i;
+      if (li[i].count("id") > 0) { id = li[i]["id"]; }
+      theNode.add_update(id, li[i]["sampling"]);
+
+      // Add inputs
+      if (li[i].count("inputs") > 0) {
+	var inputs = li[i]["inputs"];	  
+	if (inputs.is_type("Map")) {
+	  var myinputs = inputs.range();
+	  while (!myinputs.empty()) {
+	    theNode.input_to_update(id, myinputs.front().first(), myinputs.front().second());
+	    myinputs.pop_front();
+	  }
+	} else if (inputs.is_type("Vector")) {
+	  for (auto j=0; j < inputs.size(); ++j) {
+	    theNode.input_to_update(id, inputs[j], true);
+	  }
+	} else { throw ("In definition of node " + nodedef["name"] + " update #" + to_string(i) + " has invalid input list."); }
+      }
+
+      // Add outputs
+      if (li[i].count("outputs") > 0) {
+	var outputs = li[i]["outputs"];
+	if (outputs.is_type("Vector")) {
+	  for (auto j=0; j < outputs.size(); ++j) {
+	    theNode.output_from_update(id, outputs[j]);
+	  }
+	} else { throw ("In definition of node " + nodedef["name"] + " update #" + to_string(i) + " has invalid output list."); }
+      }
+    }
+  }
+
+  if (addnow) { add_node(theNode); }
+  return theNode;
+}
+
+def node(Map nodedef) {
+  return node(nodedef, true);
+}
+

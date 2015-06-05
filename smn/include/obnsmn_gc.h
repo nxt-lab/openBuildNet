@@ -23,6 +23,7 @@
 #include <vector>
 #include <memory>
 #include <chrono>
+#include <utility>  // pair
 
 #include <sharedqueue.h>    // Thread-safe shared event queue
 #include <obnsmn_event.h>
@@ -161,11 +162,15 @@ namespace OBNsmn {
         
         /** Insert a new node to the list of nodes.
          \param p Pointer to a node object.
-         \return true if successful.
+         \return a pair of <bool success,size_t index> where success=true if successful, then index is the ID of the newly added node
          */
-        bool insertNode(OBNNode* p) {
-            _nodes.push_back(std::unique_ptr<OBNNode>(p));
-            return true;
+        std::pair<bool, std::size_t> insertNode(OBNNode* p) {
+            if (!_gcthread) {
+                //_nodes.push_back(std::unique_ptr<OBNNode>(p));
+                _nodes.emplace_back(p);
+                return std::make_pair(true, _nodes.size()-1);
+            }
+            return std::make_pair(false, 0);
         }
         
         /** Return number of nodes in the node list. */

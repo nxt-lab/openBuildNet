@@ -12,10 +12,25 @@
 #define OBNSIM_BASIC_H
 
 #include <cstdint>
+#include <string>
 
 namespace OBNsim {
     typedef int64_t simtime_t;  ///< Simulation time type, as number of nano-seconds from beginning.
     typedef uint64_t updatemask_t;  ///< Update mask type: each bit corresponds to one update, so the width of the type is the maximum number of updates.
+    const int MAX_UPDATE_INDEX = 63;    ///< The maximum index of update type allowed = number of bits in updatemast_t - 1
+    
+    
+    namespace Utils {
+        
+        /** \brief Trim a string from spaces at both ends. */
+        std::string trim(const std::string& s0);
+        
+        /** \brief Check if a given name is a valid identifier.
+         \param name A string to be checked.
+         \return true if name is a valid identifier.
+         */
+        bool isValidIdentifier(const std::string &name);
+    }
 }
 
 
