@@ -5,9 +5,9 @@
 //
 // @author: Truong X. Nghiem (xuan.nghiem@epfl.ch)
 
-// ==========================
+// ====================================================
 // Convenient functions to create nodes
-// ==========================
+// ====================================================
 
 // To define an update type, we use a Map object of the following form:
 // [ "name" : "name of update", "id" : id-of-update, "sampling" : real-number-sampling-time-in-microseconds,
@@ -16,10 +16,11 @@
 // The list of inputs can be either a Vector of names (all of them will have direct feedthrough to this update) or
 // a Map of [name -> bool] where the boolean value specifies whether the input has direct feedthrough to this update.
 // For example: ["u1":true, "u2":true, "u3":false] is essentially the same as ["u1", "u2"] but the former provides more
-// optional information (we know that "u3" is also an input, but it doesn't affect how the simulation runs).
+// optional information (we know that "u3" is also an input, but it doesn't have direct feedthrough).
 //
-// A function called "update" will produce such a Map from all required arguments:
+// A function called "update" will produce such a Map from all arguments:
 //     update("name", id, sampling, inputs, outputs)
+// where inputs (or outputs), if it is a singleton, can be a string (name of the single port) instead of a vector of a single string.
 
 def update(string name, uint32_t id, double sampling, inputs, outputs) {
   var myinputs;
@@ -35,7 +36,9 @@ def update(string name, uint32_t id, double sampling, inputs, outputs) {
 //  "dataports" : vector-of-data-ports, "updates" : vector-of-update-definitions]
 // where the definition of update types is as above.
 // Only "name" is required.
-
+// The function node(nodeDef, addnow) creates a Node object from the map definition and returns it.
+// If addnow = true (or omitted), the Node object will be added immediately to the system (by calling add_node);
+// otherwise it is not and the returned Node object must be added later.
 def node(Map tnodedef, bool addnow) {
   var nodedef = tnodedef;  // A bug in Chaiscript that doesn't work with in-place Map objects
   if (nodedef.count("name") < 1) { throw ("Node definition must have a valid name."); }
@@ -128,5 +131,79 @@ def node(Map tnodedef, bool addnow) {
 
 def node(Map nodedef) {
   return node(nodedef, true);
+}
+
+
+
+// ====================================================
+// Virtual node implementation
+// ====================================================
+class VPort {
+  attr m_type  // 0: in; 1: out; 2: data/any
+  attr m_ins
+  attr m_outs
+  attr m_realports  // the actual ports assigned to this vport
+  def VPort(int t_type): 0 <= t_type && t_type <= 2 { this.m_type = t_type; this.m_ins = []; this.m_outs = []; this.m_realports = []; }
+  def virtual_add_input(PortInfo p) {
+    if (this.m_type == 1) { throw("A virtual output port can't have an input."); }
+    if (this.m_type == 0 && !this.m_ins.empty()) { throw("A virtual input port can't have multiple inputs."); }
+    if (port_type(p) == 0) { throw("An input port can't be a source of a virtual port."); }
+    this.m_ins.push_back(p);
+    for (auto i = 0; i < this.m_realports.size(); ++i) {
+      connect(p, this.m_realports[i]);
+    }
+  }
+  def virtual_add_output(PortInfo p) {
+    if (this.m_type == 0) { throw("A virtual input port can't have an output."); }
+    if (port_type(p) == 1) { throw("An output port can't be a target of a virtual port."); }
+    this.m_outs.push_back(p);
+    for (auto i = 0; i < this.m_realports.size(); ++i) {
+      connect(this.m_realports[i], p);
+    }
+  }
+  def virtual_assign(PortInfo p) {
+    if (this.m_type != port_type(p) && port_type(p) != 2) { throw("Types of virtual port and actual port are incompatible."); }
+    if (this.m_type == 1) {
+      if (!this.m_realports.empty()) { throw("A virtual output port can't be assigned to multiple ports."); }
+      this.m_realports.push_back(p);
+    } else {
+      this.m_realports.push_back(p);
+      for (auto i = 0; i < this.m_ins.size(); ++i) {
+	connect(this.m_ins[i], p);
+      }
+    }
+    if (this.m_type != 0) {
+      for (auto i = 0; i < this.m_outs.size(); ++i) {
+	connect(p, this.m_outs[i]);
+      }
+    }
+  }
+}
+
+class VNode {
+  attr m_ports
+  def VNode() { this.m_ports = Map(); }
+  // Assign an actual port to a virtual port on a virtual node; user code often only uses this function
+  def assign(string pname, PortInfo p) {
+    if (this.m_ports.count(pname) < 1) { throw("Virtual port '" + pname + "' doesn't exist."); }
+    this.m_ports[pname].virtual_assign(p);
+  }
+  // t_type: 0 if input, 1 if output, 2 if data/nay
+  def virtual_new_port(string t_name, int t_type) {
+    if (this.m_ports.count(t_name) > 0) { throw("Virtual port '" + t_name + "' already exists."); }
+    this.m_ports[t_name] = VPort(t_type);
+  }
+}
+
+// Connect a physical port to a virtual port on a virtual node
+def virtual_connect(PortInfo s, VNode n, string pname) {
+  if (n.m_ports.count(pname) < 1) { throw("Virtual port '" + pname + "' doesn't exist."); }
+  n.m_ports[pname].virtual_add_input(s);
+}
+
+// Connect a virtual port on a virtual node to a physical port
+def virtual_connect(VNode n, string pname, PortInfo t) {
+  if (n.m_ports.count(pname) < 1) { throw("Virtual port '" + pname + "' doesn't exist."); }
+  n.m_ports[pname].virtual_add_output(t);
 }
 

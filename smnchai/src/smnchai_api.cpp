@@ -53,9 +53,12 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     chai.add(fun(&Node::input_to_update), "input_to_update");
     chai.add(fun(&Node::output_from_update), "output_from_update");
 
-    // Get PortInfo from a node, used for connecting ports
+    // PortInfo from a node: used for connecting ports, and methods to access it
     chai.add(user_type<SMNChai::PortInfo>(), "PortInfo");
+    chai.add(bootstrap::copy_constructor<SMNChai::PortInfo>("PortInfo"));
     chai.add(fun(&Node::port), "port");
+    // Returns the type of a PortInfo: 0 = input, 1 = output, 2 = data
+    chai.add(fun<int (const SMNChai::PortInfo&)>([](const SMNChai::PortInfo& p) { return p.port_type; }), "port_type");
     
     // *********************************************
     // Methods to work with the WorkSpace object: add nodes, connect ports...

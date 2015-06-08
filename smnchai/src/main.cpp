@@ -49,7 +49,11 @@ void OBNsmn::report_info(int code, std::string msg) {
  */
 
 
-const char *copyright = R"txt(SMNChai : scriptable SMN server program for openBuildNet.
+const char *copyright = R"txt(
++--------------------------------------------------------------------+
+|         SMNChai : scriptable SMN server for openBuildNet.          |
++--------------------------------------------------------------------+
+
 This program is part of the openBuildNet framework developed at EPFL.
 )txt";
 
@@ -162,6 +166,10 @@ int main(int argc, const char* argv[]) {
         } catch (const SMNChai::smnchai_exception &e) {
             std::cerr << "SMNChai error:\n" << e.what() << std::endl;
             return 2;
+        } catch (chaiscript::Boxed_Value &e) {
+            std::string s(chaiscript::boxed_cast<const std::string&>(e));
+            std::cerr << "User code error:\n" << s << std::endl;
+            return 3;
         } catch (const std::exception &e) {
             // Everything else ...
             std::cerr << "Runtime error:\n" << e.what() << std::endl;

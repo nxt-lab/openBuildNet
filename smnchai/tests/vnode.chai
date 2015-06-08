@@ -1,0 +1,22 @@
+run_simulation(false);
+
+var node1 = new_node("node1");
+node1.add_output("y");
+var node2 = new_node("node2");
+node2.add_input("u");
+var node3 = new_node("node3");
+node3.add_input("u");
+node3.add_output("y");
+
+add_node(node1);
+add_node(node2);
+
+var vnode1 = VNode();
+vnode1.virtual_new_port("u", 0);
+
+virtual_connect(node1.port("y"), vnode1, "u");
+//virtual_connect(node3.port("y"), vnode1, "u");
+vnode1.assign("u", node2.port("u"));
+vnode1.assign("u", node3.port("u"));
+
+print_system();

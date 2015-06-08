@@ -58,7 +58,7 @@ namespace SMNChai {
     struct PortInfo {
         const std::string node_name;
         const std::string port_name;
-        const enum PortType { INPUT, OUTPUT, DATA } port_type;
+        const enum PortType { INPUT = 0, OUTPUT = 1, DATA = 2 } port_type;
         
         PortInfo(const std::string &t_node, const std::string t_port, PortType t_type):
         node_name(t_node), port_name(t_port), port_type(t_type)

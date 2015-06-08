@@ -4,7 +4,7 @@
 
 // DISTOPT_admm
 // Creates one master node and nNodes local nodes for the ADMM distributed optimization algorithm.
-// Returns a Vector of Node objects: the first nNodes of them are the local nodes, the last one is the master node. These Node objects are for reference only; any changes to them won't affect the actual nodes in the network.
+// Returns a map: "master" -> the Master node object; "locals" -> a Vector of nNodes local node objects; "plants" -> a Vector nNodes virtual plant node objects.  These Node objects are for reference only; any changes to them won't affect the actual nodes in the network.
 //
 // Summary of algorithm: <to be completed>
 // Nodes created:
@@ -16,10 +16,15 @@
 //    + Inputs: "cmd", "Gamma", "delta", "x" (for state feedback from the plant)
 //    + Outputs: "u" to be sent to the plant (the control decision at each step) and "U" to be sent to the master node.
 //    + Updates: MAIN update (id=0) that computes the algorithm iteration at the local node (sampling = timeStep).
+// - Virtual plant nodes represent the plants to be controlled by the local nodes. Each has the following (virtual) ports. They must be assigned/implemented by real ports outside of this function.
+//    + Inputs: "u" to receive the control value from the local node.
+//    + Outputs: "x" is the current state of the plant, to be fed back to the local node.
+
 def DISTOPT_admm (int nNodes, string masterName, string localPrefix, double timeStep): nNodes > 0 {
-  var allNodes = Vector();  // Vector of all nodes, to be returned
+  var vLocals = Vector();
+  var vPlants = Vector();
   
-  // We will build the aggregator and recorder nodes gradually
+  // We will build the aggregator node gradually
   var aggregator = new_node(masterName);
   aggregator.need_updateX(false);
   aggregator.add_output("cmd");  // command port to control the local nodes
@@ -39,7 +44,11 @@ def DISTOPT_admm (int nNodes, string masterName, string localPrefix, double time
 		     ], false);
     ctrl.need_updateX(false);
     add_node(ctrl);  // add the node to the system; after this, it can't be changed
-    allNodes.push_back(ctrl);
+
+    // Create the virtual plant node
+    var plant = VNode();
+    plant.virtual_new_port("u", 0);
+    plant.virtual_new_port("x", 1);
   
     // Create the ports on the aggregator that talks with the local controller
     var Gi = "Gamma" + to_string(i);
@@ -59,11 +68,22 @@ def DISTOPT_admm (int nNodes, string masterName, string localPrefix, double time
     connect(aggregator.port(di), ctrl.port("delta"));
     connect(ctrl.port("U"), aggregator.port(Ui));
     connect(aggregator.port("cmd"), ctrl.port("cmd"));
+
+    // Connect the ports between local - plant
+    virtual_connect(ctrl.port("u"), plant, "u");
+    virtual_connect(plant, "x", ctrl.port("x"));
+
+    // Add these nodes to their vectors only after we've done configuring them
+    vLocals.push_back(ctrl);
+    vPlants.push_back(plant);
   }
 
   // Now we can add the aggregator and the recorder to the system
   add_node(aggregator);
-  allNodes.push_back(aggregator);
 
+  var allNodes = Map();  // To be returned
+  allNodes["master"] = aggregator;
+  allNodes["locals"] = vLocals;
+  allNodes["plants"] = vPlants;
   return allNodes;
 }
