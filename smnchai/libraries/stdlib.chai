@@ -180,14 +180,32 @@ class VPort {
   }
 }
 
+// Virtual node implementation
 class VNode {
   attr m_ports
   def VNode() { this.m_ports = Map(); }
-  // Assign an actual port to a virtual port on a virtual node; user code often only uses this function
+  // Assign an actual port to a virtual port on a virtual node; user code often uses this function or implemented_by (below)
   def assign(string pname, PortInfo p) {
     if (this.m_ports.count(pname) < 1) { throw("Virtual port '" + pname + "' doesn't exist."); }
     this.m_ports[pname].virtual_assign(p);
   }
+  // Specify that this virtual node is implemented by a given node, which has all the virtual ports with optional name mapping
+  // Map m = ["virtual port name" : "actual port name on node"]
+  def implemented_by(Node n, Map m) {
+    var r = this.m_ports.range();
+    var mcopy = m;  // hack: if m is constant, we can't access its elements
+    while (!r.empty()) {
+      var vportname = r.front().first();
+      if (m.count(vportname) > 0) {
+	this.assign(vportname, n.port(mcopy[vportname]));
+      } else {
+	this.assign(vportname, n.port(vportname));
+      }
+      r.pop_front();
+    }
+  }
+  // Another version of implemented_by with no name mapping
+  def implemented_by(Node n) { this.implemented_by(n, Map()); }
   // t_type: 0 if input, 1 if output, 2 if data/nay
   def virtual_new_port(string t_name, int t_type) {
     if (this.m_ports.count(t_name) > 0) { throw("Virtual port '" + t_name + "' already exists."); }
@@ -207,3 +225,7 @@ def virtual_connect(VNode n, string pname, PortInfo t) {
   n.m_ports[pname].virtual_add_output(t);
 }
 
+// 
+def Node::implement(VNode vn, Map m) {
+  vn.implemented_by(this, m);
+}
