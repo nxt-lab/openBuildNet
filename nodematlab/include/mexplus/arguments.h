@@ -1,5 +1,7 @@
 /** MEX function arguments helper library.
  *
+ * Copyright 2014 Kota Yamaguchi.
+ *
  * Example: writing a MEX function that takes 2 input arguments and 1 optional
  *          flag, and returns one output.
  *
@@ -23,16 +25,17 @@
  * % Build
  * >> mex myFunction.cc src/mexplus/arguments.cc
  *
- * Kota Yamaguchi 2014 <kyamagu@cs.stonybrook.edu>
  */
 
-#ifndef __MEXPLUS_ARGUMENTS_H__
-#define __MEXPLUS_ARGUMENTS_H__
+#ifndef INCLUDE_MEXPLUS_ARGUMENTS_H_
+#define INCLUDE_MEXPLUS_ARGUMENTS_H_
 
+#include <cstdarg>
 #include <map>
-#include <mexplus/mxarray.h>
 #include <sstream>
-#include <stdarg.h>
+#include <string>
+#include <vector>
+#include "mexplus/mxarray.h"
 
 namespace mexplus {
 
@@ -64,7 +67,7 @@ namespace mexplus {
  *
  */
 class InputArguments {
-public:
+ public:
   /** Case-insensitive comparator for std::string.
    */
   struct CaseInsensitiveComparator {
@@ -125,7 +128,9 @@ public:
   }
   /** Parse arguments from mexFunction input.
    */
-  void parse(int nrhs, const mxArray* prhs[]) {
+  void parse(int nrhs,
+             const mxArray* prhs[],
+             bool ignore_multi_signatures = false) {
     if (definitions_.empty())
       mexErrMsgIdAndTxt("mexplus:arguments:error", "No format defined.");
     std::map<std::string, Definition>::iterator entry;
@@ -139,7 +144,7 @@ public:
       mexErrMsgIdAndTxt("mexplus:arguments:error",
                         (error_message_.empty()) ?
                         "Invalid arguments." : error_message_.c_str());
-    if (definitions_.size() > 1)
+    if (definitions_.size() > 1 && !ignore_multi_signatures)
       mexWarnMsgIdAndTxt("mexplus:arguments:warning",
                          "Input arguments match more than one signature.");
   }
@@ -197,7 +202,7 @@ public:
     return get(option_name);
   }
 
-private:
+ private:
   /** Fill in optional arguments definition.
    */
   void fillOptionalDefinition(int option_size,
@@ -213,7 +218,9 @@ private:
   bool parseDefinition(int nrhs,
                        const mxArray* prhs[],
                        Definition* definition) {
+    const size_t kMaxOptionNameSize = 64;
     std::stringstream message;
+    std::string option_name;
     if (nrhs < definition->mandatories.size()) {
       message << "Too few arguments: " << nrhs << " for at least "
               << definition->mandatories.size() << ".";
@@ -223,39 +230,77 @@ private:
     int index = 0;
     for (; index < definition->mandatories.size(); ++index)
       definition->mandatories[index] = prhs[index];
-    for (; index < nrhs; ++index) {
-      // Check if option name is valid.
-      const mxArray* option_name_array = prhs[index];
-      if (!mxIsChar(option_name_array)) {
-        message << "Option name must be char but is given "
-                << mxGetClassName(option_name_array) << ".";
-        error_message_.assign(message.str());
-        return false;
+
+    /* If the first argument behind all mandatories is the least one and
+     * represents a structure array with only one element, it is assumed to be
+     * a config structure with fields for all optionals.
+     */
+    if (nrhs - index == 1 &&
+        mxIsStruct(prhs[index]) &&
+        mxGetNumberOfElements(prhs[index]) == 1) {
+      MxArray config(prhs[index]);
+      for (int field_index = 0;
+           field_index < config.fieldSize();
+           ++field_index) {
+        // Check the config structure for fields.
+        option_name = config.fieldName(field_index);
+        if (option_name.size() > kMaxOptionNameSize) {
+          message << "Option name too long: " << option_name.size()
+                  << " characters for " << kMaxOptionNameSize - 1;
+          error_message_.assign(message.str());
+          return false;
+        }
+        OptionMap::iterator entry =
+            definition->optionals.find(option_name);
+        if (entry == definition->optionals.end()) {
+          message << "Invalid option name: '" << option_name << "'.";
+          error_message_.assign(message.str());
+          return false;
+        }
+        // Get optional value from "config structure".
+        entry->second = config.at(config.fieldName(field_index));
       }
-      char option_name[64];
-      if (mxGetString(option_name_array, option_name, sizeof(option_name))) {
-        message << "Option name too long.";
-        error_message_.assign(message.str());
-        return false;
+    }
+    else {  // Conventional option list.
+      while (true) {
+        if (index >= nrhs) break;
+        // Check if the option name is valid.
+        MxArray option_name_array(prhs[index++]);
+        if (!option_name_array.isChar()) {
+          message << "Option name must be char but is given "
+                  << option_name_array.className() << ".";
+          error_message_.assign(message.str());
+          return false;
+        }
+        option_name = option_name_array.to<std::string>();
+        if (option_name.size() > kMaxOptionNameSize) {
+          message << "Option name too long: " << option_name.size()
+                  << " characters for " << kMaxOptionNameSize - 1;
+          error_message_.assign(message.str());
+          return false;
+        }
+        OptionMap::iterator entry =
+            definition->optionals.find(option_name);
+        if (entry == definition->optionals.end()) {
+          message << "Invalid option name: '" << option_name << "'.";
+          error_message_.assign(message.str());
+          return false;
+        }
+        // Check if options are even.
+        if (index >= nrhs) {
+          message << "Missing option value for option '" << option_name
+                  << "'.";
+          error_message_.assign(message.str());
+          return false;
+        }
+        // Check if the option is already filled.
+        if (entry->second)
+          mexWarnMsgIdAndTxt("mexplus:arguments:warning",
+                             "Option '%s' appeared more than once.",
+                             option_name.c_str());
+        // Assign optional value.
+        entry->second = prhs[index++];
       }
-      OptionMap::iterator entry =
-          definition->optionals.find(option_name);
-      if (entry == definition->optionals.end()) {
-        message << "Invalid option name: '" << option_name << "'.";
-        error_message_.assign(message.str());
-        return false;
-      }
-      // Check if options are even.
-      if (++index >= nrhs) {
-        message << "Missing option value for option '" << option_name << "'.";
-        error_message_.assign(message.str());
-        return false;
-      }
-      if (entry->second)
-        mexErrMsgIdAndTxt("mexplus:arguments:warning",
-                          "Option '%s' appeared more than once.",
-                          option_name);
-      entry->second = prhs[index];
     }
     return true;
   }
@@ -312,7 +357,7 @@ void InputArguments::get(const std::string& option_name,
  *     output.set(2, cell.release());
  */
 class OutputArguments {
-public:
+ public:
   /** Construct output argument wrapper.
    */
   OutputArguments(int nlhs,
@@ -364,7 +409,7 @@ public:
     return plhs_[index];
   }
 
-private:
+ private:
   /** Number of output arguments.
    */
   int nlhs_;
@@ -373,6 +418,6 @@ private:
   mxArray** plhs_;
 };
 
-} // namespace mexplus
+}  // namespace mexplus
 
-#endif // __MEXPLUS_ARGUMENTS_H__
+#endif  // INCLUDE_MEXPLUS_ARGUMENTS_H_
