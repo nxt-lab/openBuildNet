@@ -225,7 +225,11 @@ def virtual_connect(VNode n, string pname, PortInfo t) {
   n.m_ports[pname].virtual_add_output(t);
 }
 
-// 
+// Specify that this node implements / realizes the given virtual node with given renaming rule
 def Node::implement(VNode vn, Map m) {
   vn.implemented_by(this, m);
+}
+
+def Node::implement(VNode vn) {
+  vn.implemented_by(this);
 }

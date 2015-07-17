@@ -1,5 +1,6 @@
 This directory contains the test projects for the framework.  Each test is an independent project that uses code files from the SMN, nodecpp, etc. to test various aspects of the framework.  Summary of the tests:
 
-- test1: a very simple test of the SMN with only one node updated regularly.
-- test2: a simple motor control simulation with 3 nodes.
-- test3: a simple ADMM example with one master node and five slave nodes. It tests the capabilty of the framework for irregular updates / events.
+- test1: a very simple test of the SMN with only one node updated regularly and irregularly. This tests the synchronization mechanism of the SMN/GC with nodes.
+- test2: a simple motor control simulation with 3 nodes. This tests basic data communication between nodes, synchronization of the SMN/GC, nodes' dependencies, and the node programming frameworks for C++ and Matlab.
+- test3: a simple ADMM example with one master node and several slave nodes. It tests the capabilty of openBuildNet for irregular updates / events, data ports, C++ and Matlab node programming frameworks.
+- test4: a simple test with two nodes sending data from one to another in various ways. It tests the communication capability of the C++ and Matlab node programming frameworks in: physical input and output ports, data ports, the event triggering mechanism.

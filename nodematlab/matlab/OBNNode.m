@@ -480,10 +480,18 @@ classdef OBNNode < handle
                 warning('OBNNode:runSimulation', 'Node is currently running; may be an error but we will run it anyway.');
             end
             
+            % To help Matlab process its own callbacks (e.g. for GUI, user
+            % interruption...) we will call OBN MEX with a small timeout
+            % value to return to Matlab and allow it to handle its events
+            % and callbacks, then we go back to simulation. At the same
+            % time, we keep track of the user-given timeout value, and do
+            % stop the simulation if that timeout error occurs.
+            
             status = 0;
             b = true;
+            timeoutStart = tic;
             while status == 0
-                [status, evtype, evargs] = obnsim_yarp_('runStep', this.id_, timeout);
+                [status, evtype, evargs] = obnsim_yarp_('runStep', this.id_, 1.0);  % small timeout is used
                 switch status
                     case 0  % Got an event
                         switch upper(evtype)
@@ -498,12 +506,19 @@ classdef OBNNode < handle
                             otherwise
                                 error('OBNNode:runSimulation', 'Internal error: Unknown event type %s returned from MEX.', evtype);
                         end
+                        timeoutStart = tic;     % reset the timer
                         
                     case 1  % Timeout
-                        if stopIfTimeout
-                            this.stopSimulation();  % stop the simulation immediately
+                        if toc(timeoutStart) > timeout
+                            % Real timeout error occurred
+                            if stopIfTimeout
+                                this.stopSimulation();  % stop the simulation immediately
+                            end
+                            b = false;
+                        else
+                            % We can continue running the simulation
+                            status = 0;
                         end
-                        b = false;
                         
                     case 2  % Stop properly
                         disp('Simulation has stopped properly.');
@@ -514,6 +529,7 @@ classdef OBNNode < handle
                     otherwise
                         error('OBNNode:runSimulation', 'Internal error: Unknown running state returned from MEX.');
                 end
+                drawnow;    % give Matlab a chance to update its GUI and process callbacks
             end
         end
         
