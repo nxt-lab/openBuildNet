@@ -25,6 +25,7 @@ using namespace chaiscript;
 using namespace SMNChai;
 
 const char *NODE_GC_PORT_NAME = "_gc_";
+std::string Node::m_global_prefix = "";
 
 /** This function register all the functions, types, etc. provided by the SMNChai API to a given ChaiScript object.
  \param chai The ChaiScript object to which the API is registered.
@@ -72,6 +73,12 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     
     chai.add(fun(&SubSystem::new_node), "new_node");
     chai.add(fun(&SubSystem::new_subsystem), "new_subsystem");
+    
+    chai.add(fun<void (const SubSystem &)>([](const SubSystem &sub){
+        Node::m_global_prefix = sub.get_name() + '/';
+    }), "set_current_subsystem");
+    
+    chai.add(fun<void ()>([](){ Node::m_global_prefix.clear(); }), "clear_current_subsystem");
              
     // *********************************************
     // Methods to work with the WorkSpace object: add nodes, connect ports...

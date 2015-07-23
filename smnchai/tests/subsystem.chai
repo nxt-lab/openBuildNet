@@ -1,19 +1,30 @@
 // Test SubSystem in SMNChai
 run_simulation(false);
 
+// This function creates a new node and adds it to the workspace.
+// It doesn't support subsystem.
+def createANode() {
+  var mynode = new_node("mynode");
+  add_node(mynode);
+}
+
 var sub1 = new_subsystem("sub1");
 var sub2 = new_subsystem("sub2");
 var sub11 = sub1.new_subsystem("sub11");
 var sub21 = new_subsystem(sub2, "sub21");
 
-var node0 = new_node("node0");
-node0.add_output("y");
 
 var node1 = sub1.new_node("node1");
 var node2 = sub2.new_node("node1");
 var node11 = sub11.new_node("node1");
 var node21 = sub21.new_node("node1");
-var node3 = sub1.new_node("node2");
+
+set_current_subsystem(sub1);  // new nodes will be created in sub1
+var node3 = new_node("node2");
+clear_current_subsystem();  // new nodes will be created in global space
+
+var node0 = new_node("node0");
+node0.add_output("y");
 
 add_node(node0);
 add_node(node1);
@@ -22,6 +33,13 @@ add_node(node3);
 add_node(node11);
 add_node(node21);
 
+createANode();  // A node is created at the global space
+
+// However, by setting the current subsystem, createANode() now creates a node in a given subsystem
+set_current_subsystem(sub11);
+createANode();
+clear_current_subsystem();
+
 print_system();
 // The following nodes should be available:
-// sub1/sub11/node1 sub1/node2 sub2/sub21/node1 node0 sub2/node1 sub1/node1 
+// sub1/sub11/mynode mynode sub1/sub11/node1 sub1/node2 sub2/sub21/node1 node0 sub2/node1 sub1/node1 

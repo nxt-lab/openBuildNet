@@ -86,6 +86,11 @@ namespace SMNChai {
         
         /** Set of update types: map from unique int ID to sampling period (in microseconds). */
         std::unordered_map<unsigned int, double> m_updates;
+    public:
+        /** Prefix to node name created by the global new_node.
+         Typically this prefix is empty, however it can be set to the name of a subsystem so that new nodes are automatically placed inside it.
+         */
+        static std::string m_global_prefix;
         
     private:
         
@@ -96,10 +101,11 @@ namespace SMNChai {
         /** Constructor of a node object given its name. The node is not yet added to the network.
          \exception smnchai_exception an error happens, e.g. invalid name.
          */
-        Node(const std::string &t_name): m_name(t_name) {
+        Node(const std::string &t_name) {
             if (!OBNsim::Utils::isValidNodeName(t_name)) {
                 throw smnchai_exception("Node name '" + t_name + "' is invalid.");
             }
+            m_name = Node::m_global_prefix + t_name;
         }
         
         /** Return the name of this node. */
