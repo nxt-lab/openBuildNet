@@ -97,8 +97,8 @@ namespace SMNChai {
          \exception smnchai_exception an error happens, e.g. invalid name.
          */
         Node(const std::string &t_name): m_name(t_name) {
-            if (!OBNsim::Utils::isValidIdentifier(t_name)) {
-                throw smnchai_exception("Node name '" + t_name + "' is an invalid identifier.");
+            if (!OBNsim::Utils::isValidNodeName(t_name)) {
+                throw smnchai_exception("Node name '" + t_name + "' is invalid.");
             }
         }
         
@@ -313,6 +313,51 @@ namespace SMNChai {
          \exception smnchai_exception An error (timeout) happens.
          */
         void waitfor_all_nodes_online(double timeout) const;
+    };
+    
+    /** Class that represents a subsystem, to be created and used in Chaiscript.
+     It is used to create (virtual) subsystems whose nodes have names prefixed with the subsystem's path.
+     For example, all nodes created in subsystem "my/subsystem" have names of the form "my/subsystem/nodename".
+     Subsystems are virtual in the sense that they are used to organize nodes in the Chaiscript; however the WorkSpace doesn't see subsystems.
+     */
+    class SubSystem {
+        std::string m_name; ///< Name of the subsystem, a valid identifier
+    public:
+        std::string get_name() const {
+            return m_name;
+        }
+        
+        /** Constructor of a subsystem object in the (global) workspace.
+         \param t_name Name of the subsystem, must be a valid identifier.
+         \exception smnchai_exception an error happens, e.g. invalid name.
+         */
+        SubSystem(const std::string &t_name): m_name(t_name) {
+            if (!OBNsim::Utils::isValidIdentifier(t_name)) {
+                throw smnchai_exception("Subsystem name '" + t_name + "' is invalid.");
+            }
+        }
+        
+        /** Constructor of a subsystem object in another subsystem.
+         \param t_parent The parent subsystem, which will contain this new subsystem.
+         \param t_name Name of the subsystem, must be a valid identifier.
+         \exception smnchai_exception an error happens, e.g. invalid name.
+         */
+        SubSystem(const SubSystem &t_parent, const std::string &t_name) {
+            if (!OBNsim::Utils::isValidIdentifier(t_name)) {
+                throw smnchai_exception("Subsystem name '" + t_name + "' is invalid.");
+            }
+            m_name = t_parent.get_name() + '/' + t_name;
+        }
+        
+        /** Create a new node in this subsystem; the node's name is prefixed with the subsystem's name. */
+        Node new_node(const std::string &t_name) const {
+            return Node(get_name() + '/' + t_name);
+        }
+        
+        /** Create a new subsystem of this subsystem. */
+        SubSystem new_subsystem(const std::string &t_name) const {
+            return SubSystem(*this, t_name);
+        }
     };
     
     /********** Utility and interface functions ************/

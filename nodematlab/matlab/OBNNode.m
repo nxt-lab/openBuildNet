@@ -58,7 +58,7 @@ classdef OBNNode < handle
             % the network will be /ws/nodeName
             
             narginchk(1, 2);
-            [b, nodeName] = OBNNode.isValidIdentifier(nodeName);
+            [b, nodeName] = OBNNode.isValidNodeName(nodeName);
             assert(b, 'Invalid node''s name.');
             if nargin > 1 && ~isempty(ws)
                 [b, ws] = OBNNode.isValidIdentifier(ws);
@@ -679,6 +679,25 @@ classdef OBNNode < handle
             b = ~isempty(vs) && vs(1) ~= '_' &&...
                 all(ismember(lower(vs), 'abcdefghijklmnopqrstuvwxyz0123456789_'));
         end
+        
+        function [b, vs] = isValidNodeName(s)
+            %   [b, vs] = isValidNodeName(s)
+            % Check if a given string is a valid node name (cf. C++ code
+            % obnsim_basic.cpp).
+            % Also tries to obtain a valid name from s and returns in vs
+            
+            if ~ischar(s)
+                vs = '';
+                b = false;
+                return;
+            end
+            
+            vs = strtrim(s);
+            b = ~isempty(vs) && vs(1) ~= '_' && vs(1) ~= '/' && vs(end) ~= '/' &&...
+                all(ismember(lower(vs), 'abcdefghijklmnopqrstuvwxyz0123456789_/')) &&...
+                isempty(strfind(vs, '//')) && isempty(strfind(vs, '/_'));
+        end
+                                                                 
         
         function b = isValidID(ID)
             b = isnumeric(ID) && isscalar(ID) && ID >= 0 && floor(ID)==ID;

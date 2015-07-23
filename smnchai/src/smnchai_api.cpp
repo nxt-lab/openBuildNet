@@ -60,6 +60,19 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     // Returns the type of a PortInfo: 0 = input, 1 = output, 2 = data
     chai.add(fun<int (const SMNChai::PortInfo&)>([](const SMNChai::PortInfo& p) { return p.port_type; }), "port_type");
     
+    
+    // *********************************************
+    // Methods to work with subsystems
+    // *********************************************
+    
+    chai.add(user_type<SubSystem>(), "SubSystem");
+    chai.add(constructor<SubSystem (const std::string&)>(), "new_subsystem");
+    chai.add(constructor<SubSystem (const SubSystem&, const std::string&)>(), "new_subsystem");
+    chai.add(bootstrap::copy_constructor<SubSystem>("SubSystem"));
+    
+    chai.add(fun(&SubSystem::new_node), "new_node");
+    chai.add(fun(&SubSystem::new_subsystem), "new_subsystem");
+             
     // *********************************************
     // Methods to work with the WorkSpace object: add nodes, connect ports...
     // These are bound with the given WorkSpace object

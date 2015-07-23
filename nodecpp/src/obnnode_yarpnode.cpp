@@ -252,12 +252,12 @@ bool YarpNode::addOutput(YarpOutputPortBase* port) {
 }
 
 /** The constructor of a node object. It initializes the node object with name, optional workspace name, and initial state.
- \param name The required name of the node; must be a valid identifier.
+ \param name The required name of the node; must be a valid node name.
  \param ws The optional workspace; must be a valid identifier. The workspace name is prepended to all names used by this node, including the SMN. Default workspace is "" (i.e. no workspace).
  */
 YarpNode::YarpNode(const string& _name, const string& ws): _smn_port(this) {
     _nodeName = trim(_name);
-    assert(!_nodeName.empty());
+    assert(OBNsim::Utils::isValidNodeName(_nodeName));
     
     _workspace = trim(ws);
     if (_workspace.empty()) {

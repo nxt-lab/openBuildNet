@@ -20,3 +20,9 @@ vnode1.assign("u", node2.port("u"));
 vnode1.assign("u", node3.port("u"));
 
 print_system();
+// Should output:
+// List of nodes:
+// node2 node1 
+// List of connections:
+// node1/y -> node3/u
+// node1/y -> node2/u

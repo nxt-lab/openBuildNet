@@ -30,6 +30,20 @@ namespace OBNsim {
          \return true if name is a valid identifier.
          */
         bool isValidIdentifier(const std::string &name);
+        
+        /** \brief Check if a given name is a valid node name.
+         A valid node name consists of one or more valid identifiers separated by single forward slashes (/).
+         The following are invalid node names:
+         "_abc" (invalid identifier)
+         "/abc/def" (begins with /)
+         "abc/def/" (ends with /)
+         "abc//def" (double slashes)
+         "abc/_def" (second identifier is invalid)
+         This name is valid: "abc/def"
+         \param name A string to be checked.
+         \return true if name is a valid node name.
+         */
+        bool isValidNodeName(const std::string &name);
     }
 }
 

@@ -33,3 +33,16 @@ bool OBNsim::Utils::isValidIdentifier(const std::string &name) {
     }
     return name.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == string::npos;
 }
+
+bool OBNsim::Utils::isValidNodeName(const std::string &name) {
+    if (name.empty() || name.front() == '_' || name.front() == '/' || name.back() == '/') {
+        return false;
+    }
+    if (name.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_/")
+        != string::npos) {
+        return false;
+    }
+    // Double forward slashes are invalid
+    // Underscore following / is also invalid
+    return (name.find("//") == string::npos) && (name.find("/_") == string::npos);
+}
