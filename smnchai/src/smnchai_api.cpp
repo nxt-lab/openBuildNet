@@ -59,7 +59,8 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     chai.add(bootstrap::copy_constructor<SMNChai::PortInfo>("PortInfo"));
     chai.add(fun(&Node::port), "port");
     // Returns the type of a PortInfo: 0 = input, 1 = output, 2 = data
-    chai.add(fun<int (const SMNChai::PortInfo&)>([](const SMNChai::PortInfo& p) { return p.port_type; }), "port_type");
+    //chai.add(fun<int (const SMNChai::PortInfo&)>([](const SMNChai::PortInfo& p) { return p.port_type; }), "port_type");
+    chai.add(fun([](const SMNChai::PortInfo& p) { return static_cast<int>(p.port_type); }), "port_type"); // need to cast from enum value to int for automatic deduction of type signature
     
     
     // *********************************************
@@ -74,11 +75,13 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     chai.add(fun(&SubSystem::new_node), "new_node");
     chai.add(fun(&SubSystem::new_subsystem), "new_subsystem");
     
-    chai.add(fun<void (const SubSystem &)>([](const SubSystem &sub){
+    //chai.add(fun<void (const SubSystem &)>([](const SubSystem &sub){
+    chai.add(fun([](const SubSystem &sub){
         Node::m_global_prefix = sub.get_name() + '/';
     }), "set_current_subsystem");
     
-    chai.add(fun<void ()>([](){ Node::m_global_prefix.clear(); }), "clear_current_subsystem");
+    //chai.add(fun<void ()>([](){ Node::m_global_prefix.clear(); }), "clear_current_subsystem");
+    chai.add(fun([](){ Node::m_global_prefix.clear(); }), "clear_current_subsystem");
              
     // *********************************************
     // Methods to work with the WorkSpace object: add nodes, connect ports...
@@ -89,7 +92,8 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     // The object is COPIED to the workspace, so any later change to the Chaiscript's node object won't reflect in the workspace.
     chai.add(fun(&WorkSpace::add_node, &ws), "add_node");
     
-    chai.add(fun<void (PortInfo, PortInfo)>([&ws](PortInfo s, PortInfo t) { ws.connect(std::move(s), std::move(t)); }), "connect");
+    //chai.add(fun<void (PortInfo, PortInfo)>([&ws](PortInfo s, PortInfo t) { ws.connect(std::move(s), std::move(t)); }), "connect");
+    chai.add(fun([&ws](PortInfo s, PortInfo t) { ws.connect(std::move(s), std::move(t)); }), "connect");
     chai.add(fun<void (WorkSpace::*)(const std::string &, const std::string &, const std::string &, const std::string &)>(&WorkSpace::connect, &ws), "connect");
     
     // Function to change the name of the workspace
@@ -123,16 +127,19 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     // *********************************************
     
     /** Set timeout for ACK, in milliseconds. */
-    chai.add(fun<void (int)>([&ws](int t) { ws.settings.ack_timeout = t; }), "ack_timeout");
+    //chai.add(fun<void (int)>([&ws](int t) { ws.settings.ack_timeout = t; }), "ack_timeout");
+    chai.add(fun([&ws](int t) { ws.settings.ack_timeout = t; }), "ack_timeout");
     
     /** Set final simulation time, in microseconds. */
-    chai.add(fun<void (double)>([&ws](double t) {
+    //chai.add(fun<void (double)>([&ws](double t) {
+    chai.add(fun([&ws](double t) {
         if (t <= 0.0) { throw smnchai_exception("Final simulation time must be positive, but " + std::to_string(t) + " is given."); }
         ws.settings.final_time = t;
     }), "final_time");
     
     /** Set the atomic time unit, in microseconds. */
-    chai.add(fun<void (unsigned int)>([&ws](unsigned int t) {
+    // chai.add(fun<void (unsigned int)>([&ws](unsigned int t) {
+    chai.add(fun([&ws](unsigned int t) {
         if (t < 1) { throw smnchai_exception("Time unit must be positive, but " + std::to_string(t) + " is given."); }
         ws.settings.time_unit = t;
     }), "timeunit");
@@ -142,7 +149,8 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
      This can be useful to just load, print, and check the system configuration without actually running it.
      Note that certain commands are affected by where this command is placed, e.g. commands to start remote nodes will still run if at the time it is called the setting is still "true", however if this setting was switched off before a command to start a remote node, the latter will be disabled.  Similarly for commands to wait for nodes to come online.
      */
-    chai.add(fun<void (bool)>([&ws](bool b) { ws.settings.run_simulation = b; }), "run_simulation");
+    //chai.add(fun<void (bool)>([&ws](bool b) { ws.settings.run_simulation = b; }), "run_simulation");
+    chai.add(fun([&ws](bool b) { ws.settings.run_simulation = b; }), "run_simulation");
     
     /** Defines constants for typical time values (in microseconds). */
     chai.add(const_var(double(1.0)), "microsecond");
