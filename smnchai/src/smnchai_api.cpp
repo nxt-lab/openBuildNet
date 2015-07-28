@@ -159,6 +159,14 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     chai.add(const_var(double(60e6)), "minute");
     chai.add(const_var(double(3.6e9)), "hour");
     chai.add(const_var(double(24*3.6e9)), "day");
+    
+    
+    // *********************************************
+    // Functions to export a node or network
+    // *********************************************
+    
+    /** Export full description of a node to DOT. */
+    chai.add(fun([](const Node &n) { n.export2dot_full(std::cout); }), "export_to_dot");
 }
 
 

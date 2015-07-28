@@ -126,6 +126,7 @@ set(OBNSMN_CORE_HDRFILES
 
 set(SMNCHAI_SRCFILES
 	src/smnchai_api.cpp
+	src/smnchai_export.cpp
 	src/main.cpp
 )
 

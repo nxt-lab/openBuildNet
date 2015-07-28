@@ -180,6 +180,16 @@ namespace SMNChai {
         OBNsim::updatemask_t output_updatemask(const std::string &port_name) const {
             return m_outputs.at(port_name);
         }
+        
+    public:
+        // Methods for exporting the node description to DOT, etc.
+        
+        /** \brief Export a node object to DOT language with full description.
+         
+         This function exports an SMNChai Node object to an output stream in the GraphViz's DOT language.
+         The full node description will be exported, including all inputs, outputs, updates, and their dependencies.
+         **/
+        void export2dot_full(std::ostream &tos) const;
     };
     
 

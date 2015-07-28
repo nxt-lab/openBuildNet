@@ -1,0 +1,42 @@
+// Test exporting to DOT
+run_simulation(false);
+
+var node1 = node(["name" : "node1",
+		  "inputs" : ["u1", "u2"],
+		  "outputs" : ["y1", "y2"],
+		  "updates" : [["name" : "Main update",
+				"id" : 0,
+				"sampling" : 10*second,
+				"inputs" : ["u1"],
+				"outputs" : ["y1", "y2"]
+				],
+			       ["name" : "Irregular update",
+				"id" : 2,
+				"sampling" : 0,
+				"inputs" : ["u2"],
+				"outputs" : ["y2"]
+				]
+			       ]
+		  ]);
+
+var node2 = new_node("node2");
+node2.add_input("u");
+var node3 = new_node("node3");
+node3.add_input("u");
+node3.add_output("y");
+
+add_node(node2);
+
+var vnode1 = VNode();
+vnode1.virtual_new_port("u", 0);
+
+virtual_connect(node1.port("y1"), vnode1, "u");
+//virtual_connect(node3.port("y"), vnode1, "u");
+vnode1.assign("u", node2.port("u"));
+vnode1.assign("u", node3.port("u"));
+
+print_system();
+
+// Export a node to DOT
+export_to_dot(node1);
+
