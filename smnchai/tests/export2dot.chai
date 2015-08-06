@@ -4,6 +4,7 @@ run_simulation(false);
 var node1 = node(["name" : "node1",
 		  "inputs" : ["u1", "u2"],
 		  "outputs" : ["y1", "y2"],
+		  "dataports": ["data"],
 		  "updates" : [["name" : "Main update",
 				"id" : 0,
 				"sampling" : 10*second,

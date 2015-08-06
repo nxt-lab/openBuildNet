@@ -189,7 +189,18 @@ namespace SMNChai {
          This function exports an SMNChai Node object to an output stream in the GraphViz's DOT language.
          The full node description will be exported, including all inputs, outputs, updates, and their dependencies.
          **/
-        void export2dot_full(std::ostream &tos) const;
+        void export2dot_full(std::ostream &tos, const std::string &tprops = "") const;
+        
+        /** \brief Export a node object to DOT language with compact description.
+         
+         This function exports an SMNChai Node object to an output stream in the GraphViz's DOT language.
+         A compact node description will be exported, including only input and output ports, and node's name.
+         It is suitable for inclusion in a larger graph of the entire network.
+         No graph header is produced; only the node definition is produced.
+         The node is exported as a DOT's node, with input ports on the left and output ports on the right.
+         The node and its ports are named as the SMN node and ports: "A_node" and "a_port"; the port is referred to as "A_node":a_port.
+         **/
+        void export2dot_compact(std::ostream &tos, const std::string &tprops = "") const;
     };
     
 

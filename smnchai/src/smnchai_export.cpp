@@ -116,14 +116,20 @@ std::string gen_time_rep(double t_ms) {
 }
 
 
-
-void Node::export2dot_full(std::ostream &tos) const {
+/**
+ \param tos An output stream to write the result to.
+ \param tprops Optional extra properties of the graph can be specified in this string.
+ */
+void Node::export2dot_full(std::ostream &tos, const std::string &tprops) const {
     // Graph header: node's name, settings,...
     tos << "digraph " << QUOTE << m_name << QUOTE << " {" << std::endl
     << TAB << "// DOT description of node " << m_name << " exported from SMNChai" << std::endl
     << TAB << "label = " << QUOTE << m_name << QUOTE << ";\n"
     << TAB << "labelloc = t;\n"
     << TAB << "rankdir = LR;\n\n";
+    
+    // Extra properties
+    tos << TAB << tprops << std::endl;
     
     // List of updates
     for (auto it = m_updates.cbegin(); it != m_updates.cend(); ++it) {
@@ -167,4 +173,74 @@ void Node::export2dot_full(std::ostream &tos) const {
     
     // Closing
     tos << "}" << std::endl;
+}
+
+
+/**
+ \param tos An output stream to write the result to.
+ \param tprops Optional extra properties of the node can be specified in this string.
+ */
+void Node::export2dot_compact(std::ostream &tos, const std::string &tprops) const {
+    // Node header: node's name, settings,...
+    tos << TAB << "// Node: " << m_name << std::endl
+    << TAB << QUOTE << m_name << QUOTE << " [shape=none,width=0,height=0,margin=0,label=<" << std::endl
+    // The main table of the node
+    << TAB << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"0\">\n"
+    // Name of the node, at the top in blue color
+    << TAB << "<TR><TD CELLPADDING=\"2\"><FONT COLOR=\"blue\"><B>" << m_name << "</B></FONT></TD></TR>\n";
+    
+    // The table of the input and output ports
+    if (!m_inputs.empty() || !m_outputs.empty()) {
+        std::string portname;
+        
+        tos << TAB << "<TR><TD><TABLE BORDER=\"1\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"0\"><TR>\n"
+        // Table of input ports in the left cell
+        << TAB << "<TD ALIGN=\"LEFT\"><TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"2\" CELLPADDING=\"2\">\n";
+        
+        // Create each line for each input port
+        for (auto it = m_inputs.cbegin(); it != m_inputs.cend(); ++it) {
+            portname = it->first;
+            tos << TAB << "<TR><TD ALIGN=\"LEFT\" PORT=\"" << portname << "\">" << portname << "</TD></TR>\n";
+        }
+        
+        // Closing the input ports table
+        tos << TAB << "</TABLE></TD>\n"
+        // Table of output ports in the right cell
+        << TAB << "<TD ALIGN=\"RIGHT\"><TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"2\" CELLPADDING=\"2\">\n";
+        
+        // Create each line for each output port
+        for (auto it = m_outputs.cbegin(); it != m_outputs.cend(); ++it) {
+            portname = it->first;
+            tos << TAB << "<TR><TD ALIGN=\"RIGHT\" PORT=\"" << portname << "\">" << portname << "</TD></TR>\n";
+        }
+        
+        // Closing the output ports table
+        tos << TAB << "</TABLE></TD>\n"
+        // Closing input and output ports table, cell and row
+        << TAB << "</TR></TABLE></TD></TR>\n";
+    }
+    
+    // Table of data ports
+    if (!m_dataports.empty()) {
+        // Create table for data ports
+        tos << TAB << "<TR><TD><TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"2\">\n";
+
+        // Create each line for each data port
+        for (auto it = m_dataports.cbegin(); it != m_dataports.cend(); ++it) {
+            tos << TAB << "<TR><TD PORT=\"" << *it << "\"><I>" << *it << "</I></TD></TR>\n";
+        }
+        
+        // Closing table for data ports
+        tos << TAB << "</TABLE></TD></TR>\n";
+    }
+    
+    // Closing node table
+    tos << TAB << "</TABLE>>";
+    
+    
+    // Extra properties
+    if (!tprops.empty()) {
+        tos << ",\n" << TAB << tprops;
+    }
+    tos << "];";
 }
