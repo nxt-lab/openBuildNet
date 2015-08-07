@@ -43,5 +43,6 @@ connect(node1.port("y2"), node2.port("u"));
 print_system();
 
 // Export a node to DOT
-// export_to_dot(node1);
-export2dot();
+// export2dot(node1, "node1.dot");
+
+export2dot("system.dot", true);

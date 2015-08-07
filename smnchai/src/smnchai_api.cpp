@@ -14,6 +14,8 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+#include <sstream>
+#include <fstream>
 
 #include <obnsmn_report.h>
 #include <smnchai_api.h>
@@ -165,9 +167,28 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     // Functions to export a node or network
     // *********************************************
     
-    /** Export full description of a node to DOT. */
-    chai.add(fun([](const Node &n) { n.export2dot_compact(std::cout); }), "export_to_dot");
-    chai.add(fun([&ws]() { ws.export2dot(std::cout); }), "export2dot");
+    /** Export full description of a node to DOT. 
+     \param n A node object
+     \param fn A file name
+     */
+    chai.add(fun([](const Node &n, const std::string &fn) {
+        std::stringstream ss(std::ios_base::out);
+        n.export2dot_full(ss);
+        std::ofstream fs(fn);
+        if (fs.is_open()) {
+            fs << ss.str();
+            fs.close();
+        } else {
+            throw smnchai_exception("Could not open file " + fn + " to write.");
+        }
+    }), "export2dot");
+    
+    /** Export the system to a DOT file.
+     \param fn File name
+     \param cluster true if each node is a cluster; false if each node is a simple node.
+     */
+    chai.add(fun([&ws](const std::string &fn, bool cluster) { ws.export2dotfile(fn, cluster); }), "export2dot");
+    chai.add(fun([&ws](const std::string &fn) { ws.export2dotfile(fn, false); }), "export2dot");    ///< Default version with cluster = false
 }
 
 

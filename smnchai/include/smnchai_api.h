@@ -199,6 +199,16 @@ namespace SMNChai {
          The node and its ports are named as the SMN node and ports: "A_node" and "a_port"; the port is referred to as "A_node":a_port.
          **/
         void export2dot_compact(std::ostream &tos, const std::string &tprops = "") const;
+        
+        /** \brief Export a node object to DOT language with compact description where each node is a cluster.
+         
+         This function exports an SMNChai Node object to an output stream in the GraphViz's DOT language.
+         A compact node description will be exported, where each node is a cluster and each port is a DOT's node.
+         It is suitable for inclusion in a larger graph of the entire network.
+         No graph header is produced; only the node definition is produced.
+         The ports are named as "A_node/a_port".
+         **/
+        void export2dot_compact_cluster(std::ostream &tos, const std::string &tprops = "") const;
     };
     
 
@@ -347,7 +357,10 @@ namespace SMNChai {
          This function exports a WorkSpace object to an output stream in the GraphViz's DOT language.
          Nodes are exported with compact descriptions.
          **/
-        void export2dot(std::ostream &tos, const std::string &tprops = "") const;
+        void export2dot(std::ostream &tos, bool t_cluster = false, const std::string &tprops = "") const;
+        
+        /** \brief Export a network to a DOT file. */
+        void export2dotfile(const std::string &fn, bool cluster) const;
     };
     
     /** Class that represents a subsystem, to be created and used in Chaiscript.
