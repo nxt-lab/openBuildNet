@@ -112,7 +112,7 @@ int main(int argc, const char* argv[]) {
         // Construct the library path and check that it exists
         smnchai_main_dir /= "libraries";
         if (!boost::filesystem::exists(smnchai_main_dir) || !boost::filesystem::is_directory(smnchai_main_dir)) {
-            std::cerr << "ERROR: SMNChai library directory " << smnchai_main_dir << " does not exist.\n\n";
+            std::cerr << "ERROR: SMNChai library directory " << smnchai_main_dir << " does not exist.\nPlease check the environment variable " << SMNCHAI_ENV_VAR << "\n\n";
             show_usage(argv[0]);
             return 1;
         }
@@ -122,7 +122,7 @@ int main(int argc, const char* argv[]) {
             boost::filesystem::path stdlib = smnchai_main_dir;
             stdlib /= SMNCHAI_STDLIB_NAME;
             if (!boost::filesystem::exists(stdlib) || !boost::filesystem::is_regular_file(stdlib)) {
-                std::cerr << "ERROR: SMNChai standard library " << stdlib << " does not exist.\n\n";
+                std::cerr << "ERROR: SMNChai standard library " << stdlib << " does not exist.\nYou may want to check the environment variable " << SMNCHAI_ENV_VAR << "\n\n";
                 show_usage(argv[0]);
                 return 1;
             }

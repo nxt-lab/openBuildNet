@@ -167,6 +167,7 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     
     /** Export full description of a node to DOT. */
     chai.add(fun([](const Node &n) { n.export2dot_compact(std::cout); }), "export_to_dot");
+    chai.add(fun([&ws]() { ws.export2dot(std::cout); }), "export2dot");
 }
 
 

@@ -193,31 +193,37 @@ void Node::export2dot_compact(std::ostream &tos, const std::string &tprops) cons
     if (!m_inputs.empty() || !m_outputs.empty()) {
         std::string portname;
         
-        tos << TAB << "<TR><TD><TABLE BORDER=\"1\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"0\"><TR>\n"
-        // Table of input ports in the left cell
-        << TAB << "<TD ALIGN=\"LEFT\"><TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"2\" CELLPADDING=\"2\">\n";
+        tos << TAB << "<TR><TD><TABLE BORDER=\"1\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"0\"><TR>\n";
         
-        // Create each line for each input port
-        for (auto it = m_inputs.cbegin(); it != m_inputs.cend(); ++it) {
-            portname = it->first;
-            tos << TAB << "<TR><TD ALIGN=\"LEFT\" PORT=\"" << portname << "\">" << portname << "</TD></TR>\n";
+        if (!m_inputs.empty()) {
+            // Table of input ports in the left cell
+            tos << TAB << "<TD ALIGN=\"LEFT\"><TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"2\" CELLPADDING=\"2\">\n";
+        
+            // Create each line for each input port
+            for (auto it = m_inputs.cbegin(); it != m_inputs.cend(); ++it) {
+                portname = it->first;
+                tos << TAB << "<TR><TD ALIGN=\"LEFT\" PORT=\"" << portname << "\">" << portname << "</TD></TR>\n";
+            }
+        
+            // Closing the input ports table
+            tos << TAB << "</TABLE></TD>\n";
         }
         
-        // Closing the input ports table
-        tos << TAB << "</TABLE></TD>\n"
-        // Table of output ports in the right cell
-        << TAB << "<TD ALIGN=\"RIGHT\"><TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"2\" CELLPADDING=\"2\">\n";
-        
-        // Create each line for each output port
-        for (auto it = m_outputs.cbegin(); it != m_outputs.cend(); ++it) {
-            portname = it->first;
-            tos << TAB << "<TR><TD ALIGN=\"RIGHT\" PORT=\"" << portname << "\">" << portname << "</TD></TR>\n";
+        if (!m_outputs.empty()) {
+            // Table of output ports in the right cell
+            tos << TAB << "<TD ALIGN=\"RIGHT\"><TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"2\" CELLPADDING=\"2\">\n";
+            
+            // Create each line for each output port
+            for (auto it = m_outputs.cbegin(); it != m_outputs.cend(); ++it) {
+                portname = it->first;
+                tos << TAB << "<TR><TD ALIGN=\"RIGHT\" PORT=\"" << portname << "\">" << portname << "</TD></TR>\n";
+            }
+            
+            // Closing the output ports table
+            tos << TAB << "</TABLE></TD>\n";
         }
-        
-        // Closing the output ports table
-        tos << TAB << "</TABLE></TD>\n"
         // Closing input and output ports table, cell and row
-        << TAB << "</TR></TABLE></TD></TR>\n";
+        tos << TAB << "</TR></TABLE></TD></TR>\n";
     }
     
     // Table of data ports
@@ -243,4 +249,70 @@ void Node::export2dot_compact(std::ostream &tos, const std::string &tprops) cons
         tos << ",\n" << TAB << tprops;
     }
     tos << "];";
+}
+
+
+/**
+ \param tos An output stream to write the result to.
+ \param tprops Optional extra properties of the graph can be specified in this string.
+ */
+void WorkSpace::export2dot(std::ostream &tos, const std::string &tprops) const {
+    // Graph header
+    tos << "digraph " << QUOTE << (m_name.empty()?"System":m_name) << QUOTE << " {" << std::endl
+    << TAB << "// GraphViz's DOT description of the system exported from SMNChai" << std::endl
+    //<< TAB << "label = " << QUOTE << (m_name.empty()?"System":m_name) << QUOTE << ";\n" << TAB << "labelloc = t;\n"
+    << TAB << "rankdir = LR;\n\n";
+    
+    // Extra properties
+    tos << TAB << tprops << "\n\n";
+    
+    // Output all nodes in the system
+    tos
+    << TAB << "/////////////////////////////////\n"
+    << TAB << "// List of nodes in the system //\n"
+    << TAB << "/////////////////////////////////\n\n";
+    
+    for (auto mynode = m_nodes.cbegin(); mynode != m_nodes.cend(); ++mynode) {
+        mynode->second.first.export2dot_compact(tos);
+        tos << "\n\n";
+    }
+    
+    // Connect the ports
+    tos
+    << TAB << "//////////////////////////////////////\n"
+    << TAB << "// Connections between nodes' ports //\n"
+    << TAB << "//////////////////////////////////////\n\n";
+    
+    for (auto myconn = m_connections.cbegin(); myconn != m_connections.cend(); ++myconn) {
+        {
+            const auto nit = m_nodes.find(myconn->first.node_name);
+            if (nit == m_nodes.end()) {
+                throw smnchai_exception("In a connection, source node " + myconn->first.node_name + " does not exist.");
+            } else {
+                if (!nit->second.first.port_exists(myconn->first.port_name)) {
+                    throw smnchai_exception("In a connection, source port " + myconn->first.port_name + " does not exist on node " + myconn->first.node_name);
+                }
+            }
+        }
+        
+        {
+            const auto nit = m_nodes.find(myconn->second.node_name);
+            if (nit == m_nodes.end()) {
+                throw smnchai_exception("In a connection, target node " + myconn->second.node_name + " does not exist.");
+            } else {
+                if (!nit->second.first.port_exists(myconn->second.port_name)) {
+                    throw smnchai_exception("In a connection, target port " + myconn->second.port_name + " does not exist on node " + myconn->second.node_name);
+                }
+            }
+        }
+        
+        tos << TAB <<
+        // From "source_node":source_port:e TO
+        QUOTE << myconn->first.node_name << QUOTE << ':' << myconn->first.port_name << ":e -> "
+        // "target_node":target_port:w
+        << QUOTE << myconn->second.node_name << QUOTE << ':' << myconn->second.port_name << ":w" << std::endl;
+    }
+    
+    // The end
+    tos << TAB << "// End of system description\n}\n";
 }

@@ -92,11 +92,6 @@ namespace SMNChai {
          */
         static std::string m_global_prefix;
         
-    private:
-        
-        /** Check if a given port's name exists. */
-        bool port_exists(const std::string &t_name) const;
-        
     public:
         /** Constructor of a node object given its name. The node is not yet added to the network.
          \exception smnchai_exception an error happens, e.g. invalid name.
@@ -131,6 +126,9 @@ namespace SMNChai {
          \exception smnchai_exception an error happens, e.g. invalid name, port already exists...
          */
         void add_dataport(const std::string &t_name);
+        
+        /** Check if a given port's name exists. */
+        bool port_exists(const std::string &t_name) const;
         
         /** \brief Add a new update type to the node.
          \param t_id The unique ID of the update type, which must not exist already.
@@ -340,6 +338,16 @@ namespace SMNChai {
          \exception smnchai_exception An error (timeout) happens.
          */
         void waitfor_all_nodes_online(double timeout) const;
+        
+    public:
+        // Methods for exporting the network description to DOT, etc.
+        
+        /** \brief Export a network to DOT language.
+         
+         This function exports a WorkSpace object to an output stream in the GraphViz's DOT language.
+         Nodes are exported with compact descriptions.
+         **/
+        void export2dot(std::ostream &tos, const std::string &tprops = "") const;
     };
     
     /** Class that represents a subsystem, to be created and used in Chaiscript.
