@@ -1,0 +1,83 @@
+// Tests the powernet.chai library for creating power network models.
+
+use("powernet.chai");  // Load the SMNChai library for Power Networks
+
+run_simulation(false);  // Do not run simulation, we only want to test
+
+// Create various buses/users, with different properties
+var sub_lausanne = new_subsystem("lausanne");
+set_current_subsystem(sub_lausanne);
+var power_lausanne =
+  POWERNET_subnetwork(["busload1" : ["type" : "PQ"],
+		       "busgen1" : ["type" : "PE", "virtual" : true, "vector" : false],
+		       "busgen2" : ["type" : "QT", "strict" : true],
+		       "busload2" : ["type" : "PT", "strict" : true, "vector" : false],
+		       "busload3" : ["type" : "PQ", "virtual" : true, "vector" : true],
+		       "busgen3" : ["type" : "EP", "strict" : false, "vector" : false]],
+		      1*second, false);
+
+// Add some fake user nodes
+var load1 = node(["name": "load1",
+		  "inputs": ["PQactual"],
+		  "outputs": ["PQ"],
+		  "updates": [["sampling": 1*second, "outputs": ["PQ"]]
+			      ]
+		  ]);
+load1.implement(power_lausanne["users"]["busload1"], ["PQfromBus" : "PQactual", "PQtoBus": "PQ"]);
+
+var load2 = node(["name": "load2",
+		  "outputs": ["P", "T"],
+		  "updates": [["sampling": 1*second, "outputs": ["P", "T"]]
+			      ]
+		  ]);
+load2.implement(power_lausanne["users"]["busload2"], ["PtoBus": "P", "TtoBus": "T"]);
+
+var load3 = node(["name": "load3",
+		  "inputs": ["PQfromGrid"],
+		  "outputs": ["PQtoGrid"],
+		  "updates": [["sampling": 1*second, "outputs": ["PQtoGrid"]],
+			      ["sampling": 1*second, "inputs": ["PQfromGrid"]]
+			      ]
+		  ]);
+load3.implement(power_lausanne["users"]["busload3"]);
+
+var gen1 = node(["name": "gen1",
+		 "inputs": ["PfromGrid", "EfromGrid"],
+		 "outputs": ["PtoGrid", "EtoGrid"],
+		 "updates": [["sampling": 1*second, "outputs": ["PtoGrid", "EtoGrid"]],
+			     ["sampling": 1*second, "inputs": ["PfromGrid", "EfromGrid"]]
+			     ]
+		 ]);
+gen1.implement(power_lausanne["users"]["busgen1"]);
+
+var gen2 = node(["name": "gen2",
+		 "outputs": ["QT"],
+		 "updates": [["sampling": 1*second, "outputs": ["QT"]]
+			     ]
+		 ]);
+gen2.implement(power_lausanne["users"]["busgen2"], ["QTtoBus": "QT"]);
+
+var gen3 = node(["name": "gen3",
+		 "inputs": ["PfromBus", "EfromBus"],
+		 "outputs": ["PtoBus", "EtoBus"],
+		 "updates": [["sampling": 1*second, "outputs": ["PtoBus", "EtoBus"]],
+			     ["sampling": 1*second, "inputs": ["PfromBus", "EfromBus"]]
+			     ]
+		 ]);
+gen3.implement(power_lausanne["users"]["busgen3"]);
+
+// We can modify the nodes created by POWERNET ...
+
+// ... then add them
+add_nodes_from_collection(power_lausanne, true);
+
+clear_current_subsystem();
+
+print_system();
+
+// Export nodes to DOT
+export2dot(power_lausanne["dist"], "distribution.dot");
+export2dot(power_lausanne["buses"]["busload1"], "busload1.dot");
+
+// Export entire network
+export2dot("system.dot", true, "ranksep = 1;");

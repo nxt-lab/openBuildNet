@@ -1,0 +1,293 @@
+// This is the standard library for the SMNChai server program in the openBuildNet simulation framework.
+// SMNChai provides a low-level API, which is complete for creating any OBN simulation network.
+// This standard library builds on top the low-level API a set of high-level, easier-to-use functions to create simulation networks.
+// Together with other libraries, they can define domain-specific languages for certain types of simulation systems or subsystems.
+//
+// @author: Truong X. Nghiem (xuan.nghiem@epfl.ch)
+
+// ====================================================
+// Convenient functions to create nodes
+// ====================================================
+
+// To define an update type, we use a Map object of the following form:
+// [ "name" : "name of update", "id" : id-of-update, "sampling" : real-number-sampling-time-in-microseconds,
+//   "inputs" : list-of-inputs-to-this-update, "outputs" : list-of-outputs-from-this-update]
+// where only "sampling" is required. The list of outputs is a Vector of names, e.g. ["y1", "y2"].
+// The list of inputs can be either a Vector of names (all of them will have direct feedthrough to this update) or
+// a Map of [name -> bool] where the boolean value specifies whether the input has direct feedthrough to this update.
+// For example: ["u1":true, "u2":true, "u3":false] is essentially the same as ["u1", "u2"] but the former provides more
+// optional information (we know that "u3" is also an input, but it doesn't have direct feedthrough).
+//
+// A function called "update" will produce such a Map from all arguments:
+//     update("name", id, sampling, inputs, outputs)
+// where inputs (or outputs), if it is a singleton, can be a string (name of the single port) instead of a vector of a single string.
+
+def update(string name, uint32_t id, double sampling, inputs, outputs) {
+  var myinputs;
+  var myoutputs;
+  if (inputs.is_type("string")) { myinputs = [inputs]; } else { myinputs = inputs; }
+  if (outputs.is_type("string")) { myoutputs = [outputs]; } else { myoutputs = outputs; }
+  return ["name": name, "id": id, "sampling": sampling, "inputs": myinputs, "outputs": myoutputs];
+}
+
+
+// To define a node, we use a Map object of the following form:
+// ["name" : "node name", "inputs" : vector-of-input-ports, "outputs" : vector-of-output-ports,
+//  "dataports" : vector-of-data-ports, "updates" : vector-of-update-definitions]
+// where the definition of update types is as above.
+// Only "name" is required.
+// The function node(nodeDef, addnow) creates a Node object from the map definition and returns it.
+// If addnow = true (or omitted), the Node object will be added immediately to the system (by calling add_node);
+// otherwise it is not and the returned Node object must be added later.
+def node(Map tnodedef, bool addnow) {
+  var nodedef = tnodedef;  // A bug in Chaiscript that doesn't work with in-place Map objects
+  if (nodedef.count("name") < 1) { throw ("Node definition must have a valid name."); }
+  var hasInputs = nodedef.count("inputs") > 0;
+  if (hasInputs) {
+    if (!nodedef["inputs"].is_type("Vector") || !foldl(nodedef["inputs"].range(), fun(s,b) { b && s.is_type("string");}, true)) {
+      throw ("In node definition, inputs must be a vector of names.");
+    }
+  }
+
+  var hasOutputs = nodedef.count("outputs") > 0;
+  if (hasOutputs) {
+    if (!nodedef["outputs"].is_type("Vector") || !foldl(nodedef["outputs"].range(), fun(s,b) { b && s.is_type("string");}, true)) {
+      throw ("In node definition, outputs must be a vector of names.");
+    }
+  }
+
+  var hasDataports = nodedef.count("dataports") > 0;
+  if (hasDataports) {
+    if (!nodedef["dataports"].is_type("Vector") || !foldl(nodedef["dataports"].range(), fun(s,b) { b && s.is_type("string");}, true)) {
+      throw ("In node definition, dataports must be a vector of names.");
+    }
+  }
+
+  var hasUpdates = nodedef.count("updates") > 0;
+  if (hasUpdates) {
+    if (!nodedef["updates"].is_type("Vector") || !foldl(nodedef["updates"].range(), fun(s,b) { b && s.is_type("Map");}, true)) {
+      throw ("In node definition, updates must be a vector of update definitions.");
+    }
+    if (!foldl(nodedef["updates"].range(), fun(s,b) { b && s.count("sampling") > 0;}, true)) {
+      throw ("In update definition, sampling time is required.");
+    }
+  }
+
+  var theNode = new_node(nodedef["name"]);
+
+  if (hasInputs && !nodedef["inputs"].empty()) {
+    var li = nodedef["inputs"];
+    for (auto i=0; i < li.size(); ++i) { theNode.add_input(li[i]); }
+  }
+
+  if (hasOutputs && !nodedef["outputs"].empty()) {
+    var li = nodedef["outputs"];
+    for (auto i=0; i < li.size(); ++i) { theNode.add_output(li[i]); }
+  }
+
+  if (hasDataports && !nodedef["dataports"].empty()) {
+    var li = nodedef["dataports"];
+    for (auto i=0; i < li.size(); ++i) { theNode.add_dataport(li[i]); }
+  }
+
+  if (hasUpdates && !nodedef["updates"].empty()) {
+    var li = nodedef["updates"];
+    for (auto i=0; i < li.size(); ++i) {
+      var id = i;
+      if (li[i].count("id") > 0) { id = li[i]["id"]; }
+      theNode.add_update(id, li[i]["sampling"]);
+
+      // Add inputs
+      if (li[i].count("inputs") > 0) {
+	var inputs = li[i]["inputs"];	  
+	if (inputs.is_type("Map")) {
+	  var myinputs = inputs.range();
+	  while (!myinputs.empty()) {
+	    theNode.input_to_update(id, myinputs.front().first(), myinputs.front().second());
+	    myinputs.pop_front();
+	  }
+	} else if (inputs.is_type("Vector")) {
+	  for (auto j=0; j < inputs.size(); ++j) {
+	    theNode.input_to_update(id, inputs[j], true);
+	  }
+	} else { throw ("In definition of node " + nodedef["name"] + " update #" + to_string(i) + " has invalid input list."); }
+      }
+
+      // Add outputs
+      if (li[i].count("outputs") > 0) {
+	var outputs = li[i]["outputs"];
+	if (outputs.is_type("Vector")) {
+	  for (auto j=0; j < outputs.size(); ++j) {
+	    theNode.output_from_update(id, outputs[j]);
+	  }
+	} else { throw ("In definition of node " + nodedef["name"] + " update #" + to_string(i) + " has invalid output list."); }
+      }
+    }
+  }
+
+  if (addnow) { add_node(theNode); }
+  return theNode;
+}
+
+def node(Map nodedef) {
+  return node(nodedef, true);
+}
+
+// Add all nodes stored in a collection object.
+// A collection object is either a Map or a Vector object.
+// If the parameter recursive = true (default: false), the function will be called recursively
+// on all elements of the collection which are collection objects themselves (e.g. in case of a Map of Vectors).
+def add_nodes_from_collection(coll, bool t_recursive) {
+  if (coll.is_type("Vector")) {
+    for (auto i = 0; i < coll.size(); ++i) {
+      if (coll[i].is_type("Node")) {
+	add_node(coll[i]);
+      } else if (t_recursive && (coll[i].is_type("Vector") || coll[i].is_type("Map"))) {
+	add_nodes_from_collection(coll[i], true);
+      }
+    }
+  } else if (coll.is_type("Map")) {
+    var rng = coll.range();
+    while (!rng.empty()) {
+      var theElem := rng.front().second();
+      if (theElem.is_type("Node")) {
+	add_node(theElem);
+      } else if (t_recursive && (theElem.is_type("Vector") || theElem.is_type("Map"))) {
+	add_nodes_from_collection(theElem, true);
+      }
+      rng.pop_front();
+    }
+  } else {
+    throw("add_nodes_from_collection: a collection object must be either a Vector or a Map.");
+  }
+}
+
+def add_nodes_from_collection(coll) {
+  add_nodes_from_collection(coll, false);
+}
+
+// ====================================================
+// Virtual node implementation
+// ====================================================
+class VPort {
+  attr m_type  // 0: in; 1: out; 2: data/any
+  attr m_ins
+  attr m_outs
+  attr m_realports  // the actual ports assigned to this vport
+  def VPort(int t_type): 0 <= t_type && t_type <= 2 { this.m_type = t_type; this.m_ins = []; this.m_outs = []; this.m_realports = []; }
+  def virtual_add_input(PortInfo p) {
+    if (this.m_type == 1) { throw("A virtual output port can't have an input."); }
+    if (this.m_type == 0 && !this.m_ins.empty()) { throw("A virtual input port can't have multiple inputs."); }
+    if (port_type(p) == 0) { throw("An input port can't be a source of a virtual port."); }
+    this.m_ins.push_back(p);
+    for (auto i = 0; i < this.m_realports.size(); ++i) {
+      connect(p, this.m_realports[i]);
+    }
+  }
+  def virtual_add_output(PortInfo p) {
+    if (this.m_type == 0) { throw("A virtual input port can't have an output."); }
+    if (port_type(p) == 1) { throw("An output port can't be a target of a virtual port."); }
+    this.m_outs.push_back(p);
+    for (auto i = 0; i < this.m_realports.size(); ++i) {
+      connect(this.m_realports[i], p);
+    }
+  }
+  def virtual_assign(PortInfo p) {
+    if (this.m_type != port_type(p) && port_type(p) != 2) { throw("Types of virtual port and actual port are incompatible."); }
+    if (this.m_type == 1) {
+      if (!this.m_realports.empty()) { throw("A virtual output port can't be assigned to multiple ports."); }
+      this.m_realports.push_back(p);
+    } else {
+      this.m_realports.push_back(p);
+      for (auto i = 0; i < this.m_ins.size(); ++i) {
+	connect(this.m_ins[i], p);
+      }
+    }
+    if (this.m_type != 0) {
+      for (auto i = 0; i < this.m_outs.size(); ++i) {
+	connect(p, this.m_outs[i]);
+      }
+    }
+  }
+}
+
+// Virtual port on a virtual node
+class VPortInfo {
+  attr m_vnode
+  attr m_portname
+  def VPortInfo() { }
+}
+  
+// Virtual node implementation
+class VNode {
+  attr m_ports
+  def VNode() { this.m_ports = Map(); }
+  // Assign an actual port to a virtual port on a virtual node; user code often uses this function or implemented_by (below)
+  def assign(string pname, PortInfo p) {
+    if (this.m_ports.count(pname) < 1) { throw("Virtual port '" + pname + "' doesn't exist."); }
+    this.m_ports[pname].virtual_assign(p);
+  }
+  // Specify that this virtual node is implemented by a given node, which has all the virtual ports with optional name mapping
+  // Map m = ["virtual port name" : "actual port name on node"]
+  def implemented_by(Node n, Map m) {
+    var r = this.m_ports.range();
+    var mcopy = m;  // hack: if m is constant, we can't access its elements
+    while (!r.empty()) {
+      var vportname = r.front().first();
+      if (m.count(vportname) > 0) {
+	this.assign(vportname, n.port(mcopy[vportname]));
+      } else {
+	this.assign(vportname, n.port(vportname));
+      }
+      r.pop_front();
+    }
+  }
+  // Another version of implemented_by with no name mapping
+  def implemented_by(Node n) { this.implemented_by(n, Map()); }
+
+  // t_type: 0 if input, 1 if output, 2 if data/any
+  def virtual_new_port(string t_name, int t_type) {
+    if (this.m_ports.count(t_name) > 0) { throw("Virtual port '" + t_name + "' already exists."); }
+    this.m_ports[t_name] = VPort(t_type);
+  }
+
+  // Methods similar to a normal node
+  def add_input(string t_name) { this.virtual_new_port(t_name, 0); }
+  def add_output(string t_name) { this.virtual_new_port(t_name, 1); }
+  def add_dataport(string t_name) { this.virtual_new_port(t_name, 2); }
+
+  def port(string pname) {
+    if (this.m_ports.count(pname) < 1) { throw("Virtual port '" + pname + "' doesn't exist."); }
+    var p = VPortInfo();
+    p.m_vnode := this;
+    p.m_portname = pname;
+    return p;
+  }
+}
+
+// Connect a physical port to a virtual port on a virtual node
+//def virtual_connect(PortInfo s, VNode n, string pname) {
+//  if (n.m_ports.count(pname) < 1) { throw("Virtual port '" + pname + "' doesn't exist."); }
+//  n.m_ports[pname].virtual_add_input(s);
+//}
+def connect(PortInfo s, VPortInfo t) {
+  t.m_vnode.m_ports[t.m_portname].virtual_add_input(s);
+}
+    
+// Connect a virtual port on a virtual node to a physical port
+//def virtual_connect(VNode n, string pname, PortInfo t) {
+//  if (n.m_ports.count(pname) < 1) { throw("Virtual port '" + pname + "' doesn't exist."); }
+//  n.m_ports[pname].virtual_add_output(t);
+//}
+def connect(VPortInfo s, PortInfo t) {
+  s.m_vnode.m_ports[s.m_portname].virtual_add_output(t);
+}
+
+// Specify that this node implements / realizes the given virtual node with given renaming rule
+def Node::implement(VNode vn, Map m) {
+  vn.implemented_by(this, m);
+}
+
+def Node::implement(VNode vn) {
+  vn.implemented_by(this);
+}

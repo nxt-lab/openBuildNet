@@ -6,7 +6,7 @@ classdef OBNNode < handle
     %
     % Author: Truong X. Nghiem (xuan.nghiem@epfl.ch)
     
-    % Last update: 2015-05-19
+    % Last update: 2015-06-05
     
     properties (Constant)
         MaxUpdateID = obnsim_yarp_('maxUpdateID');
@@ -58,7 +58,7 @@ classdef OBNNode < handle
             % the network will be /ws/nodeName
             
             narginchk(1, 2);
-            [b, nodeName] = OBNNode.isValidIdentifier(nodeName);
+            [b, nodeName] = OBNNode.isValidNodeName(nodeName);
             assert(b, 'Invalid node''s name.');
             if nargin > 1 && ~isempty(ws)
                 [b, ws] = OBNNode.isValidIdentifier(ws);
@@ -439,22 +439,35 @@ classdef OBNNode < handle
         end
         
         
-        function b = runSimulation(this, timeout)
+        function b = runSimulation(this, timeout, stopIfTimeout)
             % The main function to run the simulation of the node.
-            % An optional timeout can be given, which will set a timeout
-            % for the node to wait for messages from the SMN/GC.
-            % If a timeout occurs, the simulation of this node will stop
-            % immediately by calling stop
+            %
+            % An optional timeout (double value in seconds) can be given,
+            % which will set a timeout for the node to wait for messages
+            % from the SMN/GC. If timeout is missing or <= 0, there is no
+            % timeout and this function can run indefinitely (if the
+            % simulation hangs).
+            %
+            % An optional stopIfTimeout [bool] can be given: if it's true
+            % (default) then the simulation of this node will stop
+            % immediately if a timeout occurs by calling stopSimulation();
+            % otherwise it will simply returns without stopping the
+            % simulation (which can be resumed by calling this method
+            % again).
             %
             % Return false if the execution is timed out; otherwise return
             % true.
-            narginchk(1, 2);
+            narginchk(1, 3);
             assert(isscalar(this));
             if nargin < 2 || isempty(timeout)
                 timeout = -1;
             else
                 assert(isscalar(timeout) && isnumeric(timeout), ...
                     'Timeout must be a real number in seconds, or non-positive for no timeout.');
+            end
+            
+            if nargin < 3 || isempty(stopIfTimeout)
+                stopIfTimeout = true;
             end
             
             % If the node has error, should not run it
@@ -467,10 +480,18 @@ classdef OBNNode < handle
                 warning('OBNNode:runSimulation', 'Node is currently running; may be an error but we will run it anyway.');
             end
             
+            % To help Matlab process its own callbacks (e.g. for GUI, user
+            % interruption...) we will call OBN MEX with a small timeout
+            % value to return to Matlab and allow it to handle its events
+            % and callbacks, then we go back to simulation. At the same
+            % time, we keep track of the user-given timeout value, and do
+            % stop the simulation if that timeout error occurs.
+            
             status = 0;
             b = true;
+            timeoutStart = tic;
             while status == 0
-                [status, evtype, evargs] = obnsim_yarp_('runStep', this.id_, timeout);
+                [status, evtype, evargs] = obnsim_yarp_('runStep', this.id_, 1.0);  % small timeout is used
                 switch status
                     case 0  % Got an event
                         switch upper(evtype)
@@ -485,10 +506,19 @@ classdef OBNNode < handle
                             otherwise
                                 error('OBNNode:runSimulation', 'Internal error: Unknown event type %s returned from MEX.', evtype);
                         end
+                        timeoutStart = tic;     % reset the timer
                         
                     case 1  % Timeout
-                        this.stopSimulation();  % stop the simulation immediately
-                        b = false;
+                        if toc(timeoutStart) > timeout
+                            % Real timeout error occurred
+                            if stopIfTimeout
+                                this.stopSimulation();  % stop the simulation immediately
+                            end
+                            b = false;
+                        else
+                            % We can continue running the simulation
+                            status = 0;
+                        end
                         
                     case 2  % Stop properly
                         disp('Simulation has stopped properly.');
@@ -499,6 +529,7 @@ classdef OBNNode < handle
                     otherwise
                         error('OBNNode:runSimulation', 'Internal error: Unknown running state returned from MEX.');
                 end
+                drawnow;    % give Matlab a chance to update its GUI and process callbacks
             end
         end
         
@@ -648,6 +679,25 @@ classdef OBNNode < handle
             b = ~isempty(vs) && vs(1) ~= '_' &&...
                 all(ismember(lower(vs), 'abcdefghijklmnopqrstuvwxyz0123456789_'));
         end
+        
+        function [b, vs] = isValidNodeName(s)
+            %   [b, vs] = isValidNodeName(s)
+            % Check if a given string is a valid node name (cf. C++ code
+            % obnsim_basic.cpp).
+            % Also tries to obtain a valid name from s and returns in vs
+            
+            if ~ischar(s)
+                vs = '';
+                b = false;
+                return;
+            end
+            
+            vs = strtrim(s);
+            b = ~isempty(vs) && vs(1) ~= '_' && vs(1) ~= '/' && vs(end) ~= '/' &&...
+                all(ismember(lower(vs), 'abcdefghijklmnopqrstuvwxyz0123456789_/')) &&...
+                isempty(strfind(vs, '//')) && isempty(strfind(vs, '/_'));
+        end
+                                                                 
         
         function b = isValidID(ID)
             b = isnumeric(ID) && isscalar(ID) && ID >= 0 && floor(ID)==ID;

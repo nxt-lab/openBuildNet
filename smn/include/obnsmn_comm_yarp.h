@@ -20,6 +20,7 @@
 #include <cassert>
 #include <memory>
 #include <thread>
+#include <atomic>
 
 #include <yarp/os/all.h>
 #include <obnsmn_node.h>
@@ -102,10 +103,24 @@ namespace OBNsmn {
              
              The port is only used for sending messages out.
              */
-            OBNNodeYARP(const std::string& _name, int _nOutputGrps, YARPPort* _port): OBNNode(_name, _nOutputGrps), port(_port) {
+            OBNNodeYARP(const std::string& _name, int t_nUpdates, YARPPort* _port): OBNNode(_name, t_nUpdates), port(_port) {
                 assert(_port);
             }
-            // virtual ~OBNNodeYARP() { std::cout << "OBNNodeYARP deleted." << std::endl; }
+            
+            /** \brief Construct an YARP node which owns a given port.
+             
+             This constructor is similar to the other constructor, however the YARP node will own the given YARP port object.
+             The node object will not create / open / connect the port, but it will close and delete the port when itself is deleted.
+             IOW, the node object owns the port object.
+             
+             The port is only used for sending messages out.
+             */
+            OBNNodeYARP(const std::string& _name, int t_nUpdates, std::unique_ptr<YARPPort> &&t_port): OBNNode(_name, t_nUpdates), port(t_port.get()) {
+                assert(t_port);
+                m_ownedport = std::move(t_port);
+            }
+            
+            // virtual ~OBNNodeYARP() { //std::cout << "OBNNodeYARP deleted." << std::endl; }
             
             /** \brief Asynchronously send a message to a node. */
             virtual bool sendMessage(int nodeID, OBNSimMsg::SMN2N &msg);
@@ -116,6 +131,9 @@ namespace OBNsmn {
         private:
             /** \brief YARP port object for sending messages to node. */
             YARPPort *port;
+            
+            /** Port object that is owned by this node object, may be empty (none is owned). */
+            std::unique_ptr<YARPPort> m_ownedport;
         };
         
         /** \brief Thread for the main incoming YARP port of a GC.
@@ -136,7 +154,7 @@ namespace OBNsmn {
              \param _gc Pointer to a valid GC thread, with which this thread is associated.
              \param _port Name of the incoming YARP port.
              */
-            YARPPollingThread(GCThread* _gc, std::string _port): pGC(_gc), portName(_port) {
+            YARPPollingThread(GCThread* _gc, std::string _port): done_execution(true), pGC(_gc), portName(_port) {
             }
             
             virtual ~YARPPollingThread() {
@@ -152,7 +170,12 @@ namespace OBNsmn {
             }
             
             /** \brief Return the port object. */
-            const YARPPort& getPort() { return port; }
+            const YARPPort& getPort() const { return port; }
+            
+            /** Set the port's name. */
+            void setPortName(const std::string &t_port) {
+                portName = t_port;
+            }
             
             /** \brief Open the port.
              \return True if successful.
@@ -200,6 +223,8 @@ namespace OBNsmn {
                 return true;
             }
             
+            std::atomic<bool> done_execution;
+            
         private:
             /** The GC object with which this communication thread is associated. */
             GCThread *pGC;
@@ -217,6 +242,8 @@ namespace OBNsmn {
             
             /** This function is the entry point for the thread. Do not call it directly. */
             void ThreadMain() {
+                done_execution = false;
+                
                 // This thread simply polls the main GC port
                 OBNSimMsg::N2SMN msg;
                 
@@ -235,6 +262,8 @@ namespace OBNsmn {
                 
                 // Close the port after finishing
                 port.close();
+                
+                done_execution = true;
             }
         };
     }

@@ -16,7 +16,6 @@
 namespace OBNnode {
     typedef OBNsim::simtime_t simtime_t;  ///< Simulation time type, as number of nano-seconds from beginning.
     typedef OBNsim::updatemask_t updatemask_t;  ///< Output group mask type: each bit corresponds to one group, so the width of the type is the maximum number of groups.
-    const int MAX_UPDATE_INDEX = 63;    ///< The maximum index of update type allowed = number of bits in updatemast_t - 1
 }
 
 

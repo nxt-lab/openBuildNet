@@ -125,6 +125,8 @@ bool NodeDepGraph_BGL::combineLinks(NodeDepGraph_BGL::LinkLabel& link1, const No
  
  Add that some outputs of node t depend on the values of the output groups specified in w of node s.
  The ID of a node is the index of the node in the array of all nodes, so it is between 0 and N-1, where N is the number of nodes. The IDs of nodes are guaranteed to be contiguous integers.
+ Dependency links are combined if possible, so that the resulted links in the graph between any two nodes/vertices are minimal.
+ 
  \param s ID of the source node.
  \param t ID of the target node.
  \param smask Bit mask of the update types of node s on which node t depends.
