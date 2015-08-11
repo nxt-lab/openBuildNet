@@ -133,7 +133,38 @@ def node(Map nodedef) {
   return node(nodedef, true);
 }
 
+// Add all nodes stored in a collection object.
+// A collection object is either a Map or a Vector object.
+// If the parameter recursive = true (default: false), the function will be called recursively
+// on all elements of the collection which are collection objects themselves (e.g. in case of a Map of Vectors).
+def add_nodes_from_collection(coll, bool t_recursive) {
+  if (coll.is_type("Vector")) {
+    for (auto i = 0; i < coll.size(); ++i) {
+      if (coll[i].is_type("Node")) {
+	add_node(coll[i]);
+      } else if (t_recursive && (coll[i].is_type("Vector") || coll[i].is_type("Map"))) {
+	add_nodes_from_collection(coll[i], true);
+      }
+    }
+  } else if (coll.is_type("Map")) {
+    var rng = coll.range();
+    while (!rng.empty()) {
+      var theElem := rng.front().second();
+      if (theElem.is_type("Node")) {
+	add_node(theElem);
+      } else if (t_recursive && (theElem.is_type("Vector") || theElem.is_type("Map"))) {
+	add_nodes_from_collection(theElem, true);
+      }
+      rng.pop_front();
+    }
+  } else {
+    throw("add_nodes_from_collection: a collection object must be either a Vector or a Map.");
+  }
+}
 
+def add_nodes_from_collection(coll) {
+  add_nodes_from_collection(coll, false);
+}
 
 // ====================================================
 // Virtual node implementation
@@ -180,6 +211,13 @@ class VPort {
   }
 }
 
+// Virtual port on a virtual node
+class VPortInfo {
+  attr m_vnode
+  attr m_portname
+  def VPortInfo() { }
+}
+  
 // Virtual node implementation
 class VNode {
   attr m_ports
@@ -206,23 +244,43 @@ class VNode {
   }
   // Another version of implemented_by with no name mapping
   def implemented_by(Node n) { this.implemented_by(n, Map()); }
-  // t_type: 0 if input, 1 if output, 2 if data/nay
+
+  // t_type: 0 if input, 1 if output, 2 if data/any
   def virtual_new_port(string t_name, int t_type) {
     if (this.m_ports.count(t_name) > 0) { throw("Virtual port '" + t_name + "' already exists."); }
     this.m_ports[t_name] = VPort(t_type);
   }
+
+  // Methods similar to a normal node
+  def add_input(string t_name) { this.virtual_new_port(t_name, 0); }
+  def add_output(string t_name) { this.virtual_new_port(t_name, 1); }
+  def add_dataport(string t_name) { this.virtual_new_port(t_name, 2); }
+
+  def port(string pname) {
+    if (this.m_ports.count(pname) < 1) { throw("Virtual port '" + pname + "' doesn't exist."); }
+    var p = VPortInfo();
+    p.m_vnode := this;
+    p.m_portname = pname;
+    return p;
+  }
 }
 
 // Connect a physical port to a virtual port on a virtual node
-def virtual_connect(PortInfo s, VNode n, string pname) {
-  if (n.m_ports.count(pname) < 1) { throw("Virtual port '" + pname + "' doesn't exist."); }
-  n.m_ports[pname].virtual_add_input(s);
+//def virtual_connect(PortInfo s, VNode n, string pname) {
+//  if (n.m_ports.count(pname) < 1) { throw("Virtual port '" + pname + "' doesn't exist."); }
+//  n.m_ports[pname].virtual_add_input(s);
+//}
+def connect(PortInfo s, VPortInfo t) {
+  t.m_vnode.m_ports[t.m_portname].virtual_add_input(s);
 }
-
+    
 // Connect a virtual port on a virtual node to a physical port
-def virtual_connect(VNode n, string pname, PortInfo t) {
-  if (n.m_ports.count(pname) < 1) { throw("Virtual port '" + pname + "' doesn't exist."); }
-  n.m_ports[pname].virtual_add_output(t);
+//def virtual_connect(VNode n, string pname, PortInfo t) {
+//  if (n.m_ports.count(pname) < 1) { throw("Virtual port '" + pname + "' doesn't exist."); }
+//  n.m_ports[pname].virtual_add_output(t);
+//}
+def connect(VPortInfo s, PortInfo t) {
+  s.m_vnode.m_ports[s.m_portname].virtual_add_output(t);
 }
 
 // Specify that this node implements / realizes the given virtual node with given renaming rule

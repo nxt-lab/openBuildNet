@@ -186,7 +186,9 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     /** Export the system to a DOT file.
      \param fn File name
      \param cluster true if each node is a cluster; false if each node is a simple node.
+     \param props Additional properties of the DOT graph.
      */
+    chai.add(fun([&ws](const std::string &fn, bool cluster, const std::string &props) { ws.export2dotfile(fn, cluster, props); }), "export2dot");
     chai.add(fun([&ws](const std::string &fn, bool cluster) { ws.export2dotfile(fn, cluster); }), "export2dot");
     chai.add(fun([&ws](const std::string &fn) { ws.export2dotfile(fn, false); }), "export2dot");    ///< Default version with cluster = false
 }

@@ -13,8 +13,8 @@
 
 #include <exception>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <map>
+#include <set>
 #include <forward_list>
 #include <utility>      // std::pair
 #include <limits>       // limits of integers (time, etc.)
@@ -76,16 +76,16 @@ namespace SMNChai {
         bool m_updateX = true;         ///< Whether this node needs UPDATE_X messages
 
         /** Set of physical inputs and associated updates for which an input has direct feedthrough. */
-        std::unordered_map<std::string, OBNsim::updatemask_t> m_inputs;
+        std::map<std::string, OBNsim::updatemask_t> m_inputs;
         
         /** Set of physical outputs and associated updates that change the output. */
-        std::unordered_map<std::string, OBNsim::updatemask_t> m_outputs;
+        std::map<std::string, OBNsim::updatemask_t> m_outputs;
         
         /** Set of data ports. */
-        std::unordered_set<std::string> m_dataports;
+        std::set<std::string> m_dataports;
         
         /** Set of update types: map from unique int ID to sampling period (in microseconds). */
-        std::unordered_map<unsigned int, double> m_updates;
+        std::map<unsigned int, double> m_updates;
     public:
         /** Prefix to node name created by the global new_node.
          Typically this prefix is empty, however it can be set to the name of a subsystem so that new nodes are automatically placed inside it.
@@ -217,7 +217,7 @@ namespace SMNChai {
         std::string m_name;     ///< Name of the workspace: all nodes will be under this name
         
         /** Mapping nodes' names to Node objects and their IDs (to be used later on). */
-        std::unordered_map<std::string, std::pair<Node,std::size_t> > m_nodes;
+        std::map<std::string, std::pair<Node,std::size_t> > m_nodes;
         
         /** List of all connections between ports in this workspace. */
         std::forward_list< std::pair<PortInfo, PortInfo> > m_connections;
@@ -360,7 +360,7 @@ namespace SMNChai {
         void export2dot(std::ostream &tos, bool t_cluster = false, const std::string &tprops = "") const;
         
         /** \brief Export a network to a DOT file. */
-        void export2dotfile(const std::string &fn, bool cluster) const;
+        void export2dotfile(const std::string &fn, bool cluster, const std::string &tprops = "") const;
     };
     
     /** Class that represents a subsystem, to be created and used in Chaiscript.

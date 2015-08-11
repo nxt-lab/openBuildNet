@@ -428,9 +428,9 @@ void WorkSpace::export2dot(std::ostream &tos, bool t_cluster, const std::string 
  \param fn File name
  \param cluster true if each node is a cluster; false if each node is a simple node.
  */
-void WorkSpace::export2dotfile(const std::string &fn, bool cluster) const {
+void WorkSpace::export2dotfile(const std::string &fn, bool cluster, const std::string &tprops) const {
     std::stringstream ss(std::ios_base::out);
-    export2dot(ss, cluster);
+    export2dot(ss, cluster, tprops);
     std::ofstream fs(fn);
     if (fs.is_open()) {
         fs << ss.str();
