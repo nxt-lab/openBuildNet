@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cmath>
 
+#include <obnsim_basic.h>
 #include <obnsmn_report.h>
 #include <smnchai_api.h>
 
@@ -113,6 +114,33 @@ std::string gen_time_rep(double t_ms) {
     result += (std::to_string(t_ms) + "us");
 
     return result;
+}
+
+/** Convert a given non-empty string to a string compliant with XML ID (xsd:NMTOKEN).
+ The resulting string should contain only letters, digits, periods (.), hyphens (-), underscores (_), and colons (:).
+ It can start with any of these letters.
+ It doesn't contain any whitespace.
+ */
+std::string convert_to_xml_id(const std::string &s) {
+    assert(!s.empty());
+    
+    std::string r = OBNsim::Utils::trim(s);
+    assert(!r.empty());
+    
+    // Find and replace all invalid characters with _, except for /
+    std::size_t pos = 0;
+    while ((pos = r.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_:/", pos)) != std::string::npos) {
+        r[pos++] = '_';
+    }
+    
+    // Find and replace all /'s with ::
+    pos = 0;
+    while ((pos = r.find('/', pos)) != std::string::npos) {
+        r.replace(pos, 1, "::");
+        pos += 2;
+    }
+    
+    return r;
 }
 
 
@@ -341,13 +369,62 @@ void Node::export2dot_compact_cluster(std::ostream &tos, const std::string &tpro
     tos << TAB << '}';
 }
 
+/**
+ \param tos An output stream to write the result to.
+ */
+void Node::export2graphml(std::ostream &tos) const {
+    // Node as a (nested) graph
+    tos << "<graph id=" << QUOTE << (convert_to_xml_id(m_name) + "::") << QUOTE << " edgedefault=\"directed\">" << std::endl;
+
+    std::string portname;
+    
+    // Input ports
+    if (!m_inputs.empty()) {
+        // Each port is a node
+        for (auto it = m_inputs.cbegin(); it != m_inputs.cend(); ++it) {
+            portname = convert_to_xml_id(m_name + "::" + it->first);
+            tos << "<node id=" << QUOTE << portname << QUOTE << ">\n<data key=\"d5\">\n"
+            << "<y:ShapeNode><y:NodeLabel>"<< it->first << "</y:NodeLabel><y:Shape type=\"rectangle\"/></y:ShapeNode>\n</data>\n</node>\n";
+        }
+    }
+    
+    // Output ports
+    if (!m_outputs.empty()) {
+        // Each port is a node
+        for (auto it = m_outputs.cbegin(); it != m_outputs.cend(); ++it) {
+            portname = convert_to_xml_id(m_name + "::" + it->first);
+            tos << "<node id=" << QUOTE << portname << QUOTE << ">\n<data key=\"d5\">\n"
+            << "<y:ShapeNode><y:NodeLabel>"<< it->first << "</y:NodeLabel><y:Shape type=\"ellipse\"/></y:ShapeNode>\n</data>\n</node>\n";
+        }
+    }
+    
+    // Data ports
+    if (!m_dataports.empty()) {
+        // Each port is a node
+        for (auto it = m_dataports.cbegin(); it != m_dataports.cend(); ++it) {
+            portname = convert_to_xml_id(m_name + "::" + *it);
+            tos << "<node id=" << QUOTE << portname << QUOTE << ">\n<data key=\"d5\">\n"
+            << "<y:ShapeNode><y:NodeLabel>"<< *it << "</y:NodeLabel><y:Shape type=\"octagon\"/></y:ShapeNode>\n</data>\n</node>\n";
+        }
+    }
+    
+    // Closing
+    tos << "</graph>";
+}
 
 /**
+ \param m_name The name of the system/network, which will be the name of the graph.
+ \param m_nodes Collection of the nodes to be exported (see WorkSpace::m_nodes).
+ \param m_connections Collection of the links between those nodes (see WorkSpace::m_connections); only nodes in m_nodes can be the sources and targets of these links.
  \param tos An output stream to write the result to.
  \param t_cluster false [default] if each node is represented by a DOT's node and ports as DOT's ports; true if each node is a DOT's cluster and ports are DOT's nodes.
  \param tprops Optional extra properties of the graph can be specified in this string.
  */
-void WorkSpace::export2dot(std::ostream &tos, bool t_cluster, const std::string &tprops) const {
+void SMNChai::export2dot(const std::string m_name,
+                const std::map<std::string, std::pair<Node,std::size_t> > &m_nodes,
+                const std::forward_list< std::pair<PortInfo, PortInfo> > &m_connections,
+                std::ostream &tos, bool t_cluster, const std::string &tprops)
+{
     // Graph header
     tos << "digraph " << QUOTE << (m_name.empty()?"System":m_name) << QUOTE << " {" << std::endl
     << TAB << "// GraphViz's DOT description of the system exported from SMNChai" << std::endl
@@ -424,13 +501,118 @@ void WorkSpace::export2dot(std::ostream &tos, bool t_cluster, const std::string 
     tos << TAB << "// End of system description\n}\n";
 }
 
-/** Export the system to a DOT file.
+
+/**
+ \param m_name The name of the system/network, which will be the name of the graph.
+ \param m_nodes Collection of the nodes to be exported (see WorkSpace::m_nodes).
+ \param m_connections Collection of the links between those nodes (see WorkSpace::m_connections); only nodes in m_nodes can be the sources and targets of these links.
+ \param tos An output stream to write the result to.
+ \param t_cluster false [default] if each node is represented by a DOT's node and ports as DOT's ports; true if each node is a DOT's cluster and ports are DOT's nodes.
+ \param tprops Optional extra properties of the graph can be specified in this string.
+ */
+void SMNChai::export2graphml(const std::string m_name,
+                         const std::map<std::string, std::pair<Node,std::size_t> > &m_nodes,
+                         const std::forward_list< std::pair<PortInfo, PortInfo> > &m_connections,
+                         std::ostream &tos)
+{
+    // Graph header
+    tos << R"header(<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:java="http://www.yworks.com/xml/yfiles-common/1.0/java" xmlns:sys="http://www.yworks.com/xml/yfiles-common/markup/primitives/2.0" xmlns:x="http://www.yworks.com/xml/yfiles-common/markup/2.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:y="http://www.yworks.com/xml/graphml" xmlns:yed="http://www.yworks.com/xml/yed/3" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://www.yworks.com/xml/schema/graphml/1.1/ygraphml.xsd">
+<key for="port" id="d0" yfiles.type="portgraphics"/>
+<key for="port" id="d1" yfiles.type="portgeometry"/>
+<key for="port" id="d2" yfiles.type="portuserdata"/>
+<key attr.name="url" attr.type="string" for="node" id="d3"/>
+<key attr.name="description" attr.type="string" for="node" id="d4"/>
+<key for="node" id="d5" yfiles.type="nodegraphics"/>
+<key for="graphml" id="d6" yfiles.type="resources"/>
+<key attr.name="url" attr.type="string" for="edge" id="d7"/>
+<key attr.name="description" attr.type="string" for="edge" id="d8"/>
+<key for="edge" id="d9" yfiles.type="edgegraphics"/>
+)header";
+
+    tos << "<graph id=" << QUOTE << (m_name.empty()?"System":convert_to_xml_id(m_name)) << QUOTE << " edgedefault=\"directed\">" << std::endl;
+    
+    // Output all nodes in the system, as nested graphs
+    for (auto mynode = m_nodes.cbegin(); mynode != m_nodes.cend(); ++mynode) {
+        tos << "<node id=" << QUOTE << convert_to_xml_id(mynode->first) << QUOTE << ">\n";
+        
+        // The label for the nested graph (group in yEd)
+        tos << R"grouplabel(<data key="d5">
+<y:ProxyAutoBoundsNode>
+<y:Realizers active="0">
+<y:GroupNode>
+<y:NodeLabel alignment="right" autoSizePolicy="node_width" modelName="internal" modelPosition="t" visible="true">)grouplabel"
+        << mynode->first
+        << R"grouplabel(</y:NodeLabel>
+<y:Shape type="roundrectangle"/>
+</y:GroupNode>
+</y:Realizers>
+</y:ProxyAutoBoundsNode>
+</data>
+)grouplabel";
+
+        // The node as a nested graoup
+        mynode->second.first.export2graphml(tos);
+        tos << "\n</node>\n";
+    }
+    
+    // Connect the ports
+    std::size_t edge_id = 0;  // Store the edge ID
+    for (auto myconn = m_connections.cbegin(); myconn != m_connections.cend(); ++myconn, ++edge_id) {
+        {
+            const auto nit = m_nodes.find(myconn->first.node_name);
+            if (nit == m_nodes.end()) {
+                throw smnchai_exception("In a connection, source node " + myconn->first.node_name + " does not exist.");
+            } else {
+                if (!nit->second.first.port_exists(myconn->first.port_name)) {
+                    throw smnchai_exception("In a connection, source port " + myconn->first.port_name + " does not exist on node " + myconn->first.node_name);
+                }
+            }
+        }
+        
+        {
+            const auto nit = m_nodes.find(myconn->second.node_name);
+            if (nit == m_nodes.end()) {
+                throw smnchai_exception("In a connection, target node " + myconn->second.node_name + " does not exist.");
+            } else {
+                if (!nit->second.first.port_exists(myconn->second.port_name)) {
+                    throw smnchai_exception("In a connection, target port " + myconn->second.port_name + " does not exist on node " + myconn->second.node_name);
+                }
+            }
+        }
+
+        tos << "<edge id=" << QUOTE << 'e' << edge_id << QUOTE
+        << " source=" << QUOTE << convert_to_xml_id(myconn->first.node_name + "::" + myconn->first.port_name) << QUOTE
+        << " target=" << QUOTE << convert_to_xml_id(myconn->second.node_name + "::" + myconn->second.port_name) << QUOTE << "/>\n";
+    }
+    
+    // The end
+    tos << "</graph>\n</graphml>";
+}
+
+
+/**
  \param fn File name
  \param cluster true if each node is a cluster; false if each node is a simple node.
  */
 void WorkSpace::export2dotfile(const std::string &fn, bool cluster, const std::string &tprops) const {
     std::stringstream ss(std::ios_base::out);
-    export2dot(ss, cluster, tprops);
+    SMNChai::export2dot(m_name, m_nodes, m_connections, ss, cluster, tprops);
+    std::ofstream fs(fn);
+    if (fs.is_open()) {
+        fs << ss.str();
+        fs.close();
+    } else {
+        throw smnchai_exception("Could not open file " + fn + " to write.");
+    }
+}
+
+/**
+ \param fn File name
+ */
+void WorkSpace::export2graphmlfile(const std::string &fn) const {
+    std::stringstream ss(std::ios_base::out);
+    SMNChai::export2graphml(m_name, m_nodes, m_connections, ss);
     std::ofstream fs(fn);
     if (fs.is_open()) {
         fs << ss.str();

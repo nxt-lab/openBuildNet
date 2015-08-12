@@ -81,3 +81,6 @@ export2dot(power_lausanne["buses"]["busload1"], "busload1.dot");
 
 // Export entire network
 export2dot("system.dot", true, "ranksep = 1;");
+
+// Export system to GraphML
+export2graphml("system.graphml");
