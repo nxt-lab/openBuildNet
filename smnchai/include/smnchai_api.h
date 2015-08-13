@@ -209,8 +209,64 @@ namespace SMNChai {
          The ports are named as "A_node/a_port".
          **/
         void export2dot_compact_cluster(std::ostream &tos, const std::string &tprops = "") const;
+        
+        /** \brief Export a node object to GraphML format.
+         
+         This function exports an SMNChai Node object to an output stream in the GraphML format.
+         The output is intended to be included in the export of an entire system, not as a standalone graph.
+         A compact node description will be exported, where each node is a (nested) graph with ports as nodes.
+         No XML header is produced; only the node definition is produced.
+         A port is named as "A_node::a_port" to be compliant with XML.
+         **/
+        void export2graphml(std::ostream &tos) const;
     };
     
+    
+    /** Class that represents a subsystem, to be created and used in Chaiscript.
+     It is used to create (virtual) subsystems whose nodes have names prefixed with the subsystem's path.
+     For example, all nodes created in subsystem "my/subsystem" have names of the form "my/subsystem/nodename".
+     Subsystems are virtual in the sense that they are used to organize nodes in the Chaiscript; however the WorkSpace doesn't see subsystems.
+     */
+    class SubSystem {
+        std::string m_name; ///< Name of the subsystem, a valid identifier
+    public:
+        std::string get_name() const {
+            return m_name;
+        }
+        
+        /** Constructor of a subsystem object in the (global) workspace.
+         \param t_name Name of the subsystem, must be a valid identifier.
+         \exception smnchai_exception an error happens, e.g. invalid name.
+         */
+        SubSystem(const std::string &t_name): m_name(t_name) {
+            if (!OBNsim::Utils::isValidIdentifier(t_name)) {
+                throw smnchai_exception("Subsystem name '" + t_name + "' is invalid.");
+            }
+        }
+        
+        /** Constructor of a subsystem object in another subsystem.
+         \param t_parent The parent subsystem, which will contain this new subsystem.
+         \param t_name Name of the subsystem, must be a valid identifier.
+         \exception smnchai_exception an error happens, e.g. invalid name.
+         */
+        SubSystem(const SubSystem &t_parent, const std::string &t_name) {
+            if (!OBNsim::Utils::isValidIdentifier(t_name)) {
+                throw smnchai_exception("Subsystem name '" + t_name + "' is invalid.");
+            }
+            m_name = t_parent.get_name() + '/' + t_name;
+        }
+        
+        /** Create a new node in this subsystem; the node's name is prefixed with the subsystem's name. */
+        Node new_node(const std::string &t_name) const {
+            return Node(get_name() + '/' + t_name);
+        }
+        
+        /** Create a new subsystem of this subsystem. */
+        SubSystem new_subsystem(const std::string &t_name) const {
+            return SubSystem(*this, t_name);
+        }
+    };
+
 
     /** Class that represents a workspace, which contains nodes and their connections. */
     class WorkSpace {
@@ -352,61 +408,43 @@ namespace SMNChai {
     public:
         // Methods for exporting the network description to DOT, etc.
         
-        /** \brief Export a network to DOT language.
+        /** \brief Export a network to a DOT file.
          
-         This function exports a WorkSpace object to an output stream in the GraphViz's DOT language.
+         This function exports a WorkSpace object to a file in the GraphViz's DOT language.
          Nodes are exported with compact descriptions.
-         **/
-        void export2dot(std::ostream &tos, bool t_cluster = false, const std::string &tprops = "") const;
-        
-        /** \brief Export a network to a DOT file. */
+         */
         void export2dotfile(const std::string &fn, bool cluster, const std::string &tprops = "") const;
+        
+        /** \brief Export a network to a GraphML file.
+         
+         This function exports a WorkSpace object to a file in the GraphML format (for yEd).
+         Nodes are exported with compact descriptions.
+         */
+        void export2graphmlfile(const std::string &fn) const;
     };
     
-    /** Class that represents a subsystem, to be created and used in Chaiscript.
-     It is used to create (virtual) subsystems whose nodes have names prefixed with the subsystem's path.
-     For example, all nodes created in subsystem "my/subsystem" have names of the form "my/subsystem/nodename".
-     Subsystems are virtual in the sense that they are used to organize nodes in the Chaiscript; however the WorkSpace doesn't see subsystems.
+    
+    /** \brief Export a set of nodes and their connections to GraphViz's DOT format.
+     
+     This function is the workhorse for exporting a set of nodes and their connections (between these nodes only) to the GraphViz's DOT format.
+     It is used to export an entire network or any subsystem, or any collection of nodes within a network.
      */
-    class SubSystem {
-        std::string m_name; ///< Name of the subsystem, a valid identifier
-    public:
-        std::string get_name() const {
-            return m_name;
-        }
-        
-        /** Constructor of a subsystem object in the (global) workspace.
-         \param t_name Name of the subsystem, must be a valid identifier.
-         \exception smnchai_exception an error happens, e.g. invalid name.
-         */
-        SubSystem(const std::string &t_name): m_name(t_name) {
-            if (!OBNsim::Utils::isValidIdentifier(t_name)) {
-                throw smnchai_exception("Subsystem name '" + t_name + "' is invalid.");
-            }
-        }
-        
-        /** Constructor of a subsystem object in another subsystem.
-         \param t_parent The parent subsystem, which will contain this new subsystem.
-         \param t_name Name of the subsystem, must be a valid identifier.
-         \exception smnchai_exception an error happens, e.g. invalid name.
-         */
-        SubSystem(const SubSystem &t_parent, const std::string &t_name) {
-            if (!OBNsim::Utils::isValidIdentifier(t_name)) {
-                throw smnchai_exception("Subsystem name '" + t_name + "' is invalid.");
-            }
-            m_name = t_parent.get_name() + '/' + t_name;
-        }
-        
-        /** Create a new node in this subsystem; the node's name is prefixed with the subsystem's name. */
-        Node new_node(const std::string &t_name) const {
-            return Node(get_name() + '/' + t_name);
-        }
-        
-        /** Create a new subsystem of this subsystem. */
-        SubSystem new_subsystem(const std::string &t_name) const {
-            return SubSystem(*this, t_name);
-        }
-    };
+    void export2dot(const std::string m_name,
+                    const std::map<std::string, std::pair<Node,std::size_t> > &m_nodes,
+                    const std::forward_list< std::pair<PortInfo, PortInfo> > &m_connections,
+                    std::ostream &tos, bool t_cluster = false, const std::string &tprops = "");
+
+    
+    /** \brief Export a set of nodes and their connections to GraphML format.
+     
+     This function is the workhorse for exporting a set of nodes and their connections (between these nodes only) to the GraphML format.
+     It is used to export an entire network or any subsystem, or any collection of nodes within a network.
+     */
+    void export2graphml(const std::string m_name,
+                        const std::map<std::string, std::pair<Node,std::size_t> > &m_nodes,
+                        const std::forward_list< std::pair<PortInfo, PortInfo> > &m_connections,
+                        std::ostream &tos);
+    
     
     /********** Utility and interface functions ************/
     

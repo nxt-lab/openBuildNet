@@ -1,0 +1,373 @@
+// SMNChai library for Power network, distribution grids, etc.
+// This file is part of the openBuildNet framework, developed at EPFL.
+// Author: Truong X. Nghiem (xuan.nghiem@epfl.ch)
+
+
+// POWERNET_subnetwork
+// ===================
+// Creates a subnetwork consisting of a distribution node and one or more buses.
+// At each time step, each bus requests a combination of (P, Q, E, theta) from the distribution node,
+// which solves a PF problem and returns the actual values of (P, Q, E, theta) to the buses.
+//
+// r = POWERNET_subnetwork(busdef, timeStep, distName)
+//
+// Inputs:
+// busdef is a Map of bus definitions (at least one must be provided).  Each definition has the form:
+//   "bus_name" : bus-definition
+// where "bus_name" is the unique name of the bus, which must be a valid node name / identifier.
+//   bus-definition = ["type" : bus-type, "strict" : false/true, "virtual" : false/true, "vector" : true/false]
+//   bus-type = a string of the characters {P,Q,E,T} that defines the values exchanged between the bus and the distribution node.
+//   "virtual" specifies if the bus node will be a virtual node to be implemented outside this function (default: false). If "virtual" = false, a bus node of the same name as the bus name will be created and connected with the distribution node, and a virtual user node will be created and connected with the bus node.
+//   "strict" specifies if the requests from the user are strict, i.e. if they can't be satisfied by the distribution node, an error will occur. If "strict" = false (default), the user must be flexible to operate on the actual values returned by the distribution node. "strict" is only valid and used if "virtual" = false, and it only affects the connections between the bus node and the virtual user node.
+//   "vector" specifies how the values {P, Q, E, T} are sent between the bus-distribution nodes and between the bus-user nodes. If "vector" = true (default), the values are packed in a vector in the {P, Q, E, T} order, e.g. if "type" = "PE" then the vector is [P, E]. If "vector" = false, the values are sent on separate communication channels named after the variables, e.g. if "type" = "PE" then there will be ports "P" and "E" on each node for each bus-distribution and bus-user connections.
+//
+// timeStep is the time step of the updates (index = 0) of the distribution node and all non-virtual bus nodes. Each non-virtual bus node has two updates: (index = 0) receives the requests from the user(s) and sends the aggregated request to the distribution node; (index = 1) receives the response from the distribution node and either calculates the users' values (if strict = false) or checks the response vs. the request (if strict = true).
+//
+// addNodesNow (optional, default: true) is true if all non-virtual nodes are added automatically (and thus can't be changed later). If this is false, the nodes, which are stored in the returned map, must be added manually.
+//
+// distName (optional) is the name of the distribution node; if omitted, its default name is "distribution".
+//
+// Output: r is a Map of the following:
+//   "dist" : the distribution node.
+//   "buses" : a Map of non-virtual bus nodes, whose keys are the bus names.
+//   "users" : a Map of virtual user/bus nodes, whose keys are the bus names.
+
+def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string distName) {
+  // var busdef = tbusdef;  // A bug in Chaiscript that doesn't work with in-place Map objects  
+  if (busdef.empty()) { throw("At least one bus must present."); }
+
+  // Maps of bus nodes and user nodes
+  var mBuses = Map();
+  var mUsers = Map();
+
+  // Create distribution node
+  var distNode = new_node(distName);
+  distNode.add_update(0, timeStep);
+
+  // Loop through the Map busdef and create bus and/or user nodes
+  var thisBusName = "";  // name of the current bus
+  var thisBusDef = Map();   // the map object that defines the current bus
+  var thisBusType = "";   // Type of this bus, a string
+  var thisBusVector = true;   // Does this bus use vector or scalar signals?
+  
+  var busIt = busdef.range();
+  while (!busIt.empty()) {
+    // busIt.front().first() is the key, and busIt.front().second() is the Map object that defines the bus
+    thisBusName = busIt.front().first();
+    thisBusDef = busIt.front().second();
+
+    // Check bus type
+    if (thisBusDef.count("type") < 1) { throw("Type of bus " + thisBusName + " is undefined."); }
+    thisBusType = thisBusDef.at("type");
+    if (thisBusType.empty()) { throw("Type of bus " + thisBusName + " is empty."); }
+    var idx = thisBusType.find_first_not_of("PQETpqet");
+    if (idx >= 0 && idx < thisBusType.size()) { throw("Type of bus " + thisBusName + " contains invalid character. Only PQET are allowed."); }
+
+    // Find the components of the bus type
+    idx = thisBusType.find_first_of("Pp");
+    var thisBusP = (idx >= 0) && (idx < thisBusType.size());
+    
+    idx = thisBusType.find_first_of("Qq");
+    var thisBusQ = (idx >= 0) && (idx < thisBusType.size());
+
+    idx = thisBusType.find_first_of("Ee");
+    var thisBusE = (idx >= 0) && (idx < thisBusType.size());
+
+    idx = thisBusType.find_first_of("Tt");
+    var thisBusT = (idx >= 0) && (idx < thisBusType.size());
+
+    // How are the signals sent? In a vector or as scalars?
+    thisBusVector = (thisBusDef.count("vector") < 1) || thisBusDef.at("vector");
+    var thisBusVectorName = "";
+    if (thisBusVector) {
+      if (thisBusP) {
+	thisBusVectorName += "P";
+      }
+      if (thisBusQ) {
+	thisBusVectorName += "Q";
+      }
+      if (thisBusE) {
+	thisBusVectorName += "E";
+      }
+      if (thisBusT) {
+	thisBusVectorName += "T";
+      }
+    }
+
+    var thisBusNode;
+    var thisBusVirtual = (thisBusDef.count("virtual") > 0) && (thisBusDef.at("virtual") == true);
+    if (thisBusVirtual) {
+      // Virtual = true, the bus node is virtual
+      thisBusNode = VNode();
+    } else {
+      // Virtual = false, the bus node is created with a virtual user node
+      thisBusNode = new_node(thisBusName);
+      thisBusNode.add_update(0, timeStep);  // From users -> bus -> distribution
+      thisBusNode.add_update(1, timeStep);  // From distribution -> bus and maybe to users
+    }
+
+    // Create the ports between the bus node and the distribution node
+    // and connect them
+    var busInName;
+    var busOutName;
+    var distInName;
+    var distOutName;
+
+    if (thisBusVector) {
+      busInName = thisBusVectorName + "fromGrid";
+      busOutName = thisBusVectorName + "toGrid";
+      thisBusNode.add_input(busInName);
+      thisBusNode.add_output(busOutName);
+
+      distInName = thisBusVectorName + "from" + thisBusName;
+      distOutName = thisBusVectorName + "to" + thisBusName;
+      distNode.add_input(distInName);
+      distNode.add_output(distOutName);
+
+      // The inputs from bus are fed directly to the distribution node's computation, which calculates the outputs to the bus
+      distNode.input_to_update(0, distInName, true);
+      distNode.output_from_update(0, distOutName);
+
+      if (!thisBusVirtual) {
+	thisBusNode.input_to_update(1, busInName, true);
+	thisBusNode.output_from_update(0, busOutName);
+      }
+
+      connect(thisBusNode.port(busOutName), distNode.port(distInName));
+      connect(distNode.port(distOutName), thisBusNode.port(busInName));
+    } else {
+      if (thisBusP) {
+	busInName = "PfromGrid";
+	busOutName = "PtoGrid";
+	thisBusNode.add_input(busInName);
+	thisBusNode.add_output(busOutName);
+
+	distInName = "Pfrom" + thisBusName;
+	distOutName = "Pto" + thisBusName;
+	distNode.add_input(distInName);
+	distNode.add_output(distOutName);
+
+	distNode.input_to_update(0, distInName, true);
+	distNode.output_from_update(0, distOutName);
+
+	if (!thisBusVirtual) {
+	  thisBusNode.input_to_update(1, busInName, true);
+	  thisBusNode.output_from_update(0, busOutName);
+	}
+
+	connect(thisBusNode.port(busOutName), distNode.port(distInName));
+	connect(distNode.port(distOutName), thisBusNode.port(busInName));
+      }
+      if (thisBusQ) {
+	busInName = "QfromGrid";
+	busOutName = "QtoGrid";
+	thisBusNode.add_input(busInName);
+	thisBusNode.add_output(busOutName);
+
+	distInName = "Qfrom" + thisBusName;
+	distOutName = "Qto" + thisBusName;
+	distNode.add_input(distInName);
+	distNode.add_output(distOutName);
+
+	distNode.input_to_update(0, distInName, true);
+	distNode.output_from_update(0, distOutName);
+
+	if (!thisBusVirtual) {
+	  thisBusNode.input_to_update(1, busInName, true);
+	  thisBusNode.output_from_update(0, busOutName);
+	}
+
+	connect(thisBusNode.port(busOutName), distNode.port(distInName));
+	connect(distNode.port(distOutName), thisBusNode.port(busInName));
+      }
+      if (thisBusE) {
+	busInName = "EfromGrid";
+	busOutName = "EtoGrid";
+	thisBusNode.add_input(busInName);
+	thisBusNode.add_output(busOutName);
+
+	distInName = "Efrom" + thisBusName;
+	distOutName = "Eto" + thisBusName;
+	distNode.add_input(distInName);
+	distNode.add_output(distOutName);
+
+	distNode.input_to_update(0, distInName, true);
+	distNode.output_from_update(0, distOutName);
+
+	if (!thisBusVirtual) {
+	  thisBusNode.input_to_update(1, busInName, true);
+	  thisBusNode.output_from_update(0, busOutName);
+	}
+
+	connect(thisBusNode.port(busOutName), distNode.port(distInName));
+	connect(distNode.port(distOutName), thisBusNode.port(busInName));
+      }
+      if (thisBusT) {
+	busInName = "TfromGrid";
+	busOutName = "TtoGrid";
+	thisBusNode.add_input(busInName);
+	thisBusNode.add_output(busOutName);
+
+	distInName = "Tfrom" + thisBusName;
+	distOutName = "Tto" + thisBusName;
+	distNode.add_input(distInName);
+	distNode.add_output(distOutName);
+
+	distNode.input_to_update(0, distInName, true);
+	distNode.output_from_update(0, distOutName);
+
+	if (!thisBusVirtual) {
+	  thisBusNode.input_to_update(1, busInName, true);
+	  thisBusNode.output_from_update(0, busOutName);
+	}
+
+	connect(thisBusNode.port(busOutName), distNode.port(distInName));
+	connect(distNode.port(distOutName), thisBusNode.port(busInName));
+      }
+    }
+
+    // Create the ports between the bus node and the virtual user node
+    // and connect them
+    if (thisBusVirtual) {
+      mUsers[thisBusName] := thisBusNode;
+    } else {
+      var thisUserNode := VNode();
+      var thisBusStrict = (thisBusDef.count("strict") > 0) && (thisBusDef.at("strict") == true);
+      
+      if (thisBusVector) {
+	// From user to bus, always exist
+	busInName = thisBusVectorName + "fromUser";
+	thisBusNode.add_input(busInName);
+	thisBusNode.input_to_update(0, busInName, true);
+	
+	distOutName = thisBusVectorName + "toBus";
+	thisUserNode.add_output(distOutName);
+
+	connect(thisUserNode.port(distOutName), thisBusNode.port(busInName));
+	
+	// From bus to user, only if non-strict
+	if (!thisBusStrict) {
+	  busOutName = thisBusVectorName + "toUser";
+	  thisBusNode.add_output(busOutName);
+	  thisBusNode.output_from_update(1, busOutName);
+	  
+	  distInName = thisBusVectorName + "fromBus";
+	  thisUserNode.add_input(distInName);
+	  connect(thisBusNode.port(busOutName), thisUserNode.port(distInName));
+	}
+      } else {
+	if (thisBusP) {
+	  // From user to bus, always exist
+	  busInName = "PfromUser";
+	  thisBusNode.add_input(busInName);
+	  thisBusNode.input_to_update(0, busInName, true);
+	  
+	  distOutName = "PtoBus";
+	  thisUserNode.add_output(distOutName);
+
+	  connect(thisUserNode.port(distOutName), thisBusNode.port(busInName));
+	
+	  // From bus to user, only if non-strict
+	  if (!thisBusStrict) {
+	    busOutName = "PtoUser";
+	    thisBusNode.add_output(busOutName);
+	    thisBusNode.output_from_update(1, busOutName);
+	    
+	    distInName = "PfromBus";
+	    thisUserNode.add_input(distInName);
+	    connect(thisBusNode.port(busOutName), thisUserNode.port(distInName));
+	  }	  
+	}
+	if (thisBusQ) {
+	  // From user to bus, always exist
+	  busInName = "QfromUser";
+	  thisBusNode.add_input(busInName);
+	  thisBusNode.input_to_update(0, busInName, true);
+	  
+	  distOutName = "QtoBus";
+	  thisUserNode.add_output(distOutName);
+	  
+	  connect(thisUserNode.port(distOutName), thisBusNode.port(busInName));
+	
+	  // From bus to user, only if non-strict
+	  if (!thisBusStrict) {
+	    busOutName = "QtoUser";
+	    thisBusNode.add_output(busOutName);
+	    thisBusNode.output_from_update(1, busOutName);
+	    
+	    distInName = "QfromBus";
+	    thisUserNode.add_input(distInName);
+	    connect(thisBusNode.port(busOutName), thisUserNode.port(distInName));
+	  }	  
+	}
+	if (thisBusE) {
+	  // From user to bus, always exist
+	  busInName = "EfromUser";
+	  thisBusNode.add_input(busInName);
+	  thisBusNode.input_to_update(0, busInName, true);
+	  
+	  distOutName = "EtoBus";
+	  thisUserNode.add_output(distOutName);
+
+	  connect(thisUserNode.port(distOutName), thisBusNode.port(busInName));
+	
+	  // From bus to user, only if non-strict
+	  if (!thisBusStrict) {
+	    busOutName = "EtoUser";
+	    thisBusNode.add_output(busOutName);
+	    thisBusNode.output_from_update(1, busOutName);
+	    
+	    distInName = "EfromBus";
+	    thisUserNode.add_input(distInName);
+	    connect(thisBusNode.port(busOutName), thisUserNode.port(distInName));
+	  }	  
+	}
+	if (thisBusT) {
+	  // From user to bus, always exist
+	  busInName = "TfromUser";
+	  thisBusNode.add_input(busInName);
+	  thisBusNode.input_to_update(0, busInName, true);
+	  
+	  distOutName = "TtoBus";
+	  thisUserNode.add_output(distOutName);
+	  
+	  connect(thisUserNode.port(distOutName), thisBusNode.port(busInName));
+	
+	  // From bus to user, only if non-strict
+	  if (!thisBusStrict) {
+	    busOutName = "TtoUser";
+	    thisBusNode.add_output(busOutName);
+	    thisBusNode.output_from_update(1, busOutName);
+	    
+	    distInName = "TfromBus";
+	    thisUserNode.add_input(distInName);
+	    connect(thisBusNode.port(busOutName), thisUserNode.port(distInName));
+	  }	  
+	}
+      }
+      mUsers[thisBusName] := thisUserNode;
+      mBuses[thisBusName] := thisBusNode;
+      if (addNodesNow) {
+	add_node(thisBusNode);
+      }
+    }
+
+    busIt.pop_front();
+  }
+
+  // Add distribution node
+  if (addNodesNow) {
+    add_node(distNode);
+  }
+
+  // Return the nodes in a Map
+  return ["dist" : distNode, "buses" : mBuses, "users" : mUsers];
+}
+
+def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow) {
+  return POWERNET_subnetwork(busdef, timeStep, addNodesNow, "distribution");
+}
+
+def POWERNET_subnetwork(Map busdef, double timeStep) {
+  return POWERNET_subnetwork(busdef, timeStep, true, "distribution");
+}
