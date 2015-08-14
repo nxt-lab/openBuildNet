@@ -430,12 +430,12 @@ namespace OBNnode {
 
 /* Below is a mechanism to define methods for individual updates to perform their computations of UPDATE_X. */
 #define OBN_DECLARE_UPDATES_X(...) template<const int N> void doUpdateX(); \
-template<const bool temp, const int Arg1, const int... Args> void performUpdatesX(OBNnode::updatemask_t& m) { \
-static_assert(Arg1 >= 0 && Arg1 <= OBNsim::MAX_UPDATE_INDEX, "Update index must be positive."); \
-if (m & (1 << Arg1)) { doUpdateX<Arg1>(); m ^= (1 << Arg1); } \
-performUpdatesX<temp, Args...>(m); } \
-template<const bool temp> void performUpdatesX(OBNnode::updatemask_t& m) { } \
-virtual void onUpdateX() { performUpdatesX<true, __VA_ARGS__>(_current_updates); }
+    template<const bool temp, const int Arg1, const int... Args> void performUpdatesX(OBNnode::updatemask_t& m) { \
+    static_assert(Arg1 >= 0 && Arg1 <= OBNsim::MAX_UPDATE_INDEX, "Update index must be positive."); \
+    if (m & (1 << Arg1)) { doUpdateX<Arg1>(); m ^= (1 << Arg1); } \
+    performUpdatesX<temp, Args...>(m); } \
+    template<const bool temp> void performUpdatesX(OBNnode::updatemask_t& m) { } \
+    virtual void onUpdateX() { performUpdatesX<true, __VA_ARGS__>(_current_updates); }
 
 #define OBN_DEFINE_UPDATE_X(CLS,N) template<> void CLS::doUpdateX<N>()
 
