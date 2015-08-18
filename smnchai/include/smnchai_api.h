@@ -285,6 +285,7 @@ namespace SMNChai {
             double final_time = std::numeric_limits<OBNsim::simtime_t>::max();      ///< The final time of simulation, real number in microseconds.
             unsigned int time_unit = 1;       ///< The atomic time unit, positive integer number in microseconds [default = 1 microseconds]
             bool run_simulation = true;     ///< Whether automatically run the simulation after loading it
+            std::time_t wallclock = 0;      ///< The initial wall clock time, in Epoch/UNIX time
         } settings;
 
     public:

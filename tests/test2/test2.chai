@@ -23,5 +23,5 @@ connect(sp.port("sp"), ctrl.port("sp"));
 connect(motor.port("v"), ctrl.port("v"));
 connect(ctrl.port("u"), motor.port("vol"));
 
-timeunit(millisecond);
+time_unit(millisecond);
 final_time(10*second);

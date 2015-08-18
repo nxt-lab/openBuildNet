@@ -18,6 +18,7 @@
 //#include <unordered_map>         // std::unordered_map
 #include <forward_list>
 #include <functional>
+#include <cmath>
 
 #include <obnnode_basic.h>
 #include <obnnode_yarpportbase.h>
@@ -64,6 +65,16 @@ namespace OBNnode {
         /** Return full path to a port in this node. */
         std::string fullPortName(const std::string& portName) const {
             return _workspace + _nodeName + '/' + portName;
+        }
+        
+        /** Return the current simulation time. */
+        simtime_t currentSimTime() const {
+            return _current_sim_time;
+        }
+        
+        /** Return the current wallclock time, as std::time_t value, rounded downward to a second. */
+        std::time_t currentWallClockTime() const {
+            return static_cast<std::time_t>(std::floor( _initial_wallclock + (_timeunit * 1.0e-6) * _current_sim_time ));
         }
         
         /** Opens the port on this node to communication with the SMN, if it hasn't been opened.
@@ -175,6 +186,11 @@ namespace OBNnode {
         /** The current update type mask, of the latest UPDATE_Y. */
         updatemask_t _current_updates;
         
+        /** The initial wallclock time. */
+        std::time_t _initial_wallclock = 0;
+        
+        /** The simulation time unit, in microseconds. */
+        simtime_t _timeunit = 1;
         
         /** \brief Initialize node for simulation. */
         void initializeForSimulation();
@@ -311,9 +327,22 @@ namespace OBNnode {
         
         /** Event class for cosimulation's INITIALIZE messages. */
         struct NodeEvent_INITIALIZE: public NodeEventSMN {
+            std::time_t _wallclock;
+            simtime_t _timeunit;
+            bool _has_wallclock = false;
+            bool _has_timeunit = false;
             virtual void executeMain(YarpNode*);
             virtual void executePost(YarpNode*);
-            NodeEvent_INITIALIZE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) { }
+            NodeEvent_INITIALIZE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
+                if (msg.has_data()) {
+                    if ((_has_wallclock = msg.data().has_t())) {
+                        _wallclock = msg.data().t();
+                    }
+                    if ((_has_timeunit = msg.data().has_i())) {
+                        _timeunit = msg.data().i();
+                    }
+                }
+            }
         };
         friend NodeEvent_INITIALIZE;
         

@@ -24,6 +24,7 @@
 #include <memory>
 #include <chrono>
 #include <utility>  // pair
+#include <ctime>    // For wall-clock time
 
 #include <sharedqueue.h>    // Thread-safe shared event queue
 #include <obnsmn_event.h>
@@ -124,6 +125,20 @@ namespace OBNsmn {
          */
         int ack_timeout = 0;
         
+        /** Set the simulation time unit.
+         \param T The simulation time unit, in number of microseconds.
+         \return true if successful.
+         */
+        bool setSimulationTimeUnit(simtime_t T) {
+            // Only set it when the GC is not (yet) running.
+            if ((T > 0) && (!_gcthread)) {
+                sim_time_unit = T;
+                return true;
+            }
+            
+            return false;
+        }
+        
         /** Set the final simulation time.
          \return true if successful.
          */
@@ -136,6 +151,21 @@ namespace OBNsmn {
             
             return false;
         }
+        
+        /** Set the initial wall-clock time.
+         \param T The initial time as Epoch/UNIX time.
+         \return true if successful.
+         */
+        bool setInitialWallclock(std::time_t T) {
+            // Only set the time when the GC is not (yet) running.
+            if (!_gcthread) {
+                initial_wallclock = T;
+                return true;
+            }
+            
+            return false;
+        }
+        
         
         ///@{
         /** Set the node dependency graph.
@@ -269,11 +299,17 @@ namespace OBNsmn {
         
         // ============ Simulation control =============
         
+        /** The time unit of simulation time, in number of microseconds. */
+        simtime_t sim_time_unit = 1;
+        
         /** The current simulation time (not wall clock). */
         simtime_t current_sim_time;
         
         /** The final simulation time. Every simulation must have a stop time. */
         simtime_t final_sim_time;
+        
+        /** The initial wall clock time at the start of the simulation. */
+        std::time_t initial_wallclock = 0;
         
         /** \brief Initialize the simulation before it can start. */
         bool initialize();
@@ -352,10 +388,10 @@ namespace OBNsmn {
         bool gc_send_update_x();
         
         /** \brief Send a given simple message to all nodes without waiting for ACKs. */
-        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype);
+        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::MSGDATA *pData = NULL);
         
         /** \brief Send a given simple message to all nodes and start wait-for event. */
-        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype);
+        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype,  OBNSimMsg::MSGDATA *pData = NULL);
         
         
         // ============ Wait-for event for the GC algorithm =============

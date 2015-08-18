@@ -585,6 +585,14 @@ void YarpNode::NodeEvent_INITIALIZE::executeMain(YarpNode* pnode) {
     
     basic_processing(pnode);
     
+    // Save the initial settings sent from the SMN
+    if (_has_wallclock) {
+        pnode->_initial_wallclock = _wallclock;
+    }
+    if (_has_timeunit) {
+        pnode->_timeunit = _timeunit;
+    }
+    
     pnode->onInitialization();
 }
 

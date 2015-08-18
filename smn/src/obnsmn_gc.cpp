@@ -84,7 +84,14 @@ void GCThread::GCThreadMain() {
 
     // Set to false if there is a critical error that the simulation should terminate immediately,
     //  even without sending TERM signals, but still does necessary cleanups.
-    bool noCriticalError = gc_send_to_all(0, OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT, OBNSimMsg::N2SMN_MSGTYPE_SIM_INIT_ACK);
+    bool noCriticalError;
+    
+    // Send the SIM_INIT message to all nodes to start the simulation
+    OBNSimMsg::MSGDATA *pMsgData = new OBNSimMsg::MSGDATA();
+    pMsgData->set_t(initial_wallclock); // initial wallclock time
+    pMsgData->set_i(sim_time_unit);     // simulation time unit, in microseconds
+    
+    noCriticalError = gc_send_to_all(0, OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT, OBNSimMsg::N2SMN_MSGTYPE_SIM_INIT_ACK, pMsgData);
 
     // Wait for ACKs from all nodes, checking for initialization errors
     noCriticalError = noCriticalError && gc_wait_for_ack([this](const SMNNodeEvent* ev) {
@@ -205,6 +212,12 @@ bool GCThread::initialize() {
     // Check that _nodes has at least one node
     if ((maxID = _nodes.size() - 1) < 0) {
         report_error(0, "There are no nodes in the system; at least one node must be present.");
+        return false;
+    }
+    
+    // Check simulation time unit
+    if (sim_time_unit <= 0) {
+        report_error(0, "Invalid simulation time unit (" + std::to_string(sim_time_unit) + ").");
         return false;
     }
 
@@ -732,13 +745,17 @@ bool GCThread::gc_send_update_x() {
  The message is simple with no custom data.
  \param t The time value sent with the message.
  \param msgtype The type of the message sent to nodes.
+ \param pData Pointer to an optional message data block; null pointer (default) if no data. The function will take ownership of this data, therefore the data block should be created dynamically and not released by the caller.
  \return true if successful; false if not (error)
  */
-bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype) {
+bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::MSGDATA *pData) {
     // Send the message to all nodes
     OBNSimMsg::SMN2N msg;
     msg.set_msgtype(msgtype);
     msg.set_time(t);
+    
+    // Set message data (none = clear if NULL)
+    msg.set_allocated_data(pData);
 
     int k = 0;
     for (auto it = _nodes.begin(); it != _nodes.end(); ++it, ++k) {
@@ -762,9 +779,10 @@ bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype) {
  \param t The time value sent with the message.
  \param msgtype The type of the message sent to nodes.
  \param acktype The type of the ACK message sent from nodes.
+ \param pData Pointer to an optional message data block; null pointer (default) if no data. The function will take ownership of this data, therefore the data block should be created dynamically and not released by the caller.
  \return true if successful; false if not (error)
  */
-bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype) {
+bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype, OBNSimMsg::MSGDATA *pData) {
     if (gc_waitfor_active) {
         // It's an error that wait-for is still active
         report_error(0, "Internal error: wait-for event is active before sending message #");
@@ -772,7 +790,7 @@ bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OB
     }
     
     // Send the message to all nodes
-    if (!gc_send_to_all(t, msgtype)) {
+    if (!gc_send_to_all(t, msgtype, pData)) {
         return false;
     }
     
