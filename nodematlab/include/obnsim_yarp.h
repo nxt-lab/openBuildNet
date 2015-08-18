@@ -103,11 +103,6 @@ namespace OBNnode {
             _current_node_event.reset();
         }
         
-        /** Returns current simulation time. */
-        simtime_t currentSimulationTime() const {
-            return _current_sim_time;
-        }
-        
     public:
         /* =========== Simulation callbacks =========== */
         

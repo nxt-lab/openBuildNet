@@ -18,7 +18,7 @@
 #include <yarp/os/all.h>
 
 namespace OBNnode {
-    class YarpNode;
+    class YarpNodeBase;
     
     /** \brief Send and receive binary data through YARP.
      
@@ -160,13 +160,13 @@ namespace OBNnode {
     class YarpPortBase {
     protected:
         std::string _nameInNode;       ///< The name of the port in the node (i.e. without the node name prefix
-        YarpNode* _theNode;  ///< The node managing/owning this port (where event queue and callback interface are handled)
+        YarpNodeBase* _theNode;  ///< The node managing/owning this port (where event queue and callback interface are handled)
 
         ///< Returns the actual Yarp port
         virtual yarp::os::Contactable& getYarpPort() = 0;
         
         /** Attach the port to make it a valid port */
-        virtual bool attach(YarpNode* node) {
+        virtual bool attach(YarpNodeBase* node) {
             assert(node != nullptr);
             _theNode = node;
             return true;
@@ -185,7 +185,7 @@ namespace OBNnode {
             return true;
         }
         
-        friend class YarpNode;
+        friend class YarpNodeBase;
         
     public:
         YarpPortBase(const std::string& _name): _nameInNode(_name), _theNode(nullptr) { }

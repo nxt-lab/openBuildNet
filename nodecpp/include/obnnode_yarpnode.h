@@ -13,12 +13,13 @@
 #ifndef OBNNODE_YARPNODE_H_
 #define OBNNODE_YARPNODE_H_
 
+#include <cmath>
 #include <iostream>
 #include <memory>               // shared_ptr
 //#include <unordered_map>         // std::unordered_map
 #include <forward_list>
 #include <functional>
-#include <cmath>
+#include <vector>
 
 #include <obnnode_basic.h>
 #include <obnnode_yarpportbase.h>
@@ -30,7 +31,8 @@
 namespace OBNnode {
     
     /* ============ YARP Node (managing Yarp ports) Interface ===============*/
-    class YarpNode {
+    /** \brief Basic YARP Node. */
+    class YarpNodeBase {
     public:
         static yarp::os::Network yarp_network;      ///< The Yarp network object for Yarp's API
         
@@ -55,8 +57,8 @@ namespace OBNnode {
         }
         
         /** \brief Construct a node object. */
-        YarpNode(const std::string& _name, const std::string& ws = "");
-        virtual ~YarpNode();
+        YarpNodeBase(const std::string& _name, const std::string& ws = "");
+        virtual ~YarpNodeBase();
         
         const std::string& name() const {
             return _nodeName;
@@ -109,13 +111,13 @@ namespace OBNnode {
         /** \brief Add an existing (physical) input port to the node. */
         bool addInput(YarpPortBase* port);
         
-        /** \brief Create and add a new (physical) input port to the node. */
+        /* \brief Create and add a new (physical) input port to the node. */
         
         
         /** \brief Add an existing (physical) output port to the node. */
         bool addOutput(YarpOutputPortBase* port);
         
-        /** \brief Create and add a new (physical) output port to the node. */
+        /* \brief Create and add a new (physical) output port to the node. */
         
         /** \brief Add an existing data port (not managed by GC) to the node. */
         
@@ -137,11 +139,11 @@ namespace OBNnode {
         
         /** The SMN port on a node to communicate with the SMN. */
         class SMNPort: public yarp::os::BufferedPort<SMNMsg> {
-            YarpNode* _the_node;                ///< Pointer to the node to which this port is attached
+            YarpNodeBase* _the_node;                ///< Pointer to the node to which this port is attached
             OBNSimMsg::SMN2N _smn_message;      ///< The SMN2N message received at the node
             virtual void onRead(SMNMsg& b);
         public:
-            SMNPort(YarpNode* node) {
+            SMNPort(YarpNodeBase* node) {
                 assert(node);
                 _the_node = node;
             }
@@ -211,7 +213,7 @@ namespace OBNnode {
             typedef std::function<bool (const OBNSimMsg::SMN2N&)> the_checker;
             the_checker _check_func;    ///< The function to check for the condition
 
-            friend class YarpNode;
+            friend class YarpNodeBase;
             
             /** Make the condition inactive, to be reused later. */
             void reset() {
@@ -279,8 +281,8 @@ namespace OBNnode {
          The execution of the event handler consists of two functions, in the following order: executeMain, executePost.
          */
         struct NodeEvent {
-            virtual void executeMain(YarpNode*) = 0;     ///< Main Execution of the event
-            virtual void executePost(YarpNode*) = 0;     ///< Post-Execution of the event
+            virtual void executeMain(YarpNodeBase*) = 0;     ///< Main Execution of the event
+            virtual void executePost(YarpNodeBase*) = 0;     ///< Post-Execution of the event
         };
         
         /** The event queue, which contains smart pointers to event objects. */
@@ -298,7 +300,7 @@ namespace OBNnode {
             }
             
             /** Method to process basic details of an SMN event; should be called in the execute() methods of child classes. */
-            void basic_processing(YarpNode* p) {
+            void basic_processing(YarpNodeBase* p) {
                 p->_current_sim_time = _time;
                 if (_hasID) {
                     p->_node_id = _id;
@@ -308,8 +310,8 @@ namespace OBNnode {
         
         /** Event class for cosimulation's UPDATE_Y messages. */
         struct NodeEvent_UPDATEY: public NodeEventSMN {
-            virtual void executeMain(YarpNode*);
-            virtual void executePost(YarpNode*);
+            virtual void executeMain(YarpNodeBase*);
+            virtual void executePost(YarpNodeBase*);
             updatemask_t _updates;
             NodeEvent_UPDATEY(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
                 _updates = (msg.has_data() && msg.data().has_i())?msg.data().i():0;
@@ -319,8 +321,8 @@ namespace OBNnode {
         
         /** Event class for cosimulation's UPDATE_X messages. */
         struct NodeEvent_UPDATEX: public NodeEventSMN {
-            virtual void executeMain(YarpNode*);
-            virtual void executePost(YarpNode*);
+            virtual void executeMain(YarpNodeBase*);
+            virtual void executePost(YarpNodeBase*);
             NodeEvent_UPDATEX(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) { }
         };
         friend NodeEvent_UPDATEX;
@@ -331,8 +333,8 @@ namespace OBNnode {
             simtime_t _timeunit;
             bool _has_wallclock = false;
             bool _has_timeunit = false;
-            virtual void executeMain(YarpNode*);
-            virtual void executePost(YarpNode*);
+            virtual void executeMain(YarpNodeBase*);
+            virtual void executePost(YarpNodeBase*);
             NodeEvent_INITIALIZE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
                 if (msg.has_data()) {
                     if ((_has_wallclock = msg.data().has_t())) {
@@ -348,8 +350,8 @@ namespace OBNnode {
         
         /** Event class for cosimulation's TERMINATE messages. */
         struct NodeEvent_TERMINATE: public NodeEventSMN {
-            virtual void executeMain(YarpNode*);
-            virtual void executePost(YarpNode*);
+            virtual void executeMain(YarpNodeBase*);
+            virtual void executePost(YarpNodeBase*);
             NodeEvent_TERMINATE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) { }
         };
         friend NodeEvent_TERMINATE;
@@ -443,10 +445,66 @@ namespace OBNnode {
         }
     };
     
+    /** Define all details of an update type. */
+    struct UpdateType {
+        bool enabled = false;   ///< If this update is enabled
+        double T_in_us = -1.0;  ///< Sampling time in microseconds, <=0 if non-periodic
+        std::string name;       ///< Name of this update (optional)
+        
+        typedef std::vector<std::string> OUTPUT_LIST;
+        OUTPUT_LIST outputs;   ///< List of outputs of this update
+        
+        typedef std::vector<std::pair<std::string, bool> > INPUT_LIST;
+        INPUT_LIST inputs;  ///< List of inputs of this update and their direct-feedthrough property
+        
+        // Callbacks
+        typedef std::function<void ()> UPDATE_CALLBACK;
+        UPDATE_CALLBACK y_callback; ///< Callback for UPDATE_Y, initially empty
+        UPDATE_CALLBACK x_callback; ///< Callback for UPDATE_X, initially empty
+    };
+    
+    
+    /** \brief Main YARP Node, with support for specifying updates and __info__ port. */
+    class YarpNode: public YarpNodeBase {
+    protected:
+        /** Vector of all updates in this node. */
+        std::vector<UpdateType> m_updates;
+        
+    public:
+        YarpNode(const std::string& _name, const std::string& ws = ""): YarpNodeBase(_name, ws) { }
+        
+        /** Add a new update to the node. */
+        int addUpdate(double t_T, UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
+        
+        /** Add a new update to the node with given index. */
+        int addUpdate(int t_idx, double t_T, UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
+        
+        /** Add a new update to the node. */
+        int addUpdate(const UpdateType& t_update);
+        
+        /** Add a new update to the node with given index. */
+        int addUpdate(int t_idx, const UpdateType& t_update);
+        
+        /** Remove an update. */
+        bool removeUpdate(int t_idx);
+        
+        virtual void onUpdateY(updatemask_t m);
+        
+        virtual void onUpdateX();
+        
+        // Some constants for specifying the update's sampling time
+        static constexpr double MILLISECOND = 1e3;
+        static constexpr double SECOND = 1e6;
+        static constexpr double MINUTE = 60*SECOND;
+        static constexpr double HOUR = 60*MINUTE;
+        static constexpr double DAY = 24*HOUR;
+    };
     
 }
 
-/* Below is a mechanism to define methods for individual updates to perform their computations of UPDATE_Y. */
+/* OLD CODE: NOT TO BE USED ANYMORE!!!
+ 
+// Below is a mechanism to define methods for individual updates to perform their computations of UPDATE_Y.
 #define OBN_DECLARE_UPDATES(...) template<const int N> void doUpdate(); \
     template<const bool temp, const int Arg1, const int... Args> void performUpdates(OBNnode::updatemask_t& m) { \
     static_assert(Arg1 >= 0 && Arg1 <= OBNsim::MAX_UPDATE_INDEX, "Update index must be positive."); \
@@ -457,7 +515,7 @@ namespace OBNnode {
 
 #define OBN_DEFINE_UPDATE(CLS,N) template<> void CLS::doUpdate<N>()
 
-/* Below is a mechanism to define methods for individual updates to perform their computations of UPDATE_X. */
+// Below is a mechanism to define methods for individual updates to perform their computations of UPDATE_X.
 #define OBN_DECLARE_UPDATES_X(...) template<const int N> void doUpdateX(); \
     template<const bool temp, const int Arg1, const int... Args> void performUpdatesX(OBNnode::updatemask_t& m) { \
     static_assert(Arg1 >= 0 && Arg1 <= OBNsim::MAX_UPDATE_INDEX, "Update index must be positive."); \
@@ -467,5 +525,6 @@ namespace OBNnode {
     virtual void onUpdateX() { performUpdatesX<true, __VA_ARGS__>(_current_updates); }
 
 #define OBN_DEFINE_UPDATE_X(CLS,N) template<> void CLS::doUpdateX<N>()
+*/
 
 #endif /* OBNNODE_YARPNODE_H_ */
