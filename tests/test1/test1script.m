@@ -42,6 +42,6 @@ mynode.addCallback(fsimple, 'INIT', 'Begin simulation');
 mynode.addCallback(fsimple, 'TERM', 'Simulation is terminated');
 
 disp('Starting simulation; please start the SMN server!');
-b = mynode.runSimulation();
+b = mynode.runSimulation(20);
 disp('Simulation stopped with result:');
 disp(b);

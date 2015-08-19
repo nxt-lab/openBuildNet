@@ -52,6 +52,9 @@ public:
             std::cerr << "Error while adding setpoint output." << std::endl;
         }
         
+        // Add the update
+        success = success && (addUpdate(MAIN_UPDATE, std::bind(&SetPoint::doMainUpdate, this)) >= 0);
+        
         // Open the SMN port
         success = success && openSMNPort();
         
@@ -78,18 +81,12 @@ public:
     
     /* There are other callbacks for reporting errors, etc. */
     
-    /* Declare the update types of the node by listing their index constants in the macro OBN_DECLARE_UPDATES(...)
-     Their listing order determines the order in which the corresponding update callbacks are called. */
-    OBN_DECLARE_UPDATES(MAIN_UPDATE)
+    // Callback for the main update
+    void doMainUpdate() {
+        setpoint = distribution(generator) / 10.0;
+        std::cout << "At " << _current_sim_time << " UPDATE_Y" << std::endl;
+    }
 };
-
-/* For each update type, define the update callback function OUTSIDE the class declaration.
- Each callback is defined by OBN_DEFINE_UPDATE(<Your node class name>, <Index of the update type>) { code here; } */
-
-OBN_DEFINE_UPDATE(SetPoint, MAIN_UPDATE) {
-    setpoint = distribution(generator) / 10.0;
-    std::cout << "At " << _current_sim_time << " UPDATE_Y" << std::endl;
-}
 
 int main() {
     std::cout << "This is setpoint node." << std::endl;

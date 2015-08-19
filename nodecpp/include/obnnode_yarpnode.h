@@ -70,7 +70,7 @@ namespace OBNnode {
         }
         
         /** Return the current simulation time. */
-        simtime_t currentSimTime() const {
+        simtime_t currentSimulationTime() const {
             return _current_sim_time;
         }
         
@@ -470,14 +470,24 @@ namespace OBNnode {
         /** Vector of all updates in this node. */
         std::vector<UpdateType> m_updates;
         
+        template<typename T>
+        bool does_port_exists(const T& t_list, const std::string& t_name) const {
+            for (const auto p: t_list) {
+                if (p->getPortName() == t_name) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        
     public:
         YarpNode(const std::string& _name, const std::string& ws = ""): YarpNodeBase(_name, ws) { }
         
         /** Add a new update to the node. */
-        int addUpdate(double t_T, UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
+        int addUpdate(UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), double t_T = -1.0, const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
         
         /** Add a new update to the node with given index. */
-        int addUpdate(int t_idx, double t_T, UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
+        int addUpdate(int t_idx, UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), double t_T = -1.0, const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
         
         /** Add a new update to the node. */
         int addUpdate(const UpdateType& t_update);

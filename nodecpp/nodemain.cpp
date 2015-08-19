@@ -80,7 +80,7 @@ public:
             // List of outputs of this update
             UpdateType::OUTPUT_LIST outputs{"y"};
             
-            int update_idx = addUpdate(2*YarpNode::SECOND, std::bind(&MyNodeClass::onFirstUpdateY, this), std::bind(&MyNodeClass::onFirstUpdateX, this), inputs, outputs, "First update");
+            int update_idx = addUpdate(std::bind(&MyNodeClass::onFirstUpdateY, this), std::bind(&MyNodeClass::onFirstUpdateX, this), 2*YarpNode::SECOND, inputs, outputs, "First update");
             success = update_idx >= 0;
             if (!success) {
                 std::cerr << "Error while adding the first update with code: " << update_idx << std::endl;
@@ -91,7 +91,7 @@ public:
         if (success) {
             // Here we don't specify the optional details, but it's recommended to do so
             // And this update doesn't have state update (UPDATE_X)
-            int update_idx = addUpdate(0, std::bind(&MyNodeClass::onSecondUpdateY, this));
+            int update_idx = addUpdate(std::bind(&MyNodeClass::onSecondUpdateY, this));
             success = update_idx >= 0;
             if (!success) {
                 std::cerr << "Error while adding the second update with code: " << update_idx << std::endl;

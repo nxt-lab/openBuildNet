@@ -18,7 +18,7 @@ SET(PROJECT_VERSION "0.1"  ## "hg-tip"
 PROJECT(${PROJECT_NAME})
 
 ## Change OBN_MAIN_DIR to the path to the main directory of openBuildNet
-set (OBN_MAIN_DIR ../)
+set (OBN_MAIN_DIR ${PROJECT_SOURCE_DIR}/../)
 
 ## This will set the header and source directories for the node.cpp framework
 set (OBN_NODECPP_INCLUDE_DIR ${OBN_MAIN_DIR}/nodecpp/include)

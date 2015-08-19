@@ -651,9 +651,9 @@ void YarpNodeBase::NodeEvent_TERMINATE::executePost(YarpNodeBase* pnode) {
  \param t_ycallback Output callback function for UPDATE_Y message of this update.
  \param t_xcallback State callback function for UPDATE_X message of this update.
  \param t_name Optional name of the update.
- \return The index of this update, or -1 if the index is out of range, or -2 if an update already exists at that index.
+ \return The index of this update, or an error code: -1 if the index is out of range, -2 if an update already exists at that index, -3 if an input port does not exist, -4 if an output port does not exist.
  */
-int YarpNode::addUpdate(int t_idx, double t_T, UpdateType::UPDATE_CALLBACK t_ycallback, UpdateType::UPDATE_CALLBACK t_xcallback, const UpdateType::INPUT_LIST& t_inputs, const UpdateType::OUTPUT_LIST& t_outputs, const std::string& t_name) {
+int YarpNode::addUpdate(int t_idx, UpdateType::UPDATE_CALLBACK t_ycallback, UpdateType::UPDATE_CALLBACK t_xcallback, double t_T,  const UpdateType::INPUT_LIST& t_inputs, const UpdateType::OUTPUT_LIST& t_outputs, const std::string& t_name) {
     // Check index
     if (t_idx < 0 || t_idx > OBNsim::MAX_UPDATE_INDEX) {
         return -1;  // Index out of range
@@ -665,6 +665,19 @@ int YarpNode::addUpdate(int t_idx, double t_T, UpdateType::UPDATE_CALLBACK t_yca
         m_updates.resize(t_idx+1);
     } else if (m_updates[t_idx].enabled) {
         return -2;  // Update already existed
+    }
+    
+    // Check that specified inputs and outputs actually exist
+    for (const auto &p: t_inputs) {
+        if (!does_port_exists(_input_ports, p.first)) {
+            return -3;
+        }
+    }
+    
+    for (const auto &p: t_outputs) {
+        if (!does_port_exists(_output_ports, p)) {
+            return -4;
+        }
     }
     
     // Add the new update
@@ -685,9 +698,9 @@ int YarpNode::addUpdate(int t_idx, double t_T, UpdateType::UPDATE_CALLBACK t_yca
  \param t_ycallback Output callback function for UPDATE_Y message of this update.
  \param t_xcallback State callback function for UPDATE_X message of this update.
  \param t_name Optional name of the update.
- \return The index of this update, or -1 if no more updates could be added (the node runs out of allowed number of updates).
+ \return The index of this update, or an error code: -1 if no more updates could be added (the node runs out of allowed number of updates), -3 if an input port does not exist, -4 if an output port does not exist.
  */
-int YarpNode::addUpdate(double t_T, UpdateType::UPDATE_CALLBACK t_ycallback, UpdateType::UPDATE_CALLBACK t_xcallback, const UpdateType::INPUT_LIST& t_inputs, const UpdateType::OUTPUT_LIST& t_outputs, const std::string& t_name) {
+int YarpNode::addUpdate(UpdateType::UPDATE_CALLBACK t_ycallback, UpdateType::UPDATE_CALLBACK t_xcallback, double t_T, const UpdateType::INPUT_LIST& t_inputs, const UpdateType::OUTPUT_LIST& t_outputs, const std::string& t_name) {
     
     // Find a free spot
     int idx = 0;
@@ -704,6 +717,19 @@ int YarpNode::addUpdate(double t_T, UpdateType::UPDATE_CALLBACK t_ycallback, Upd
         }
         // Add one at the end
         m_updates.push_back(UpdateType());
+    }
+    
+    // Check that specified inputs and outputs actually exist
+    for (const auto &p: t_inputs) {
+        if (!does_port_exists(_input_ports, p.first)) {
+            return -3;
+        }
+    }
+    
+    for (const auto &p: t_outputs) {
+        if (!does_port_exists(_output_ports, p)) {
+            return -4;
+        }
     }
     
     // Assign the new update
@@ -723,8 +749,8 @@ int YarpNode::addUpdate(double t_T, UpdateType::UPDATE_CALLBACK t_ycallback, Upd
  \return See the other addUpdate() for details.
  */
 int YarpNode::addUpdate(const UpdateType& t_update) {
-    return addUpdate(t_update.T_in_us, t_update.y_callback, t_update.x_callback,
-                     t_update.inputs, t_update.outputs, t_update.name);
+    return addUpdate(t_update.y_callback, t_update.x_callback,
+                     t_update.T_in_us, t_update.inputs, t_update.outputs, t_update.name);
 }
 
 /**
@@ -733,8 +759,8 @@ int YarpNode::addUpdate(const UpdateType& t_update) {
  \return See the other addUpdate() for details.
  */
 int YarpNode::addUpdate(int t_idx, const UpdateType& t_update) {
-    return addUpdate(t_idx, t_update.T_in_us, t_update.y_callback, t_update.x_callback,
-                     t_update.inputs, t_update.outputs, t_update.name);
+    return addUpdate(t_idx, t_update.y_callback, t_update.x_callback,
+                     t_update.T_in_us, t_update.inputs, t_update.outputs, t_update.name);
 }
 
 /**

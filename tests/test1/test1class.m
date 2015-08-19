@@ -8,7 +8,7 @@
 %
 % To run this example:
 % - Create an object of this class: mynode = test1class('node1');
-% - Run it: mynode.runSimulation()
+% - Run it: mynode.runSimulation(20) (where 20 is the timeout in seconds)
 %
 % This file is part of the openBuildNet simulation framework developed at
 % EPFL.
