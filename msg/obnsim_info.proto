@@ -1,0 +1,28 @@
+// This protobuf file defines the messages used in querying information of a node.
+// https://developers.google.com/protocol-buffers/docs/proto
+
+// Note that all field names are converted to lowercase in the generated code, so MsgType becomes msgtype.
+
+option optimize_for = LITE_RUNTIME;
+
+package OBNSimMsg;  // package or namespace
+
+// Message to query information from a node
+message INFO_QUERY {
+  // Query command codes
+  enum QUERYCMD {
+    INFO_QUERY_SUPPORT = 0x0000;  // supported queries
+    INFO_QUERY_NODEDEF = 0x0001;  // node's definition (for SMN to use)
+  }
+  
+  required QUERYCMD query = 1;  // Query command code
+  optional string args = 2;     // Optional arguments of the command, as a string
+}
+
+///////////////////////////////////////
+// Return message for node's definition
+///////////////////////////////////////
+message INFO_NODEDEF {
+
+}
+

@@ -24,6 +24,7 @@
 #include <obnnode_basic.h>
 #include <obnnode_yarpportbase.h>
 #include <obnsim_msg.pb.h>
+#include <obnsim_info.pb.h>
 
 #include <sharedqueue_yarp.h>
 
@@ -464,6 +465,8 @@ namespace OBNnode {
     };
     
     
+    class InfoPort;
+    
     /** \brief Main YARP Node, with support for specifying updates and __info__ port. */
     class YarpNode: public YarpNodeBase {
     protected:
@@ -508,6 +511,46 @@ namespace OBNnode {
         static constexpr double MINUTE = 60*SECOND;
         static constexpr double HOUR = 60*MINUTE;
         static constexpr double DAY = 24*HOUR;
+        
+    protected:
+        friend class InfoPort;
+        /* Here we define the methods of this node that help answering to the queries on the Info port.
+         These methods will be called from the Info Port Thread, therefore they should be thread-safe (by using locks).
+         Typically
+    };
+    
+    
+    /** The message type for INFO port in YARP. */
+    class YARPInfoPortMsg : public YARPMsgBin {
+    public:
+        /* We can overload setMessage() for different types of ProtoBuf messages for different queries. */
+        /* \brief Set the binary contents of the message from a ProtoBuf message object, to be sent over Yarp. */
+        /*
+        bool setMessage(const TW &msg) {
+            allocateData(msg.ByteSize());
+            return msg.SerializeToArray(_data, _size);
+        }*/
+        
+        /** \brief Get the ProtoBuf message object from the binary contents of the message received from Yarp. */
+        bool getMessage(OBNSimMsg::INFO_QUERY &msg) const {
+            if (!_data || _size <= 0) {
+                return false;
+            }
+            return msg.ParseFromArray(_data, _size);
+        }
+    };
+ 
+    
+    /** \brief The INFO port on a node. */
+    class InfoPort: public yarp::os::BufferedPort<YARPInfoPortMsg> {
+        YarpNode* _the_node;                ///< Pointer to the node to which this port is attached
+        OBNSimMsg::INFO_QUERY _query_message;      ///< The query message received
+        virtual void onRead(YARPInfoPortMsg& b);
+    public:
+        InfoPort(YarpNode* node) {
+            assert(node);
+            _the_node = node;
+        }
     };
     
 }
