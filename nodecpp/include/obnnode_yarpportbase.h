@@ -98,7 +98,7 @@ namespace OBNnode {
         
         /** Allocate the memory block _data given the new size. It will reuse memory if possible. It will change _size. */
         void allocateData(size_t newsize) {
-            assert(newsize > 0);
+            assert(newsize >= 0);
             
             _size = newsize;
             

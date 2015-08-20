@@ -80,7 +80,7 @@ using namespace OBNsmn;
 
 // This function is the entry point for the GC thread.
 void GCThread::GCThreadMain() {
-    std::cout << "The GC thread." << std::endl;
+    // std::cout << "The GC thread." << std::endl;
 
     // Set to false if there is a critical error that the simulation should terminate immediately,
     //  even without sending TERM signals, but still does necessary cleanups.
@@ -145,8 +145,14 @@ void GCThread::GCThreadMain() {
             break;
         }
 
-
         gc_timer_reset();   // Turn off the timer, just in case
+        
+        
+        // Update all nodes in the update list to their next regular updates.
+        for (const auto & node: gc_update_list) {
+            _nodes[node.nodeID]->finishCurrentUpdate();
+        }
+        
         
         // If the GC is paused, we wait until it is either resumed or stepped.
         OBNEventQueueType::item_type ev;    // To receive the node event
@@ -207,7 +213,7 @@ void GCThread::GCThreadMain() {
  \return True if successful.
  */
 bool GCThread::initialize() {
-    std::cout << "Initiaize GC ..." << std::endl;
+    // std::cout << "Initialize GC ..." << std::endl;
     
     // Check that _nodes has at least one node
     if ((maxID = _nodes.size() - 1) < 0) {
@@ -576,14 +582,26 @@ bool GCThread::gc_send_update_y() {
         return false;
     }
     
-    auto updateList = rtNodeGraph->getAndRemoveIndependentNodes();  // Get the list of updating nodes
+    const auto & updateList = rtNodeGraph->getAndRemoveIndependentNodes();  // Get the list of updating nodes
     if (updateList.empty()) {
         // If no nodes are removed but the graph is non-empty, there is a cyclic condition (algebraic loop), which is an error
         if (rtNodeGraph->empty()) {
             return true;
         }
 
-        report_error(0, "An algebraic loop (dependency cycle) occurs at time " + std::to_string(current_sim_time));
+        std::string err_message("An algebraic loop (dependency cycle) occurs at time " + std::to_string(current_sim_time) + " with nodes:\n");
+        
+        // Get the remaining nodes
+        auto node_list(rtNodeGraph->getCurrentNodes());
+        assert(!node_list.empty());
+        
+        // Build the list of remaining nodes
+        for (const auto & node_id : node_list) {
+            err_message += "  " + _nodes[node_id.first]->name + " (" + std::to_string(node_id.second) + ")\n";
+        }
+        err_message += "}";
+        
+        report_error(0, err_message);
         return false;
     }
     
@@ -592,17 +610,17 @@ bool GCThread::gc_send_update_y() {
     msg.set_msgtype(OBNSimMsg::SMN2N_MSGTYPE_SIM_Y);
     msg.set_time(current_sim_time);
     
-    for (auto node: updateList) {
+    for (const auto & node: updateList) {
+        // Each node is a pair (node-ID, updatemask)
+        int thisNodeID = node.first;
+        
         // We don't set ID here because it's dependent on the comm protocol (see node.sendMessage())
         // msg.set_id(node);
 
         OBNSimMsg::MSGDATA *msgdata = new OBNSimMsg::MSGDATA();
-        msgdata->set_i(_nodes[node]->getNextUpdateMask());
+        msgdata->set_i(node.second);    // Set the update mask specified in the update list
         msg.set_allocated_data(msgdata);
-        _nodes[node]->sendMessage(node, msg);
-        
-        // Because the regular update of this node is used, we update it to the next regular update.
-        _nodes[node]->finishCurrentUpdate();
+        _nodes[thisNodeID]->sendMessage(thisNodeID, msg);
     }
     
     // Set up wait-for

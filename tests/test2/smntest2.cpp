@@ -78,7 +78,7 @@ int main() {
     
     // We can try different tests: no dependency ...
     // ... or (setpoint -> controller, motor)
-    //nodeGraph->addDependency(2, 1, 0x01, 0x01);
+    // nodeGraph->addDependency(2, 1, 0x01, 0x01);
     // ... or (setpoint -> controller, controller -> motor)
     nodeGraph->addDependency(2, 1, 0x01, 0x01); nodeGraph->addDependency(1, 0, 0x01, 0x01);
     
