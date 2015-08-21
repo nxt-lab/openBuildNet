@@ -40,7 +40,7 @@ void reportWarning(const char* msgID, const char* msg) {
 
 namespace OBNnode {
     /** The main node class for Matlab. */
-    class YarpNodeMatlab: public OBNnode::YarpNode {
+    class YarpNodeMatlab: public OBNnode::YarpNodeBase {
     public:
         
         /** Structure containing info about a port in this node. */
@@ -61,7 +61,7 @@ namespace OBNnode {
         /** \brief Meta-function for creating all kinds of output ports supported by this class. */
         int createOutputPort(char container, const std::string &element, const std::string &name);
         
-        YarpNodeMatlab(const std::string& name, const std::string& ws = ""): YarpNode(name, ws) {
+        YarpNodeMatlab(const std::string& name, const std::string& ws = ""): YarpNodeBase(name, ws) {
         }
         
         virtual ~YarpNodeMatlab();
@@ -98,14 +98,9 @@ namespace OBNnode {
         
         /** Override stopSimulation. */
         void stopSimulation() {
-            YarpNode::stopSimulation();
+            YarpNodeBase::stopSimulation();
             _ml_pending_event = false;
             _current_node_event.reset();
-        }
-        
-        /** Returns current simulation time. */
-        simtime_t currentSimulationTime() const {
-            return _current_sim_time;
         }
         
     public:

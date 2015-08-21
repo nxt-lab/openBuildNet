@@ -62,6 +62,9 @@ public:
             std::cerr << "Error while adding velocity output." << std::endl;
         }
         
+        // Add the update
+        success = success && (addUpdate(MAIN_UPDATE, std::bind(&Motor::doMainUpdate, this), std::bind(&Motor::doStateUpdate, this)) >= 0);
+        
         // Open the SMN port
         success = success && openSMNPort();
         
@@ -77,14 +80,19 @@ public:
         return success;
     }
     
-    /* Implement this callback to process UPDATE_X. */
-    virtual void onUpdateX() {
+    /* Implement this callback for state update. */
+    void doStateUpdate() {
         // Update the state
         x = A * x;
         x(0) += 0.0625 * voltage();
         
         // At this point, the inputs are all up-to-date, regardless of the order, so we can dump log data
         std::cout << "At " << _current_sim_time << " UPDATE_X" << std::endl;
+    }
+    
+    void doMainUpdate() {
+        velocity = C * x;
+        std::cout << "At " << _current_sim_time << " UPDATE_Y" << std::endl;
     }
     
     /* This callback is called everytime this node's simulation starts or restarts.
@@ -102,19 +110,8 @@ public:
     }
     
     /* There are other callbacks for reporting errors, etc. */
-    
-    /* Declare the update types of the node by listing their index constants in the macro OBN_DECLARE_UPDATES(...)
-     Their listing order determines the order in which the corresponding update callbacks are called. */
-    OBN_DECLARE_UPDATES(MAIN_UPDATE)
 };
 
-/* For each update type, define the update callback function OUTSIDE the class declaration.
- Each callback is defined by OBN_DEFINE_UPDATE(<Your node class name>, <Index of the update type>) { code here; } */
-
-OBN_DEFINE_UPDATE(Motor, MAIN_UPDATE) {
-    velocity = C * x;
-    std::cout << "At " << _current_sim_time << " UPDATE_Y" << std::endl;
-}
 
 int main() {
     std::cout << "This is motor node." << std::endl;

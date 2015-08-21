@@ -24,12 +24,6 @@
 
 using namespace OBNnode;
 
-/* Define the constants of the indices of the update types.
- Each update type must have a unique index between 0 and MAX_UPDATE_INDEX (defined in obnnode_basic.h)
- The constants can be defined by macros, or constant integers, or enumerate values, etc. as long as they are constants at compile time.
- */
-#define FIRST_UPDATE 0
-#define SECOND_UPDATE 1
 
 /* Define the node class here, derived from YarpNode.
  The class should contain all the ports, node's data, callbacks, and any methods useful for running this node.
@@ -76,15 +70,55 @@ public:
             std::cerr << "Error while adding output " << output1.getPortName() << std::endl;
         }
         
+        // Add the first update
+        if (success) {
+            // These details of the update are optional, but they are useful later on
+            
+            // List of inputs to this update, the first is the port name, the second specifies whether this input has direct feedthrough to this update.
+            UpdateType::INPUT_LIST inputs{ {"u1", true}, {"u2", true}};
+            
+            // List of outputs of this update
+            UpdateType::OUTPUT_LIST outputs{"y"};
+            
+            int update_idx = addUpdate(std::bind(&MyNodeClass::onFirstUpdateY, this), std::bind(&MyNodeClass::onFirstUpdateX, this), 2*YarpNode::SECOND, inputs, outputs, "First update");
+            success = update_idx >= 0;
+            if (!success) {
+                std::cerr << "Error while adding the first update with code: " << update_idx << std::endl;
+            }
+        }
+
+        // Add the second update
+        if (success) {
+            // Here we don't specify the optional details, but it's recommended to do so
+            // And this update doesn't have state update (UPDATE_X)
+            int update_idx = addUpdate(std::bind(&MyNodeClass::onSecondUpdateY, this));
+            success = update_idx >= 0;
+            if (!success) {
+                std::cerr << "Error while adding the second update with code: " << update_idx << std::endl;
+            }
+        }
+        
         // Open the SMN port
         success = success && openSMNPort();
         
         return success;
     }
     
-    /* Implement this callback to process UPDATE_X. */
-    virtual void onUpdateX() {
-        std::cout << "UPDATE_X" << std::endl;
+    /* UPDATE_Y of first update */
+    void onFirstUpdateY() {
+        std::cout << "UPDATE_Y(1)" << std::endl;
+        output1 = (*input2)() * input1();
+    }
+
+    /* UPDATE_X of first update */
+    void onFirstUpdateX() {
+        std::cout << "UPDATE_X(1)" << std::endl;
+    }
+    
+    /* UPDATE_Y of second update */
+    void onSecondUpdateY() {
+        std::cout << "UPDATE_Y(2)" << std::endl;
+        *output1 << 1.0, 2.0, 3.0;
     }
     
     /* This callback is called everytime this node's simulation starts or restarts.
@@ -97,32 +131,7 @@ public:
     virtual void onTermination() {
         std::cout << "TERMINATED" << std::endl;
     }
-    
-    /* There are other callbacks for reporting errors, etc. */
-    
-    /* Declare the update types of the node by listing their index constants in the macro OBN_DECLARE_UPDATES(...)
-     Their listing order determines the order in which the corresponding UPDATE_Y callbacks are called. */
-    OBN_DECLARE_UPDATES(FIRST_UPDATE, SECOND_UPDATE)
-    
-    /* A similar mechanism exists for UPDATE_X, with macro OBN_DECLARE_UPDATES_X; however in this example we directly implement the master callback onUpdateX() above. */
 };
-
-/* For each update type, define the update callback function OUTSIDE the class declaration.
- Each callback is defined by OBN_DEFINE_UPDATE(<Your node class name>, <Index of the update type>) { code here; }
- A similar macro named OBN_DEFINE_UPDATE_X exists for UPDATE_X callbacks if OBN_DECLARE_UPDATES_X() is used above.
- */
-
-OBN_DEFINE_UPDATE(MyNodeClass,FIRST_UPDATE) {
-    std::cout << "Update 0" << std::endl;
-    // Output can be assigned new value
-    output1 = (*input2)() * input1();
-}
-
-OBN_DEFINE_UPDATE(MyNodeClass,SECOND_UPDATE) {
-    std::cout << "Update 1" << std::endl;
-    // Output's variable can also be accessed directly using * operator
-    *output1 << 1.0, 2.0, 3.0;
-}
 
 
 int main() {

@@ -19,7 +19,7 @@ using namespace OBNSimMsg;
 
 
 // The main network object
-yarp::os::Network YarpNode::yarp_network;
+yarp::os::Network YarpNodeBase::yarp_network;
 
 // Trim a string from spaces at both ends
 string trim(const string& s0) {
@@ -42,7 +42,7 @@ string trim(const string& s0) {
    ============================================================================= */
 
 /** Callback of the GC port on the node, which posts SMN events to the node's queue. */
-void YarpNode::SMNPort::onRead(SMNMsg& b) {
+void YarpNodeBase::SMNPort::onRead(SMNMsg& b) {
     // printf("Callback[%s]\n", getName().c_str());
     
     // Parse the ProtoBuf message
@@ -56,7 +56,7 @@ void YarpNode::SMNPort::onRead(SMNMsg& b) {
     _the_node->postEvent(_smn_message);
 }
 
-bool YarpNode::openSMNPort() {
+bool YarpNodeBase::openSMNPort() {
     if (_smn_port.isClosed()) {
         bool success = _smn_port.open(_workspace + _nodeName + "/_gc_");
         if (success) {
@@ -76,20 +76,20 @@ bool YarpNode::openSMNPort() {
  If the method returns a valid pointer to an WaitForCondition object, the request has been sent; if it returns nullptr, the request is invalid (e.g. a past or present update is requested).
  In case waiting = false, the ACK can be waited for later on by calling wait() on the returned object.
  Once the ACK has been received (the request has been answered), the result of the request can be checked by the I field of the returned data record (accessed by calling getData() on the condition object, see the OBN document for details).
- Make sure that the condition has been cleared (either after waiting for it or by calling YarpNode::isCleared()) before accessing its data, otherwise the content of the data record is undefined or it may cause a data race issue.
+ Make sure that the condition has been cleared (either after waiting for it or by calling YarpNodeBase::isCleared()) before accessing its data, otherwise the content of the data record is undefined or it may cause a data race issue.
  \param t The time of the requested update; must be in the future t > current simulation time
  \param m The update mask requested for the update.
  \param waiting Whether the method should wait (blocking/synchronously) for the ACK to receive [default: true]; if a timeout is desired, call this function with waiting=false and explicitly call wait() on the returned condition object.
  \return A pointer to the wait-for condition, which is used to wait for the ACK; or nullptr if the request is invalid.
  */
-YarpNode::WaitForCondition* YarpNode::requestFutureUpdate(simtime_t t, updatemask_t m, bool waiting) {
+YarpNodeBase::WaitForCondition* YarpNodeBase::requestFutureUpdate(simtime_t t, updatemask_t m, bool waiting) {
     if (t <= _current_sim_time) {
         // Cannot request a present or past update time
         return nullptr;
     }
     
     // Send request to the SMN
-    YarpNode::SMNMsg& msg = _smn_port.prepare();
+    YarpNodeBase::SMNMsg& msg = _smn_port.prepare();
     _n2smn_message.set_msgtype(OBNSimMsg::N2SMN_MSGTYPE_SIM_EVENT);
     _n2smn_message.set_id(_node_id);
     
@@ -103,8 +103,8 @@ YarpNode::WaitForCondition* YarpNode::requestFutureUpdate(simtime_t t, updatemas
     
     
     // Register an wait-for condition (lock mutex at beginning and unlock it after we've done)
-    YarpNode::WaitForCondition *pCond = nullptr;
-    YarpNode::WaitForCondition::the_checker f = [t](const OBNSimMsg::SMN2N& msg) {
+    YarpNodeBase::WaitForCondition *pCond = nullptr;
+    YarpNodeBase::WaitForCondition::the_checker f = [t](const OBNSimMsg::SMN2N& msg) {
         return msg.msgtype() == OBNSimMsg::SMN2N_MSGTYPE_SIM_EVENT_ACK && (msg.has_data() && (msg.data().has_t() && msg.data().t() == t));
     };
     
@@ -144,7 +144,7 @@ YarpNode::WaitForCondition* YarpNode::requestFutureUpdate(simtime_t t, updatemas
  \return The result of the request: 0 if successful; -1 if the waiting failed (due to timeout).
  \sa requestFutureUpdate()
  */
-int64_t YarpNode::resultFutureUpdate(YarpNode::WaitForCondition* pCond, double timeout) {
+int64_t YarpNodeBase::resultFutureUpdate(YarpNodeBase::WaitForCondition* pCond, double timeout) {
     return resultWaitForCondition(pCond);
 }
 
@@ -154,14 +154,14 @@ int64_t YarpNode::resultFutureUpdate(YarpNode::WaitForCondition* pCond, double t
  \param timeout An optional timeout value; if a timeout occurs and the waiting failed then the returned value will be -1.
  \return The integer field I of the message data if the waiting is successful (default to 0 if I does not exist); or -1 if the waiting failed (due to timeout).
  */
-int64_t YarpNode::resultWaitForCondition(YarpNode::WaitForCondition* pCond, double timeout) {
+int64_t YarpNodeBase::resultWaitForCondition(YarpNodeBase::WaitForCondition* pCond, double timeout) {
     assert(pCond);
     
     _waitfor_conditions_mutex.lock();
     auto s = pCond->status;
     _waitfor_conditions_mutex.unlock();
     assert(s != WaitForCondition::INACTIVE);
-    if ((s == YarpNode::WaitForCondition::ACTIVE)?pCond->wait(timeout):true) {
+    if ((s == YarpNodeBase::WaitForCondition::ACTIVE)?pCond->wait(timeout):true) {
         // At this point, the status of the condition must be CLEARED => get the data and the I field
         auto i = pCond->getData().i();
         resetWaitFor(pCond);
@@ -172,7 +172,7 @@ int64_t YarpNode::resultWaitForCondition(YarpNode::WaitForCondition* pCond, doub
 }
 
 /** This method iterates the list of wait-for conditions and check if any of them can be cleared according to the given message. If there is one, its status will be changed to CLEARED, the MSGDATA will be saved. At most one condition can be cleared. */
-void YarpNode::checkWaitForCondition(const OBNSimMsg::SMN2N& msg) {
+void YarpNodeBase::checkWaitForCondition(const OBNSimMsg::SMN2N& msg) {
     // Lock access to the list, because the SMN port thread may access it
     yarp::os::LockGuard lock(_waitfor_conditions_mutex);
     
@@ -191,7 +191,7 @@ void YarpNode::checkWaitForCondition(const OBNSimMsg::SMN2N& msg) {
 }
 
 
-bool YarpNode::attachAndOpenPort(YarpPortBase * port) {
+bool YarpNodeBase::attachAndOpenPort(YarpPortBase * port) {
     assert(port != nullptr);
     if (port->isValid()) {
         // Port must have not been attached
@@ -216,7 +216,7 @@ bool YarpNode::attachAndOpenPort(YarpPortBase * port) {
  \param port Pointer to the port object.
  \return true if successful; false if error.
  */
-bool YarpNode::addInput(YarpPortBase* port) {
+bool YarpNodeBase::addInput(YarpPortBase* port) {
     bool result = attachAndOpenPort(port);
     if (result) {
         // Add this port to the list of inputs
@@ -238,7 +238,7 @@ bool YarpNode::addInput(YarpPortBase* port) {
  \param port Pointer to the port object.
  \return true if successful; false if error.
  */
-bool YarpNode::addOutput(YarpOutputPortBase* port) {
+bool YarpNodeBase::addOutput(YarpOutputPortBase* port) {
     bool result = attachAndOpenPort(port);
     if (result) {
         // Add this port to the list of inputs
@@ -255,7 +255,7 @@ bool YarpNode::addOutput(YarpOutputPortBase* port) {
  \param name The required name of the node; must be a valid node name.
  \param ws The optional workspace; must be a valid identifier. The workspace name is prepended to all names used by this node, including the SMN. Default workspace is "" (i.e. no workspace).
  */
-YarpNode::YarpNode(const string& _name, const string& ws): _smn_port(this) {
+YarpNodeBase::YarpNodeBase(const string& _name, const string& ws): _smn_port(this) {
     _nodeName = trim(_name);
     assert(OBNsim::Utils::isValidNodeName(_nodeName));
     
@@ -271,7 +271,7 @@ YarpNode::YarpNode(const string& _name, const string& ws): _smn_port(this) {
     _node_state = NODE_STOPPED;
 }
 
-YarpNode::~YarpNode() {
+YarpNodeBase::~YarpNodeBase() {
     // Tell all input ports to detach from this node
     for (auto port : _input_ports) {
         port->detach();
@@ -288,7 +288,7 @@ YarpNode::~YarpNode() {
  The detach() method of the port won't be called.
  \param port Pointer to the port object (must be valid).
  */
-void YarpNode::removePort(YarpPortBase* port) {
+void YarpNodeBase::removePort(YarpPortBase* port) {
     assert(port);
 
     _input_ports.remove(port);
@@ -300,21 +300,21 @@ void YarpNode::removePort(YarpPortBase* port) {
  The detach() method of the port won't be called.
  \param port Pointer to the port object (must be valid).
  */
-void YarpNode::removePort(YarpOutputPortBase* port) {
+void YarpNodeBase::removePort(YarpOutputPortBase* port) {
     assert(port);
 
     _output_ports.remove(port);
 }
 
-//unsigned int YarpNode::createPort(const string& name, bool bCallback, bool strict) {
+//unsigned int YarpNodeBase::createPort(const string& name, bool bCallback, bool strict) {
 //    auto sName = trim(name);
 //    if (sName.empty()) {
-//        reportError("YarpNode:invalid_port_name", "Invalid port's name.");
+//        reportError("YarpNodeBase:invalid_port_name", "Invalid port's name.");
 //    }
 //    
 //    // Check if the name already existed
 //    if (portsByName.find(sName) != portsByName.end()) {
-//        reportError("YarpNode:invalid_port_name", "Port's name already existed.");
+//        reportError("YarpNodeBase:invalid_port_name", "Port's name already existed.");
 //    }
 //    
 //    unsigned int id = nextPortID++;
@@ -325,7 +325,7 @@ void YarpNode::removePort(YarpOutputPortBase* port) {
 //
 
 
-bool YarpNode::connectWithSMN(const char *carrier) {
+bool YarpNodeBase::connectWithSMN(const char *carrier) {
     if (!openSMNPort()) { return false; }
     if (carrier) {
         return yarp_network.connect(fullPortName("_gc_"), _workspace + "_smn_/_gc_", carrier) &&   // Connect from node to SMN
@@ -338,7 +338,7 @@ bool YarpNode::connectWithSMN(const char *carrier) {
 
 
 /** This method initializes the node before a simulation starts. This is different from the callback for the INIT message. This method is called before the node even starts waiting for the INIT message. */
-void YarpNode::initializeForSimulation() {
+void YarpNodeBase::initializeForSimulation() {
     _current_sim_time = 0;
     _current_updates = 0;
 }
@@ -347,8 +347,8 @@ void YarpNode::initializeForSimulation() {
 /** This method sends a simple ACK message to the SMN.
  \param type The type of the ACK message.
  */
-void YarpNode::sendACK(OBNSimMsg::N2SMN::MSGTYPE type) {
-    YarpNode::SMNMsg& msg = _smn_port.prepare();
+void YarpNodeBase::sendACK(OBNSimMsg::N2SMN::MSGTYPE type) {
+    YarpNodeBase::SMNMsg& msg = _smn_port.prepare();
     
     _n2smn_message.set_msgtype(type);
     _n2smn_message.set_id(_node_id);
@@ -361,8 +361,8 @@ void YarpNode::sendACK(OBNSimMsg::N2SMN::MSGTYPE type) {
  \param type The type of the ACK message.
  \param I Integer value for MSGDATA.I
  */
-void YarpNode::sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I) {
-    YarpNode::SMNMsg& msg = _smn_port.prepare();
+void YarpNodeBase::sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I) {
+    YarpNodeBase::SMNMsg& msg = _smn_port.prepare();
     
     _n2smn_message.set_msgtype(type);
     _n2smn_message.set_id(_node_id);
@@ -381,8 +381,8 @@ void YarpNode::sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I) {
  \param I Integer value for MSGDATA.I
  \param IX Integer value for MSGDATA.IX
  */
-void YarpNode::sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I, int64_t IX) {
-    YarpNode::SMNMsg& msg = _smn_port.prepare();
+void YarpNodeBase::sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I, int64_t IX) {
+    YarpNodeBase::SMNMsg& msg = _smn_port.prepare();
     
     _n2smn_message.set_msgtype(type);
     _n2smn_message.set_id(_node_id);
@@ -402,7 +402,7 @@ void YarpNode::sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I, int64_t IX) {
  Be careful using the timeout as it may terminate the node unexpectedly, e.g. when the simulation goes to Debugging mode, or some other node just needs long computation time.
  \param timeout The timeout value; non-positive if there is no timeout.
  */
-void YarpNode::run(double timeout) {
+void YarpNodeBase::run(double timeout) {
     // Make sure that the SMN port is opened (but won't connect it)
     if (!openSMNPort()) {
         // Error
@@ -458,7 +458,7 @@ void YarpNode::run(double timeout) {
  It's guaranteed that after this method, the node's state is STOPPED.
  \sa  requestStopSimulation().
  */
-void YarpNode::stopSimulation() {
+void YarpNodeBase::stopSimulation() {
     if (_node_state == NODE_RUNNING) {
         // Notify/request the SMN to stop ...
         requestStopSimulation();
@@ -478,7 +478,7 @@ void YarpNode::stopSimulation() {
  To stop the simulation definitely, use the function stopSimulation().
  If the node is currently in ERROR state, this method will not clear the error, use the function stopSimulation() instead.
  */
-void YarpNode::requestStopSimulation() {
+void YarpNodeBase::requestStopSimulation() {
     // Currently doing nothing because the request message has not been designed yet.
     if (_node_state == NODE_RUNNING || _node_state == NODE_STARTED) {
         // Send the request
@@ -490,7 +490,7 @@ void YarpNode::requestStopSimulation() {
 In the case the system message is urgent and important (e.g. an urgent shutdown, a system-wide error), it will immediately act on the event.
  \param msg Reference to the SMN2N message.
 */
-void YarpNode::postEvent(const OBNSimMsg::SMN2N& msg) {
+void YarpNodeBase::postEvent(const OBNSimMsg::SMN2N& msg) {
     // The cases should be ordered in the frequency of the message types
     switch (msg.msgtype()) {
         case SMN2N_MSGTYPE_SIM_Y:
@@ -522,9 +522,9 @@ void YarpNode::postEvent(const OBNSimMsg::SMN2N& msg) {
 
 
 /** Handle UPDATE_X events: Main. */
-void YarpNode::NodeEvent_UPDATEX::executeMain(YarpNode* pnode) {
+void YarpNodeBase::NodeEvent_UPDATEX::executeMain(YarpNodeBase* pnode) {
     // Skip if the node is not RUNNING
-    if (pnode->_node_state != YarpNode::NODE_RUNNING) {
+    if (pnode->_node_state != YarpNodeBase::NODE_RUNNING) {
         return;
     }
 
@@ -536,15 +536,15 @@ void YarpNode::NodeEvent_UPDATEX::executeMain(YarpNode* pnode) {
 
 
 /** Handle UPDATE_X events: Post. */
-void YarpNode::NodeEvent_UPDATEX::executePost(YarpNode* pnode) {
+void YarpNodeBase::NodeEvent_UPDATEX::executePost(YarpNodeBase* pnode) {
     // Send ACK to the SMN
     pnode->sendACK(OBNSimMsg::N2SMN_MSGTYPE_SIM_X_ACK);
 }
 
 /** Handle UPDATE_Y events: Main. */
-void YarpNode::NodeEvent_UPDATEY::executeMain(YarpNode* pnode) {
+void YarpNodeBase::NodeEvent_UPDATEY::executeMain(YarpNodeBase* pnode) {
     // Skip if the node is not RUNNING; this should never happen if the node is used properly
-    if (pnode->_node_state != YarpNode::NODE_RUNNING) {
+    if (pnode->_node_state != YarpNodeBase::NODE_RUNNING) {
         return;
     }
     
@@ -558,7 +558,7 @@ void YarpNode::NodeEvent_UPDATEY::executeMain(YarpNode* pnode) {
 }
 
 /** Handle UPDATE_Y events: Post. */
-void YarpNode::NodeEvent_UPDATEY::executePost(YarpNode* pnode) {
+void YarpNodeBase::NodeEvent_UPDATEY::executePost(YarpNodeBase* pnode) {
     // Send out values from output ports which have been updated
     for (auto port: pnode->_output_ports) {
         if (port->isChanged()) {
@@ -576,20 +576,28 @@ void YarpNode::NodeEvent_UPDATEY::executePost(YarpNode* pnode) {
 }
 
 /** Handle Initialization before simulation: Main. */
-void YarpNode::NodeEvent_INITIALIZE::executeMain(YarpNode* pnode) {
+void YarpNodeBase::NodeEvent_INITIALIZE::executeMain(YarpNodeBase* pnode) {
     // Skip if the node is not STARTED.
     // This actually should never happen if the node is used properly, because the run() method will not let the node run unless it's in a proper state.
-    if (pnode->_node_state != YarpNode::NODE_STARTED) {
+    if (pnode->_node_state != YarpNodeBase::NODE_STARTED) {
         return;
     }
     
     basic_processing(pnode);
     
+    // Save the initial settings sent from the SMN
+    if (_has_wallclock) {
+        pnode->_initial_wallclock = _wallclock;
+    }
+    if (_has_timeunit) {
+        pnode->_timeunit = _timeunit;
+    }
+    
     pnode->onInitialization();
 }
 
 /** Handle Initialization before simulation: Post. */
-void YarpNode::NodeEvent_INITIALIZE::executePost(YarpNode* pnode) {
+void YarpNodeBase::NodeEvent_INITIALIZE::executePost(YarpNodeBase* pnode) {
     // Send out values from output ports, whether updated or not
     for (auto port: pnode->_output_ports) {
         //TODO: Should change this to asynchronous send.
@@ -600,12 +608,12 @@ void YarpNode::NodeEvent_INITIALIZE::executePost(YarpNode* pnode) {
     }
     
     // Set the node's state to RUNNING if it's still STARTED (if it's ERROR, we won't change it)
-    if (pnode->_node_state == YarpNode::NODE_STARTED) {
-        pnode->_node_state = YarpNode::NODE_RUNNING;
+    if (pnode->_node_state == YarpNodeBase::NODE_STARTED) {
+        pnode->_node_state = YarpNodeBase::NODE_RUNNING;
     }
     
     // Send an ACK message to the SMN
-    if (pnode->_node_state == YarpNode::NODE_RUNNING) {
+    if (pnode->_node_state == YarpNodeBase::NODE_RUNNING) {
         // Successful
         pnode->sendACK(OBNSimMsg::N2SMN::MSGTYPE::N2SMN_MSGTYPE_SIM_INIT_ACK);
     } else {
@@ -615,9 +623,9 @@ void YarpNode::NodeEvent_INITIALIZE::executePost(YarpNode* pnode) {
 }
 
 /** Handle Termination: Main. */
-void YarpNode::NodeEvent_TERMINATE::executeMain(YarpNode* pnode) {
+void YarpNodeBase::NodeEvent_TERMINATE::executeMain(YarpNodeBase* pnode) {
     // Skip if the node is not RUNNING
-    if (pnode->_node_state != YarpNode::NODE_RUNNING) {
+    if (pnode->_node_state != YarpNodeBase::NODE_RUNNING) {
         return;
     }
 
@@ -625,14 +633,181 @@ void YarpNode::NodeEvent_TERMINATE::executeMain(YarpNode* pnode) {
 
     // Set the node's state to STOPPED
     // We change the node's state before calling the callback onTermination() because this system message means that simulation is definitely going to terminate immediately.
-    if (pnode->_node_state == YarpNode::NODE_RUNNING) {
-        pnode->_node_state = YarpNode::NODE_STOPPED;
+    if (pnode->_node_state == YarpNodeBase::NODE_RUNNING) {
+        pnode->_node_state = YarpNodeBase::NODE_STOPPED;
     }
     
     pnode->onTermination();
 }
 
 /** Handle Termination: Post. */
-void YarpNode::NodeEvent_TERMINATE::executePost(YarpNode* pnode) {
+void YarpNodeBase::NodeEvent_TERMINATE::executePost(YarpNodeBase* pnode) {
     // No ACK is needed
+}
+
+/**
+ \param t_idx The desired index of the new update.
+ \param t_T The sampling time in microseconds, <= 0 if non-periodic.
+ \param t_ycallback Output callback function for UPDATE_Y message of this update.
+ \param t_xcallback State callback function for UPDATE_X message of this update.
+ \param t_name Optional name of the update.
+ \return The index of this update, or an error code: -1 if the index is out of range, -2 if an update already exists at that index, -3 if an input port does not exist, -4 if an output port does not exist.
+ */
+int YarpNode::addUpdate(int t_idx, UpdateType::UPDATE_CALLBACK t_ycallback, UpdateType::UPDATE_CALLBACK t_xcallback, double t_T,  const UpdateType::INPUT_LIST& t_inputs, const UpdateType::OUTPUT_LIST& t_outputs, const std::string& t_name) {
+    // Check index
+    if (t_idx < 0 || t_idx > OBNsim::MAX_UPDATE_INDEX) {
+        return -1;  // Index out of range
+    }
+    
+    // Check that we can insert a new update to the given index
+    if (m_updates.size() <= t_idx) {
+        // Create the new update at the position
+        m_updates.resize(t_idx+1);
+    } else if (m_updates[t_idx].enabled) {
+        return -2;  // Update already existed
+    }
+    
+    // Check that specified inputs and outputs actually exist
+    for (const auto &p: t_inputs) {
+        if (!does_port_exists(_input_ports, p.first)) {
+            return -3;
+        }
+    }
+    
+    for (const auto &p: t_outputs) {
+        if (!does_port_exists(_output_ports, p)) {
+            return -4;
+        }
+    }
+    
+    // Add the new update
+    m_updates[t_idx].enabled = true;
+    m_updates[t_idx].T_in_us = t_T;
+    m_updates[t_idx].y_callback = t_ycallback;
+    m_updates[t_idx].x_callback = t_xcallback;
+    m_updates[t_idx].name = t_name;
+    m_updates[t_idx].inputs = t_inputs;
+    m_updates[t_idx].outputs = t_outputs;
+    
+    return t_idx;
+}
+
+
+/**
+ \param t_T The sampling time in microseconds, <= 0 if non-periodic.
+ \param t_ycallback Output callback function for UPDATE_Y message of this update.
+ \param t_xcallback State callback function for UPDATE_X message of this update.
+ \param t_name Optional name of the update.
+ \return The index of this update, or an error code: -1 if no more updates could be added (the node runs out of allowed number of updates), -3 if an input port does not exist, -4 if an output port does not exist.
+ */
+int YarpNode::addUpdate(UpdateType::UPDATE_CALLBACK t_ycallback, UpdateType::UPDATE_CALLBACK t_xcallback, double t_T, const UpdateType::INPUT_LIST& t_inputs, const UpdateType::OUTPUT_LIST& t_outputs, const std::string& t_name) {
+    
+    // Find a free spot
+    int idx = 0;
+    for (; idx < m_updates.size(); ++idx) {
+        if (!m_updates[idx].enabled) {
+            break;
+        }
+    }
+    
+    if (idx == m_updates.size()) {
+        // Could not find a free spot, check if we can add a new one
+        if (m_updates.size() > OBNsim::MAX_UPDATE_INDEX) {
+            return -1;
+        }
+        // Add one at the end
+        m_updates.push_back(UpdateType());
+    }
+    
+    // Check that specified inputs and outputs actually exist
+    for (const auto &p: t_inputs) {
+        if (!does_port_exists(_input_ports, p.first)) {
+            return -3;
+        }
+    }
+    
+    for (const auto &p: t_outputs) {
+        if (!does_port_exists(_output_ports, p)) {
+            return -4;
+        }
+    }
+    
+    // Assign the new update
+    m_updates[idx].enabled = true;
+    m_updates[idx].T_in_us = t_T;
+    m_updates[idx].y_callback = t_ycallback;
+    m_updates[idx].x_callback = t_xcallback;
+    m_updates[idx].name = t_name;
+    m_updates[idx].inputs = t_inputs;
+    m_updates[idx].outputs = t_outputs;
+
+    return idx;
+}
+
+/**
+ \param t_update The definition of the new update.
+ \return See the other addUpdate() for details.
+ */
+int YarpNode::addUpdate(const UpdateType& t_update) {
+    return addUpdate(t_update.y_callback, t_update.x_callback,
+                     t_update.T_in_us, t_update.inputs, t_update.outputs, t_update.name);
+}
+
+/**
+ \param t_idx The desired index of the new update.
+ \param t_update The definition of the new update.
+ \return See the other addUpdate() for details.
+ */
+int YarpNode::addUpdate(int t_idx, const UpdateType& t_update) {
+    return addUpdate(t_idx, t_update.y_callback, t_update.x_callback,
+                     t_update.T_in_us, t_update.inputs, t_update.outputs, t_update.name);
+}
+
+/**
+ \param t_idx The index of the update to be removed.
+ \return true if successful.
+ */
+bool YarpNode::removeUpdate(int t_idx) {
+    if (0 <= t_idx && t_idx < m_updates.size()) {
+        if (m_updates[t_idx].enabled) {
+            m_updates[t_idx].enabled = false;
+            return true;
+        }
+    }
+    return false;
+}
+
+/** Callback for UPDATE_Y: call the appropriate callbacks in the registered updates. */
+void YarpNode::onUpdateY(updatemask_t m) {
+    int idx = 0;
+    int n_updates = m_updates.size();
+    while (m && idx < n_updates) {
+        if ((m & (1 << idx)) && m_updates[idx].enabled) {
+            // Call the y_callback
+            if (m_updates[idx].y_callback) {
+                m_updates[idx].y_callback();
+            }
+            // Update flag m
+            m ^= (1 << idx);
+        }
+        idx++;
+    }
+}
+
+/** Callback for UPDATE_X: call the appropriate callbacks in the registered updates. */
+void YarpNode::onUpdateX() {
+    auto m = _current_updates;
+    int idx = 0;
+    int n_updates = m_updates.size();
+    while (m && idx < n_updates) {
+        if ((m & (1 << idx)) && m_updates[idx].enabled) {
+            // Call the x_callback
+            if (m_updates[idx].x_callback) {
+                m_updates[idx].x_callback();
+            }
+            // Update flag m
+            m ^= (1 << idx);
+        }
+        idx++;
+    }
 }

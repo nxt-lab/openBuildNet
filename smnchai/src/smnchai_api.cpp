@@ -16,6 +16,7 @@
 #include <chrono>
 #include <sstream>
 #include <fstream>
+#include <iomanip>
 
 #include <obnsmn_report.h>
 #include <smnchai_api.h>
@@ -144,7 +145,16 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     chai.add(fun([&ws](unsigned int t) {
         if (t < 1) { throw smnchai_exception("Time unit must be positive, but " + std::to_string(t) + " is given."); }
         ws.settings.time_unit = t;
-    }), "timeunit");
+    }), "time_unit");
+    
+    /** Set the initial wallclock time by a string "YYYY-MM-DD HH:MM:SS". */
+    chai.add(fun([&ws](const std::string &t) {
+        std::tm tm = {0};
+        std::stringstream ss(t);
+        ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+        tm.tm_isdst = -1;
+        ws.settings.wallclock = std::mktime(&tm);
+    }), "wallclock");
     
     /** Choose not to run the simulation.
      By default, the simulation will automatically run; however if we set this to false, the simulation will not run.
@@ -633,6 +643,14 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
     
     // Copy the settings to GC
     gc.ack_timeout = settings.ack_timeout;
+    
+    if (!gc.setSimulationTimeUnit(settings.time_unit)) {
+        throw smnchai_exception("Error while setting simulation time unit.");
+    }
+    
+    if (!gc.setInitialWallclock(settings.wallclock)) {
+        throw smnchai_exception("Error while setting the initial wallclock time.");
+    }
     
     // Note that time values are mostly real numbers in microseconds, so we need to convert them to integer numbers in the time unit.
     if (!gc.setFinalSimulationTime(get_time_value(settings.final_time))) {

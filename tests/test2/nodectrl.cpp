@@ -73,6 +73,9 @@ public:
             std::cerr << "Error while adding control output." << std::endl;
         }
         
+        // Add the update
+        success = success && (addUpdate(MAIN_UPDATE, std::bind(&Controller::doMainUpdate, this), std::bind(&Controller::doStateUpdate, this)) >= 0);
+        
         // Open the SMN port
         success = success && openSMNPort();
         
@@ -89,8 +92,14 @@ public:
         return success;
     }
     
-    /* Implement this callback to process UPDATE_X. */
-    virtual void onUpdateX() {
+    /* Compute the output */
+    void doMainUpdate() {
+        command = C * x;
+        std::cout << "At " << _current_sim_time << " UPDATE_Y" << std::endl;
+    }
+    
+    /* Update the state. */
+    void doStateUpdate() {
         // Update the state
         x = A * x;
         x(0) += 32.0 * (setpoint() - velocity());
@@ -115,19 +124,8 @@ public:
     }
     
     /* There are other callbacks for reporting errors, etc. */
-    
-    /* Declare the update types of the node by listing their index constants in the macro OBN_DECLARE_UPDATES(...)
-     Their listing order determines the order in which the corresponding update callbacks are called. */
-    OBN_DECLARE_UPDATES(MAIN_UPDATE)
 };
 
-/* For each update type, define the update callback function OUTSIDE the class declaration.
- Each callback is defined by OBN_DEFINE_UPDATE(<Your node class name>, <Index of the update type>) { code here; } */
-
-OBN_DEFINE_UPDATE(Controller, MAIN_UPDATE) {
-    command = C * x;
-    std::cout << "At " << _current_sim_time << " UPDATE_Y" << std::endl;
-}
 
 int main() {
     std::cout << "This is controller node." << std::endl;

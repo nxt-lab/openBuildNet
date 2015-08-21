@@ -43,14 +43,7 @@ public:
     }
     
     /* Add ports to node, hardware components may be started, etc. */
-    bool initialize() {
-        bool success = true;
-        
-        // Open the SMN port
-        success = success && openSMNPort();
-        
-        return success;
-    }
+    bool initialize();
     
     /* Implement this callback to process UPDATE_X. */
     virtual void onUpdateX() {
@@ -81,15 +74,13 @@ public:
     
     /* There are other callbacks for reporting errors, etc. */
     
-    /* Declare the update types of the node by listing their index constants in the macro OBN_DECLARE_UPDATES(...)
-     Their listing order determines the order in which the corresponding update callbacks are called. */
-    OBN_DECLARE_UPDATES(MAIN_UPDATE, IRREG_UPDATE)
+    /* Here we define the callback for updates using template function. */
+    template <const int idx> void doUpdateY();
 };
 
-/* For each update type, define the update callback function OUTSIDE the class declaration.
- Each callback is defined by OBN_DEFINE_UPDATE(<Your node class name>, <Index of the update type>) { code here; } */
-
-OBN_DEFINE_UPDATE(MyNode, MAIN_UPDATE) {
+/* Implement the callback for each update by specializing the template function. */
+template<>
+void MyNode::doUpdateY<MAIN_UPDATE>() {
     if (counter++ % 3 == 2) {
         // Request for future update (event)
         pWaitFor = requestFutureUpdate(_current_sim_time + 13, 1 << IRREG_UPDATE, false);
@@ -102,8 +93,23 @@ OBN_DEFINE_UPDATE(MyNode, MAIN_UPDATE) {
     std::cout << "At " << _current_sim_time << " Main UPDATE_Y" << std::endl;
 }
 
-OBN_DEFINE_UPDATE(MyNode, IRREG_UPDATE) {
+template<>
+void MyNode::doUpdateY<IRREG_UPDATE>() {
     std::cout << "At " << _current_sim_time << " Irregular UPDATE_Y" << std::endl;
+}
+
+bool MyNode::initialize() {
+    bool success = true;
+    
+    // Add the updates
+    // Here the updates are to be defined in the SMN, so we don't care about the details.
+    success = success && (addUpdate(MAIN_UPDATE, std::bind(&MyNode::doUpdateY<MAIN_UPDATE>, this)) >= 0);
+    success = success && (addUpdate(IRREG_UPDATE, std::bind(&MyNode::doUpdateY<IRREG_UPDATE>, this)) >= 0);
+    
+    // Open the SMN port
+    success = success && openSMNPort();
+    
+    return success;
 }
 
 int main() {

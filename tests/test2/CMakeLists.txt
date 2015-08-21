@@ -7,12 +7,12 @@ SET(PROJECT_NAME "test2")
 
 PROJECT(${PROJECT_NAME})
 
-## Directories of the SMN source
-set(OBNSMN_SRC_DIR "${PROJECT_SOURCE_DIR}/../../smn/src")
-set(OBNSMN_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/../../smn/include")
-
 ## Change OBN_MAIN_DIR to the path to the main directory of openBuildNet
-set (OBN_MAIN_DIR ../../)
+set (OBN_MAIN_DIR ${PROJECT_SOURCE_DIR}/../../)
+
+## Directories of the SMN source
+set(OBNSMN_SRC_DIR "${OBN_MAIN_DIR}/smn/src")
+set(OBNSMN_INCLUDE_DIR "${OBN_MAIN_DIR}/smn/include")
 
 ## This will set the header and source directories for the node.cpp framework
 set (OBN_NODECPP_INCLUDE_DIR ${OBN_MAIN_DIR}/nodecpp/include)
@@ -121,6 +121,7 @@ set(OBNSMN_CORE_SRCFILES
 )
 
 set(OBNNODE_CORE_SRCFILES
+	${OBNSIM_INCLUDE_DIR}/obnsim_basic.cpp
 	${PROTO_SRCS}
 	${OBNNODE_COMM_SRC}
 )

@@ -80,11 +80,18 @@ using namespace OBNsmn;
 
 // This function is the entry point for the GC thread.
 void GCThread::GCThreadMain() {
-    std::cout << "The GC thread." << std::endl;
+    // std::cout << "The GC thread." << std::endl;
 
     // Set to false if there is a critical error that the simulation should terminate immediately,
     //  even without sending TERM signals, but still does necessary cleanups.
-    bool noCriticalError = gc_send_to_all(0, OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT, OBNSimMsg::N2SMN_MSGTYPE_SIM_INIT_ACK);
+    bool noCriticalError;
+    
+    // Send the SIM_INIT message to all nodes to start the simulation
+    OBNSimMsg::MSGDATA *pMsgData = new OBNSimMsg::MSGDATA();
+    pMsgData->set_t(initial_wallclock); // initial wallclock time
+    pMsgData->set_i(sim_time_unit);     // simulation time unit, in microseconds
+    
+    noCriticalError = gc_send_to_all(0, OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT, OBNSimMsg::N2SMN_MSGTYPE_SIM_INIT_ACK, pMsgData);
 
     // Wait for ACKs from all nodes, checking for initialization errors
     noCriticalError = noCriticalError && gc_wait_for_ack([this](const SMNNodeEvent* ev) {
@@ -138,8 +145,14 @@ void GCThread::GCThreadMain() {
             break;
         }
 
-
         gc_timer_reset();   // Turn off the timer, just in case
+        
+        
+        // Update all nodes in the update list to their next regular updates.
+        for (const auto & node: gc_update_list) {
+            _nodes[node.nodeID]->finishCurrentUpdate();
+        }
+        
         
         // If the GC is paused, we wait until it is either resumed or stepped.
         OBNEventQueueType::item_type ev;    // To receive the node event
@@ -200,11 +213,17 @@ void GCThread::GCThreadMain() {
  \return True if successful.
  */
 bool GCThread::initialize() {
-    std::cout << "Initiaize GC ..." << std::endl;
+    // std::cout << "Initialize GC ..." << std::endl;
     
     // Check that _nodes has at least one node
     if ((maxID = _nodes.size() - 1) < 0) {
         report_error(0, "There are no nodes in the system; at least one node must be present.");
+        return false;
+    }
+    
+    // Check simulation time unit
+    if (sim_time_unit <= 0) {
+        report_error(0, "Invalid simulation time unit (" + std::to_string(sim_time_unit) + ").");
         return false;
     }
 
@@ -563,14 +582,26 @@ bool GCThread::gc_send_update_y() {
         return false;
     }
     
-    auto updateList = rtNodeGraph->getAndRemoveIndependentNodes();  // Get the list of updating nodes
+    const auto & updateList = rtNodeGraph->getAndRemoveIndependentNodes();  // Get the list of updating nodes
     if (updateList.empty()) {
         // If no nodes are removed but the graph is non-empty, there is a cyclic condition (algebraic loop), which is an error
         if (rtNodeGraph->empty()) {
             return true;
         }
 
-        report_error(0, "An algebraic loop (dependency cycle) occurs at time " + std::to_string(current_sim_time));
+        std::string err_message("An algebraic loop (dependency cycle) occurs at time " + std::to_string(current_sim_time) + " with nodes:\n");
+        
+        // Get the remaining nodes
+        auto node_list(rtNodeGraph->getCurrentNodes());
+        assert(!node_list.empty());
+        
+        // Build the list of remaining nodes
+        for (const auto & node_id : node_list) {
+            err_message += "  " + _nodes[node_id.first]->name + " (" + std::to_string(node_id.second) + ")\n";
+        }
+        err_message += "}";
+        
+        report_error(0, err_message);
         return false;
     }
     
@@ -579,17 +610,17 @@ bool GCThread::gc_send_update_y() {
     msg.set_msgtype(OBNSimMsg::SMN2N_MSGTYPE_SIM_Y);
     msg.set_time(current_sim_time);
     
-    for (auto node: updateList) {
+    for (const auto & node: updateList) {
+        // Each node is a pair (node-ID, updatemask)
+        int thisNodeID = node.first;
+        
         // We don't set ID here because it's dependent on the comm protocol (see node.sendMessage())
         // msg.set_id(node);
 
         OBNSimMsg::MSGDATA *msgdata = new OBNSimMsg::MSGDATA();
-        msgdata->set_i(_nodes[node]->getNextUpdateMask());
+        msgdata->set_i(node.second);    // Set the update mask specified in the update list
         msg.set_allocated_data(msgdata);
-        _nodes[node]->sendMessage(node, msg);
-        
-        // Because the regular update of this node is used, we update it to the next regular update.
-        _nodes[node]->finishCurrentUpdate();
+        _nodes[thisNodeID]->sendMessage(thisNodeID, msg);
     }
     
     // Set up wait-for
@@ -732,13 +763,17 @@ bool GCThread::gc_send_update_x() {
  The message is simple with no custom data.
  \param t The time value sent with the message.
  \param msgtype The type of the message sent to nodes.
+ \param pData Pointer to an optional message data block; null pointer (default) if no data. The function will take ownership of this data, therefore the data block should be created dynamically and not released by the caller.
  \return true if successful; false if not (error)
  */
-bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype) {
+bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::MSGDATA *pData) {
     // Send the message to all nodes
     OBNSimMsg::SMN2N msg;
     msg.set_msgtype(msgtype);
     msg.set_time(t);
+    
+    // Set message data (none = clear if NULL)
+    msg.set_allocated_data(pData);
 
     int k = 0;
     for (auto it = _nodes.begin(); it != _nodes.end(); ++it, ++k) {
@@ -762,9 +797,10 @@ bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype) {
  \param t The time value sent with the message.
  \param msgtype The type of the message sent to nodes.
  \param acktype The type of the ACK message sent from nodes.
+ \param pData Pointer to an optional message data block; null pointer (default) if no data. The function will take ownership of this data, therefore the data block should be created dynamically and not released by the caller.
  \return true if successful; false if not (error)
  */
-bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype) {
+bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype, OBNSimMsg::MSGDATA *pData) {
     if (gc_waitfor_active) {
         // It's an error that wait-for is still active
         report_error(0, "Internal error: wait-for event is active before sending message #");
@@ -772,7 +808,7 @@ bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OB
     }
     
     // Send the message to all nodes
-    if (!gc_send_to_all(t, msgtype)) {
+    if (!gc_send_to_all(t, msgtype, pData)) {
         return false;
     }
     
