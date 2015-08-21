@@ -52,12 +52,20 @@ namespace OBNsmn {
          Return a list of IDs of independent nodes in the graph, then remove them as well as all adjacent edges.
          \return Vector of IDs of the independent nodes.
          */
-        virtual std::vector<int> getAndRemoveIndependentNodes() = 0;
+        virtual std::vector< std::pair<int, updatemask_t> > const& getAndRemoveIndependentNodes() = 0;
         
         /** \brief Check if the graph is empty.
          \return True if empty.
          */
         virtual bool empty() const = 0;
+        
+        
+        /** \brief Return the list of currently remaining nodes.
+         
+         Return a list of IDs of current nodes in the graph (that are remaining).
+         \return Vector of IDs of the nodes.
+         */
+        virtual std::vector< std::pair<int,updatemask_t> > getCurrentNodes() const = 0;
     };
     
     /** \brief Graph of nodes' dependency, with weights on edges.
@@ -171,6 +179,8 @@ namespace OBNsmn {
          */
         NodeDepGraph_BGL(int numNodes): _graph(numNodes) {
             assert(numNodes > 0);
+            // Pre-allocate enough space for the RT result vector
+            rtResult.reserve(numNodes);
         }
         
         // virtual ~NodeDepGraph_BGL() { std::cout << "Node graph deleted." << std::endl; }
@@ -195,7 +205,7 @@ namespace OBNsmn {
         
         /* ======== Implementation of the RTNodeDepGraph interface ========= */
         /** \brief Return and remove independent nodes. */
-        virtual std::vector<int> getAndRemoveIndependentNodes();
+        virtual std::vector< std::pair<int, updatemask_t> > const& getAndRemoveIndependentNodes();
         
         /** \brief Check if the run-time graph is empty.
          \return True if empty.
@@ -203,6 +213,9 @@ namespace OBNsmn {
         virtual bool empty() const {
             return (rtNodesLeft < 1);
         }
+        
+        /** \brief Return the current, remaining nodes. */
+        virtual std::vector< std::pair<int,updatemask_t> > getCurrentNodes() const;
         
     private:
         /**
@@ -221,23 +234,22 @@ namespace OBNsmn {
         typedef std::pair<updatemask_t, updatemask_t> LinkLabel;
         struct EdgeLabel {
             std::vector<LinkLabel> links;   ///< List of links from the same source node to the same target nodes
-            bool removed;                   ///< Whether the edge has been removed (to be used in the run-time algorithm)
-            EdgeLabel(updatemask_t s, updatemask_t t): links(1, std::make_pair(s, t)), removed(false) {}
+            bool active;        // Whether this edge is active
+            EdgeLabel(updatemask_t s, updatemask_t t): links(1, std::make_pair(s, t)), active(false) {}
             // EdgeLabel(const EdgeLabel& other): links(other.links), removed(other.removed) {}
-            EdgeLabel(): links(), removed(false) {}
+            EdgeLabel(): links(), active(false) {}
         };
         struct VertexLabel {
-            enum {
-                UNMARKED,
-                MARKED,
-                REMOVED
-            } status;
-            updatemask_t updateMask;
+            bool active;                // Whether the vertex is active in the RT graph (used in the run-time algorithm)
+            updatemask_t updateMask;    // The current update mask of this node
+            updatemask_t inputMask;     // Combination of the update masks of all active input edges to this node
         };
         typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::directedS, VertexLabel, EdgeLabel> GraphT;
         GraphT _graph;
         
         int rtNodesLeft;        ///< Number of nodes left to be considered in the run-time graph
+        
+        std::vector< std::pair<int, updatemask_t> > rtResult;   ///< This holds the result vector getAndRemoveIndependentNodes(), which is pre-allocated to avoid re-allocation.
         
         /** \brief Combine two links into one if possible. */
         bool combineLinks(LinkLabel& link1, const LinkLabel& link2);

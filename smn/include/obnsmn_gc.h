@@ -413,16 +413,15 @@ namespace OBNsmn {
          \return true if successful, false if not (a wait-for is going on, simulation is not going on).
          */
         template <class L>
-        bool gc_waitfor_start(L nodes, OBNSimMsg::N2SMN::MSGTYPE type) {
-        //bool gc_waitfor_start(std::vector<int> nodes, OBNSimMsg::N2SMN::MSGTYPE type) {
+        bool gc_waitfor_start(const L & nodes, OBNSimMsg::N2SMN::MSGTYPE type) {
             if (gc_waitfor_active) {
                 return false;
             }
             
             gc_waitfor_active = true;
             gc_waitfor_type = type;
-            for (auto it: nodes) {
-                gc_waitfor_bits[it] = false;
+            for (const auto & it: nodes) {
+                gc_waitfor_bits[it.first] = false;
             }
             gc_waitfor_num = nodes.size();
             return true;

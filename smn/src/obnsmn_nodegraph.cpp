@@ -19,83 +19,189 @@ using namespace std;
 
 
 /** Return a list of IDs of independent nodes in the graph, then remove them as well as all adjacent edges.
- \return Vector of IDs of the independent nodes.
+ \return Vector of (ID, update-mask) of the independent nodes.
  */
-std::vector<int> NodeDepGraph_BGL::getAndRemoveIndependentNodes() {
-    if (empty()) {
-        return std::vector<int>();
-    }
-    
-    // Traverse the edges and mark vertices that are dependent, also counting the number of marked vertices
-    int markedCount = 0;
-    
-    GraphT::edge_iterator eit, eend;
-    tie(eit, eend) = edges(_graph);
-    
-    GraphT::vertex_descriptor theVertex;
-    
-    for (; eit != eend; ++eit) {
-        if (!_graph[*eit].removed) {
-            theVertex = target(*eit, _graph);
-            if (_graph[theVertex].status == VertexLabel::UNMARKED) {
-                _graph[theVertex].status = VertexLabel::MARKED;
-                ++markedCount;
-            }
-        }
-    }
-    
-    // At this point, markedCount is the number of nodes that have been switched to MARKED, so the number of independent nodes is (rtNodesLeft - markedCount) because rtNodesLeft = number of nodes considering and markedCount = number of dependent nodes.
+std::vector< std::pair<int, updatemask_t> > const& NodeDepGraph_BGL::getAndRemoveIndependentNodes() {
+    rtResult.clear();
 
-    // Construct the list of independent nodes' IDs
-    int indepedentCount = rtNodesLeft - markedCount;
-    if (indepedentCount <= 0) {
-        // Error or algebraic loop
-        return std::vector<int>();
+    if (empty()) {
+        return rtResult;
     }
-    
-    std::vector<int> results(indepedentCount);
-    auto resultIt = results.begin();
-    
-    // Traverse the vertices and extract independent nodes
+
+    // Traverse the vertices and extract independent updates of active nodes
     GraphT::vertex_iterator vit, vend;
     tie(vit, vend) = vertices(_graph);
+    GraphT::vertex_descriptor theVertex;
     
     GraphT::out_edge_iterator oeit, oeend;
     
     for (; vit != vend; ++vit) {
-        switch (_graph[*vit].status) {
-            case VertexLabel::MARKED:
-                _graph[*vit].status = VertexLabel::UNMARKED;
-                break;
+        theVertex = *vit;
+        VertexLabel& thisNode = _graph[theVertex];  // Directly change the label if needs to
+
+        if (thisNode.active) {
+            // Find if there exist updates that are not in any of the active input edges (represented by the inputMask field)
+            updatemask_t independentUpdates = thisNode.updateMask & (~thisNode.inputMask);
+            if (independentUpdates) {
+                // Add these updates to the result
+                rtResult.emplace_back(static_cast<int>(theVertex), independentUpdates);
                 
-            case VertexLabel::UNMARKED:
-                /* This is an independent node, we need to:
-                 - Extract it
-                 - Mark it as REMOVED
-                 - Iterate its out-edges and mark them as REMOVED
-                 */
-                theVertex = *vit;
-                *(resultIt++) = static_cast<int>(theVertex);
-                _graph[theVertex].status = VertexLabel::REMOVED;
+                thisNode.updateMask &= (~independentUpdates);   // Remove these updates from the flag
                 
-                tie(oeit, oeend) = out_edges(theVertex, _graph);
-                for (; oeit != oeend; ++oeit) {
-                    _graph[*oeit].removed = true;
+                if (thisNode.updateMask == 0) {
+                    // This node becomes inactive because there are no more updates
+                    thisNode.active = false;
+                    rtNodesLeft--;  // Decrease the number of nodes left in the RT graph
+                    
+                    // Mark all its out-edges as inactive
+                    tie(oeit, oeend) = out_edges(theVertex, _graph);
+                    for (; oeit != oeend; ++oeit) {
+                        _graph[*oeit].active = false;
+                    }
                 }
-                
-                break;
-                
-            default:
-                break;
+            }
+            // It's still active, reset its inputMask so it will get updated in the later part
+            thisNode.inputMask = 0;
         }
     }
     
-    // NUmber of nodes left = number of dependent nodes
-    rtNodesLeft = markedCount;
+    // Loop through all active edges and determine if each of them is still active or inactive
+    // For remaining active ones, also re-calculate the inputMask of its target node
+    GraphT::edge_iterator eit, eitend;
+    tie(eit, eitend) = edges(_graph);
     
-    return results;
+    for (; eit != eitend; ++eit) {
+        if (_graph[*eit].active) {
+            // The source node is guaranteed to be active, because if it's inactive, it would have deactivated this edge (see above)
+            auto sourceNode = source(*eit, _graph), destNode = target(*eit, _graph);
+            bool active_edge = false;
+            if (_graph[destNode].active) {
+                // Both source and target nodes are active
+                // Check if at least one link is active
+                // Also calculate the inputMask of the target node
+                
+                updatemask_t inputMask = 0;
+                auto sourceUpdateMask = _graph[sourceNode].updateMask, targetUpdateMask = _graph[destNode].updateMask;
+                for (auto alink: _graph[*eit].links) {
+                    if (alink.second & targetUpdateMask) {
+                        // This link has target mask that intersects with its target node's update mask
+                        inputMask |= alink.second;
+                        
+                        active_edge = active_edge || ((alink.first & sourceUpdateMask) != 0);
+                    }
+                }
+                if (active_edge) {
+                    // This edge is still active, so we will update the inputMask of its target node
+                    _graph[destNode].inputMask |= inputMask;
+                }
+            }
+            _graph[*eit].active = active_edge;  // update the status of this edge
+        }
+    }
+    
+    return rtResult;
 }
 
+// OLD CODE
+//std::vector<int> NodeDepGraph_BGL::getAndRemoveIndependentNodes() {
+//    if (empty()) {
+//        return std::vector<int>();
+//    }
+//    
+//    // Traverse the edges and mark vertices that are dependent, also counting the number of marked vertices
+//    int markedCount = 0;
+//    
+//    GraphT::edge_iterator eit, eend;
+//    tie(eit, eend) = edges(_graph);
+//    
+//    GraphT::vertex_descriptor theVertex;
+//    
+//    for (; eit != eend; ++eit) {
+//        if (!_graph[*eit].removed) {
+//            theVertex = target(*eit, _graph);
+//            if (_graph[theVertex].status == VertexLabel::UNMARKED) {
+//                _graph[theVertex].status = VertexLabel::MARKED;
+//                ++markedCount;
+//            }
+//        }
+//    }
+//    
+//    // At this point, markedCount is the number of nodes that have been switched to MARKED, so the number of independent nodes is (rtNodesLeft - markedCount) because rtNodesLeft = number of nodes considering and markedCount = number of dependent nodes.
+//
+//    // Construct the list of independent nodes' IDs
+//    int indepedentCount = rtNodesLeft - markedCount;
+//    if (indepedentCount <= 0) {
+//        // Error or algebraic loop
+//        return std::vector<int>();
+//    }
+//    
+//    std::vector<int> results(indepedentCount);
+//    auto resultIt = results.begin();
+//    
+//    // Traverse the vertices and extract independent nodes
+//    GraphT::vertex_iterator vit, vend;
+//    tie(vit, vend) = vertices(_graph);
+//    
+//    GraphT::out_edge_iterator oeit, oeend;
+//    
+//    for (; vit != vend; ++vit) {
+//        switch (_graph[*vit].status) {
+//            case VertexLabel::MARKED:
+//                _graph[*vit].status = VertexLabel::UNMARKED;
+//                break;
+//                
+//            case VertexLabel::UNMARKED:
+//                /* This is an independent node, we need to:
+//                 - Extract it
+//                 - Mark it as REMOVED
+//                 - Iterate its out-edges and mark them as REMOVED
+//                 */
+//                theVertex = *vit;
+//                *(resultIt++) = static_cast<int>(theVertex);
+//                _graph[theVertex].status = VertexLabel::REMOVED;
+//                
+//                tie(oeit, oeend) = out_edges(theVertex, _graph);
+//                for (; oeit != oeend; ++oeit) {
+//                    _graph[*oeit].removed = true;
+//                }
+//                
+//                break;
+//                
+//            default:
+//                break;
+//        }
+//    }
+//    
+//    // NUmber of nodes left = number of dependent nodes
+//    rtNodesLeft = markedCount;
+//    
+//    return results;
+//}
+
+
+/** Return a list of IDs of independent nodes in the graph, then remove them as well as all adjacent edges.
+ \return Vector of IDs of the independent nodes.
+ */
+std::vector< std::pair<int,updatemask_t> > NodeDepGraph_BGL::getCurrentNodes() const {
+    if (rtNodesLeft <= 0) {
+        return std::vector< std::pair<int,updatemask_t> >();
+    }
+    
+    std::vector< std::pair<int,updatemask_t> > result;
+    result.reserve(rtNodesLeft);
+    
+    // Traverse the vertices and return the nodes
+    GraphT::vertex_iterator vit, vend;
+    tie(vit, vend) = vertices(_graph);
+    
+    for (; vit != vend; ++vit) {
+        if (_graph[*vit].active) {
+            result.emplace_back(static_cast<int>(*vit), _graph[*vit].updateMask);
+        }
+    }
+    
+    return result;
+}
 
 /**
  This method tries to combine two links (link1 and link2). If they can be combined, the combined link will be placed in link1, and link2 can be removed.
@@ -197,33 +303,48 @@ RTNodeDepGraph* NodeDepGraph_BGL::getRTNodeDepGraph(GCUpdateListIterator itnode,
     
     // Mark all vertices as REMOVED
     for (; vit != vitend; ++vit) {
-        _graph[*vit].status = VertexLabel::REMOVED;
+        _graph[*vit].active = false;
     }
     
-    // Mark updating nodes as UNMARKED and set their updating masks
+    // Mark updating nodes and set their updating masks
     rtNodesLeft = nNodes;
     for (; nNodes > 0; --nNodes) {
         auto updateInfo = *(itnode++);
-        _graph[static_cast<GraphT::vertex_descriptor>(updateInfo.nodeID)] = VertexLabel{VertexLabel::UNMARKED, updateInfo.updateMask};  // fields: status, updateMask
+        assert(updateInfo.updateMask != 0); // only if the update mask is non-zero
+        _graph[static_cast<GraphT::vertex_descriptor>(updateInfo.nodeID)] = VertexLabel{true, updateInfo.updateMask, 0};  // fields: active, updateMask, inputMask
     }
     
-    // Loop through all edges and determine if each of them is active or inactive (removed)
+    // Loop through all edges and determine if each of them is active or inactive
+    // For active ones, also calculate the inputMask of its target node
     GraphT::edge_iterator eit, eitend;
     tie(eit, eitend) = edges(_graph);
     
     for (; eit != eitend; ++eit) {
+        _graph[*eit].active = false;  // mark it as inactive, only turn it to active if there is at least one active link
+        
         // Get the vertices
-        auto sourceNode = source(*eit, _graph), destNode = target(*eit, _graph);
-        
-        _graph[*eit].removed = true;
-        
-        if (_graph[sourceNode].status != VertexLabel::REMOVED && _graph[destNode].status != VertexLabel::REMOVED) {
-            // Check if at least one link is active
-            for (auto alink: _graph[*eit].links) {
-                if ((alink.first & _graph[sourceNode].updateMask) && (alink.second & _graph[destNode].updateMask)) {
-                    // This link is active, so we mark the edge as active and stop
-                    _graph[*eit].removed = false;
-                    break;
+        auto sourceNode = source(*eit, _graph);
+        if (_graph[sourceNode].active) {
+            auto destNode = target(*eit, _graph);
+            if (_graph[destNode].active) {
+                // Both source and target nodes are active
+                // Check if at least one link is active
+                // Also calculate the inputMask of the target node
+                bool active_edge = false;
+                updatemask_t inputMask = 0;
+                auto sourceUpdateMask = _graph[sourceNode].updateMask, targetUpdateMask = _graph[destNode].updateMask;
+                for (auto alink: _graph[*eit].links) {
+                    if (alink.second & targetUpdateMask) {
+                        // This link has target mask that intersects with its target node's update mask
+                        inputMask |= alink.second;
+                    
+                        active_edge = active_edge || ((alink.first & sourceUpdateMask) != 0);
+                    }
+                }
+                if (active_edge) {
+                    // This edge is active, so we will set its status and update the inputMask of its target node
+                    _graph[*eit].active = true;
+                    _graph[destNode].inputMask |= inputMask;
                 }
             }
         }

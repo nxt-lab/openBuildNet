@@ -1,4 +1,4 @@
-classdef OBNNode < handle
+classdef OBNNode < matlab.mixin.Heterogeneous & handle
     % Class that implements an openBuildNet node in Matlab.
     %
     % This file is part of the openBuildNet simulation framework developed
@@ -67,6 +67,8 @@ classdef OBNNode < handle
                 ws = '';
             end
             
+            this.nodeName = nodeName;
+            
             % Create a new node object and save its pointer in id_
             this.id_  = obnsim_yarp_('nodeNew', nodeName, ws);
             
@@ -76,6 +78,7 @@ classdef OBNNode < handle
         end
         
         function delete(this)
+            % disp('Delete');
             obnsim_yarp_('nodeDelete', this.id_);
         end
         
@@ -243,7 +246,7 @@ classdef OBNNode < handle
 
             ss = this.inputPorts.keys();
             if nargout == 0
-                for k = 1:length(ss)
+                for k = 1:numel(ss)
                     disp(ss{k});
                 end
             else
@@ -259,7 +262,7 @@ classdef OBNNode < handle
             
             ss = this.outputPorts.keys();
             if nargout == 0
-                for k = 1:length(ss)
+                for k = 1:numel(ss)
                     disp(ss{k});
                 end
             else
@@ -295,8 +298,8 @@ classdef OBNNode < handle
                 assert(iscell(portName), 'portName must be either a string or a cell array of strings.');
             end
             assert(~isempty(portName), 'portName is empty.');
-            portIDs = zeros(length(portName), 1);
-            for k = 1:length(portName)
+            portIDs = zeros(numel(portName), 1);
+            for k = 1:numel(portName)
                 assert(this.isValidIdentifier(portName{k}), 'Port name #%d is invalid.', k);
                 if this.inputPorts.isKey(portName{k})
                     portIDs(k) = this.inputPorts(portName{k});
@@ -307,8 +310,8 @@ classdef OBNNode < handle
                 end
             end
             
-            info = repmat(struct('type', '', 'container', '', 'element', '', 'strict', false), 1, length(portIDs));
-            for k = 1:length(portIDs)
+            info = repmat(struct('type', '', 'container', '', 'element', '', 'strict', false), 1, numel(portIDs));
+            for k = 1:numel(portIDs)
                 [info(k).type, info(k).container, info(k).element, info(k).strict] = ...
                     obnsim_yarp_('portInfo', this.id_, portIDs(k));
             end
@@ -332,10 +335,12 @@ classdef OBNNode < handle
 
         function addCallback(this, func, evtype, varargin)
             % Register a callback for an event.
-            %       addCallback(this, func, evtype, ...)
+            %       addCallback(this, func, evtype, varargin)
             %
             % evtype is a non-empty string specifying the event type.
-            % func is the function handle of the callback.
+            % func is the function handle of the callback. It will be
+            % called as func(custom arguments), where the custom arguments
+            % are specified in varargin (see below).
             %
             % The following events (evtype) are supported:
             % - 'Y' : UPDATE_Y event; the next argument must be the ID of
@@ -344,7 +349,9 @@ classdef OBNNode < handle
             % - 'X' : similar to 'Y' but for UPDATE_X event
             % - 'INIT' : SIM_INIT event when the simulation starts; the
             %   callback should set the initial states and initial outputs.
-            % - 'TERM' : SIM_TERM event when the simulation terminates.
+            %   All of varargin are custom arguments.
+            % - 'TERM' : SIM_TERM event when the simulation terminates. All
+            %   of varargin are custom arguments.
             
             narginchk(3, inf);
             assert(isscalar(this));
@@ -353,7 +360,7 @@ classdef OBNNode < handle
             
             switch upper(evtype)
                 case {'Y', 'X'}
-                    assert(length(varargin) >= 1, 'The update type ID must be provided.');
+                    assert(numel(varargin) >= 1, 'The update type ID must be provided.');
                     id = varargin{1};
                     assert(id >= 0 && id <= this.MaxUpdateID && floor(id) == id,...
                         'The update type ID must be an integer between 0 and %d', this.MaxUpdateID);
@@ -430,146 +437,12 @@ classdef OBNNode < handle
             
             % Construct the update mask
             mask = uint64(0);
-            for k = 1:length(updates)
+            for k = 1:numel(updates)
                 mask = bitset(mask, updates(k)+1);
             end
             
             % Call MEX with futureT converted to int64
             r = obnsim_yarp_('futureUpdate', this.id_, int64(futureT), mask, timeout);
-        end
-        
-        
-        function b = runSimulation(this, timeout, stopIfTimeout)
-            % The main function to run the simulation of the node.
-            %
-            % An optional timeout (double value in seconds) can be given,
-            % which will set a timeout for the node to wait for messages
-            % from the SMN/GC. If timeout is missing or <= 0, there is no
-            % timeout and this function can run indefinitely (if the
-            % simulation hangs).
-            %
-            % An optional stopIfTimeout [bool] can be given: if it's true
-            % (default) then the simulation of this node will stop
-            % immediately if a timeout occurs by calling stopSimulation();
-            % otherwise it will simply returns without stopping the
-            % simulation (which can be resumed by calling this method
-            % again).
-            %
-            % Return false if the execution is timed out; otherwise return
-            % true.
-            narginchk(1, 3);
-            assert(isscalar(this));
-            if nargin < 2 || isempty(timeout)
-                timeout = -1;
-            else
-                assert(isscalar(timeout) && isnumeric(timeout), ...
-                    'Timeout must be a real number in seconds, or non-positive for no timeout.');
-            end
-            
-            if nargin < 3 || isempty(stopIfTimeout)
-                stopIfTimeout = true;
-            end
-            
-            % If the node has error, should not run it
-            if this.hasError()
-                error('OBNNode:runSimulation', 'Node currently has error and cannot run; please clear the error first by calling stopSimulation.');
-            end
-            
-            % If the node is running --> may be not right, give a warning
-            if this.isRunning()
-                warning('OBNNode:runSimulation', 'Node is currently running; may be an error but we will run it anyway.');
-            end
-            
-            % To help Matlab process its own callbacks (e.g. for GUI, user
-            % interruption...) we will call OBN MEX with a small timeout
-            % value to return to Matlab and allow it to handle its events
-            % and callbacks, then we go back to simulation. At the same
-            % time, we keep track of the user-given timeout value, and do
-            % stop the simulation if that timeout error occurs.
-            
-            status = 0;
-            b = true;
-            timeoutStart = tic;
-            while status == 0
-                [status, evtype, evargs] = obnsim_yarp_('runStep', this.id_, 1.0);  % small timeout is used
-                switch status
-                    case 0  % Got an event
-                        switch upper(evtype)
-                            case 'Y'
-                                this.onUpdateY(evargs);
-                            case 'X'
-                                this.onUpdateX(evargs);
-                            case 'INIT'
-                                this.onSimInit();
-                            case 'TERM'
-                                this.onSimTerm();
-                            otherwise
-                                error('OBNNode:runSimulation', 'Internal error: Unknown event type %s returned from MEX.', evtype);
-                        end
-                        timeoutStart = tic;     % reset the timer
-                        
-                    case 1  % Timeout
-                        if toc(timeoutStart) > timeout
-                            % Real timeout error occurred
-                            if stopIfTimeout
-                                this.stopSimulation();  % stop the simulation immediately
-                            end
-                            b = false;
-                        else
-                            % We can continue running the simulation
-                            status = 0;
-                        end
-                        
-                    case 2  % Stop properly
-                        disp('Simulation has stopped properly.');
-                        
-                    case 3  % Stop with error
-                        disp('Simulation has stopped due to an error.');
-                        
-                    otherwise
-                        error('OBNNode:runSimulation', 'Internal error: Unknown running state returned from MEX.');
-                end
-                drawnow;    % give Matlab a chance to update its GUI and process callbacks
-            end
-        end
-        
-        function b = hasError(this)
-            % Test if the node currently has an error (ERROR state)
-            assert(isscalar(this));
-            b = obnsim_yarp_('isNodeErr', this.id_);
-        end
-        
-        function b = isRunning(this)
-            % Test if the node is running (RUNNING state)
-            assert(isscalar(this));
-            b = obnsim_yarp_('isNodeRunning', this.id_);
-        end
-        
-        function b = isStopped(this)
-            % Test if the node is stopped (STOPPED state)
-            assert(isscalar(this));
-            b = obnsim_yarp_('isNodeStopped', this.id_);
-        end        
-                
-        function stopSimulation(this)
-            % If this node is running, request/notify the SMN to stop, then
-            % terminate the current node's simulation regardless of whether
-            % the request was accepted or not.  This method also clear any
-            % error in the node.  It's guaranteed that after this method,
-            % the node's state is STOPPED.
-            assert(isscalar(this));
-            obnsim_yarp_('stopSim', this.id_);
-        end
-
-        function requestStopSimulation(this)
-            % If this node is running, requests the SMN/GC to stop the
-            % simulation (by sending a request message to the SMN).
-            % However, the SMN/GC may deny the request and continue the
-            % simulation.  This method will not stop the current node, so
-            % if the request is not accepted, the node will continue
-            % running.
-            assert(isscalar(this));
-            obnsim_yarp_('requestStopSim', this.id_);
         end
 
         function t = currentSimTime(this)
@@ -635,14 +508,207 @@ classdef OBNNode < handle
 %                 end
 %             end
 %         end
-%         
+%
 
+    end
+    
+    methods (Sealed)
+        function b = hasError(this)
+            % Test if the node currently has an error (ERROR state)
+            % If an object array is given, it returns an array of results.
+            
+            % assert(isscalar(this));
+            if isscalar(this)
+                b = obnsim_yarp_('isNodeErr', this.id_);
+            else
+                b = arrayfun(@(obj) obnsim_yarp_('isNodeErr', obj.id_), this);
+            end
+        end
+        
+        function b = isRunning(this)
+            % Test if the node is running (RUNNING state)
+            % If an object array is given, it returns an array of results.
+            
+            %assert(isscalar(this));
+            if isscalar(this)
+                b = obnsim_yarp_('isNodeRunning', this.id_);
+            else
+                b = arrayfun(@(obj) obnsim_yarp_('isNodeRunning', obj.id_), this);
+            end
+        end
+        
+        function b = isStopped(this)
+            % Test if the node is stopped (STOPPED state)
+            % If an object array is given, it returns an array of results.
+            
+            % assert(isscalar(this));
+            if isscalar(this)
+                b = obnsim_yarp_('isNodeStopped', this.id_);
+            else
+                b = arrayfun(@(obj) obnsim_yarp_('isNodeStopped', obj.id_), this);
+            end
+        end        
+                
+        function stopSimulation(this)
+            % If this node is running, request/notify the SMN to stop, then
+            % terminate the current node's simulation regardless of whether
+            % the request was accepted or not.  This method also clear any
+            % error in the node.  It's guaranteed that after this method,
+            % the node's state is STOPPED.
+            %
+            % If an object array is given, it will work for every node
+            % object
+            
+            %assert(isscalar(this));
+            for k = 1:numel(this)
+                obnsim_yarp_('stopSim', this(k).id_);
+            end
+        end
+
+        function requestStopSimulation(this)
+            % If this node is running, requests the SMN/GC to stop the
+            % simulation (by sending a request message to the SMN).
+            % However, the SMN/GC may deny the request and continue the
+            % simulation.  This method will not stop the current node, so
+            % if the request is not accepted, the node will continue
+            % running.
+            %
+            % If an object array is given, it will work for every node
+            % object
+
+            %assert(isscalar(this));
+            for k = 1:numel(this)
+                obnsim_yarp_('requestStopSim', this(k).id_);
+            end
+        end
+        
+        function b = runSimulation(this, timeout, stopIfTimeout)
+            % The main function to run the simulation of the node.
+            %
+            % An optional timeout (double value in seconds) can be given,
+            % which will set a timeout for the node(s) to wait for messages
+            % from the SMN/GC. If timeout is missing or <= 0, there is no
+            % timeout and this function can run indefinitely (if the
+            % simulation hangs).
+            %
+            % An optional stopIfTimeout [bool] can be given: if it's true
+            % (default) then the simulation of these node(s) will stop
+            % immediately if a timeout occurs by calling stopSimulation();
+            % otherwise it will simply returns without stopping the
+            % simulation (which can be resumed by calling this method
+            % again).
+            %
+            % This method can take an array of OBNNode objects and
+            % run them "in parallel" by switching between the nodes
+            % quickly (in milliseconds). This allow multiple nodes
+            % run in a single Matlab session, which is convenient
+            % for development, with a slight tradeoff in
+            % performance (due to waiting and switching time).
+            %
+            % Return, for each node, false if the execution is timed out;
+            % otherwise return true.
+            narginchk(1, 3);
+            %assert(isscalar(this));
+            nObjs = numel(this);  % Number of objects, because we can handle multiple node objects
+            assert(nObjs > 0);
+            
+            if nargin < 2 || isempty(timeout)
+                timeout = -1;
+            else
+                assert(isscalar(timeout) && isnumeric(timeout), ...
+                    'Timeout must be a real number in seconds, or non-positive for no timeout.');
+            end
+            
+            if nargin < 3 || isempty(stopIfTimeout)
+                stopIfTimeout = true;
+            end
+            
+            % If the node has error, should not run it
+            if any(hasError(this))
+                error('OBNNode:runSimulation', 'Node(s) currently has/have error and cannot run; please clear the error first by calling stopSimulation.');
+            end
+            
+            % If the node is running --> may be not right, give a warning
+            if any(isRunning(this))
+                warning('OBNNode:runSimulation', 'Node(s) is/are currently running; may be an error but we will run it anyway.');
+            end
+            
+            % To help Matlab process its own callbacks (e.g. for GUI, user
+            % interruption...) we will call OBN MEX with a small timeout
+            % value to return to Matlab and allow it to handle its events
+            % and callbacks, then we go back to simulation. At the same
+            % time, we keep track of the user-given timeout value, and do
+            % stop the simulation if that timeout error occurs.
+            
+            status = zeros(nObjs,1);  % store the status values of the nodes
+            nRemaining = nObjs;
+            b = true(size(this));
+            timeoutStart = tic;
+            
+            while nRemaining > 0
+                if nRemaining < 2
+                    tWaitfor = 1.0;
+                else
+                    tWaitfor = max(min(1.0/nRemaining, 0.02), 0.01);
+                end
+                for k = 1:nObjs
+                    if status(k) ~= 0
+                        continue;
+                    end
+                    
+                    [status(k), evtype, evargs] = obnsim_yarp_('runStep', this(k).id_, tWaitfor);  % small timeout is used
+                    switch status(k)
+                        case 0  % Got an event
+                            switch upper(evtype)
+                                case 'Y'
+                                    this(k).onUpdateY(evargs);
+                                case 'X'
+                                    this(k).onUpdateX(evargs);
+                                case 'INIT'
+                                    this(k).onSimInit();
+                                case 'TERM'
+                                    this(k).onSimTerm();
+                                otherwise
+                                    error('OBNNode:runSimulation', 'Internal error: Unknown event type %s returned from MEX for node %s.', evtype, this(k).nodeName);
+                            end
+                            timeoutStart = tic;     % reset the timer
+                            
+                        case 1  % Timeout
+                            if toc(timeoutStart) > timeout
+                                % Real timeout error occurred
+                                if stopIfTimeout
+                                    this(k).stopSimulation();  % stop the simulation immediately
+                                end
+                                b(k) = false;
+                            else
+                                % We can continue running the simulation
+                                status(k) = 0;
+                            end
+                            
+                        case 2  % Stop properly
+                            disp(['Simulation of node ' this(k).nodeName ' has stopped properly.']);
+                            
+                        case 3  % Stop with error
+                            disp(['Simulation of node ' this(k).nodeName ' has stopped due to an error.']);
+                            
+                        otherwise
+                            error('OBNNode:runSimulation', 'Internal error: Unknown running state of node %s returned from MEX.', this(k).nodeName);
+                    end
+                    if status(k) ~= 0
+                        nRemaining = nRemaining - 1;
+                    end
+                end
+                drawnow;    % give Matlab a chance to update its GUI and process callbacks
+            end
+        end
+        
     end
     
     properties (Access=private)
         id_     % pointer to the C++ node object
         inputPorts     % map nodes' names to their IDs
         outputPorts     % map nodes' names to their IDs
+        nodeName  % Name of the node
         
         % These are the callbacks for events receiving from the node object
         % Each callback may receive some arguments, and returns nothing.
@@ -714,7 +780,7 @@ classdef OBNNode < handle
 %             end
 %             
 %             % Run through the list of events
-%             for k = 1:length(this.allEvents)
+%             for k = 1:numel(this.allEvents)
 %                 check(this.allEvents(k), type, id);
 %             end
 %         end
