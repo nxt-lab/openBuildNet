@@ -750,16 +750,6 @@ namespace {
         }
     }
     
-    // Returns the current simulation time of the node.
-    // Args: node object pointer
-    // Returns: current simulation time as an integer
-    MEX_DEFINE(simTime) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-        InputArguments input(nrhs, prhs, 1);
-        OutputArguments output(nlhs, plhs, 1);
-        
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
-        output.set(0, ynode->currentSimulationTime());
-    }
 
 //    // Get full Yarp name of a port
 //    MEX_DEFINE(yarpName) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
@@ -906,6 +896,19 @@ namespace {
             output.set(2, 0);
         }
     }
+    
+    
+    // Returns the current simulation time of the node.
+    // Args: node object pointer
+    // Returns: current simulation time as an integer
+    MEX_DEFINE(simTime) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 1);
+        OutputArguments output(nlhs, plhs, 1);
+        
+        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        output.set(0, ynode->currentSimulationTime());
+    }
+    
     
     // Request an irregular future update.
     // This is a blocking call, possibly with a timeout, that waits until it receives the response from the SMN or until a timeout.
@@ -1079,6 +1082,17 @@ namespace {
         }
         output.set(3, portinfo.strict);
     }
+    
+    // Returns the name of the node (without workspace name)
+    // Args: node object pointer
+    // Returns: name of the node as a string
+//    MEX_DEFINE(nodeName) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+//        InputArguments input(nrhs, prhs, 1);
+//        OutputArguments output(nlhs, plhs, 1);
+//        
+//        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+//        output.set(0, ynode->name());
+//    }
     
     // Returns the maximum ID allowed for an update type.
     // Args: none
