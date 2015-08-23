@@ -326,7 +326,7 @@ bool GCThread::startNextUpdate() {
     
     // Now that the list of updating nodes is determined, we populate the update type masks of these nodes into the list
     updateIt = gc_update_list.begin();
-    for (int k = 0; k < gc_update_size; ++k, ++updateIt) {
+    for (auto k = 0; k < gc_update_size; ++k, ++updateIt) {
         updateIt->updateMask = _nodes[updateIt->nodeID]->getNextUpdateMask();
     }
     

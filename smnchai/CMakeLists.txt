@@ -158,8 +158,22 @@ ADD_EXECUTABLE(smnchai
 if(APPLE)
   list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
 else()
-  set_property(TARGET smntest2 nodemotor nodectrl nodesetpoint PROPERTY CXX_STANDARD 11)
-  set_property(TARGET smntest2 nodemotor nodectrl nodesetpoint PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_property(TARGET smnchai PROPERTY CXX_STANDARD 11)
+  set_property(TARGET smnchai PROPERTY CXX_STANDARD_REQUIRED ON)
+endif()
+
+## Set compiler options
+if(MSVC)
+  # Force to always compile with W4
+  if(CMAKE_CXX_FLAGS MATCHES "/W[0-4]")
+    string(REGEX REPLACE "/W[0-4]" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
+  endif()
+  list(APPEND CMAKE_CXX_FLAGS "/w44640 ${CMAKE_CXX_FLAGS}")
+elseif(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+  # Update if necessary
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wshadow -Wnon-virtual-dtor -pedantic")  # -Wextra
 endif()
 
 
