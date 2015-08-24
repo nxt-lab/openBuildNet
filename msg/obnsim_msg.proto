@@ -13,8 +13,7 @@ package OBNSimMsg;  // package or namespace
 message MSGDATA {
   optional int64 T = 1;  // time stamp
   optional int64 I = 2;  // an integer value
-  optional int64 IX = 3; // another integers
-  optional bytes B = 4;  // a string of bytes, for binary data
+  optional bytes B = 3;  // a string of bytes, for binary data
 }
 
 // Message from the SMN to a node
@@ -33,7 +32,8 @@ message SMN2N {
   required MSGTYPE MsgType = 1;  // type of message
   required int64 Time = 2;     // simulation time stamp
   optional int32 ID = 3;       // ID of the receiving node
-  optional MSGDATA Data = 4;   // data attached to the message
+  optional int64 I = 4;	       // Optional integer field, used frequently in simulation-control messages
+  optional MSGDATA Data = 5;   // data attached to the message
 }
 
 // Message from a node to the SMN

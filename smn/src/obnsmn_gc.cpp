@@ -87,12 +87,15 @@ void GCThread::GCThreadMain() {
     bool noCriticalError;
     
     // Send the SIM_INIT message to all nodes to start the simulation
-    OBNSimMsg::MSGDATA *pMsgData = new OBNSimMsg::MSGDATA();
-    pMsgData->set_t(initial_wallclock); // initial wallclock time
-    pMsgData->set_i(sim_time_unit);     // simulation time unit, in microseconds
+    {
+        OBNSimMsg::MSGDATA *pMsgData = new OBNSimMsg::MSGDATA();
+        pMsgData->set_t(initial_wallclock); // initial wallclock time
+        
+        int64_t time_unit = sim_time_unit;  // simulation time unit, in microseconds
+        
+        noCriticalError = gc_send_to_all(0, OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT, OBNSimMsg::N2SMN_MSGTYPE_SIM_INIT_ACK, &time_unit, pMsgData);
+    }
     
-    noCriticalError = gc_send_to_all(0, OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT, OBNSimMsg::N2SMN_MSGTYPE_SIM_INIT_ACK, pMsgData);
-
     // Wait for ACKs from all nodes, checking for initialization errors
     noCriticalError = noCriticalError && gc_wait_for_ack([this](const SMNNodeEvent* ev) {
         if (ev->has_i && (ev->i != 0)) {
@@ -616,10 +619,8 @@ bool GCThread::gc_send_update_y() {
         
         // We don't set ID here because it's dependent on the comm protocol (see node.sendMessage())
         // msg.set_id(node);
+        msg.set_i(node.second); // Set the update mask specified in the update list
 
-        OBNSimMsg::MSGDATA *msgdata = new OBNSimMsg::MSGDATA();
-        msgdata->set_i(node.second);    // Set the update mask specified in the update list
-        msg.set_allocated_data(msgdata);
         _nodes[thisNodeID]->sendMessage(thisNodeID, msg);
     }
     
@@ -730,7 +731,9 @@ bool GCThread::gc_send_update_x() {
         if (_nodes[ID]->needUPDATEX) {
             // We don't set ID here because it's dependent on the comm protocol (see node.sendMessage())
             // msg.set_id(ID);
-            
+
+            msg.set_i(gc_update_list[k].updateMask);    // Set the update mask specified in the update list
+
             _nodes[ID]->sendMessage(ID, msg);
             
             // Mark the corresponding bit for wait-for event
@@ -763,14 +766,19 @@ bool GCThread::gc_send_update_x() {
  The message is simple with no custom data.
  \param t The time value sent with the message.
  \param msgtype The type of the message sent to nodes.
+ \param pI Pointer to an optional int64 integer field for SMN2N.I field; if null, the field is not set.
  \param pData Pointer to an optional message data block; null pointer (default) if no data. The function will take ownership of this data, therefore the data block should be created dynamically and not released by the caller.
  \return true if successful; false if not (error)
  */
-bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::MSGDATA *pData) {
+bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, int64_t *pI, OBNSimMsg::MSGDATA *pData) {
     // Send the message to all nodes
     OBNSimMsg::SMN2N msg;
     msg.set_msgtype(msgtype);
     msg.set_time(t);
+    
+    if (pI) {
+        msg.set_i(*pI);
+    }
     
     // Set message data (none = clear if NULL)
     msg.set_allocated_data(pData);
@@ -797,18 +805,20 @@ bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OB
  \param t The time value sent with the message.
  \param msgtype The type of the message sent to nodes.
  \param acktype The type of the ACK message sent from nodes.
+ \param pI Pointer to an optional int64 integer field for SMN2N.I field; if null, the field is not set.
  \param pData Pointer to an optional message data block; null pointer (default) if no data. The function will take ownership of this data, therefore the data block should be created dynamically and not released by the caller.
  \return true if successful; false if not (error)
  */
-bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype, OBNSimMsg::MSGDATA *pData) {
+bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype, int64_t *pI, OBNSimMsg::MSGDATA *pData) {
     if (gc_waitfor_active) {
         // It's an error that wait-for is still active
         report_error(0, "Internal error: wait-for event is active before sending message #");
         return false;
     }
     
+    
     // Send the message to all nodes
-    if (!gc_send_to_all(t, msgtype, pData)) {
+    if (!gc_send_to_all(t, msgtype, pI, pData)) {
         return false;
     }
     
