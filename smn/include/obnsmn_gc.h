@@ -388,10 +388,10 @@ namespace OBNsmn {
         bool gc_send_update_x();
         
         /** \brief Send a given simple message to all nodes without waiting for ACKs. */
-        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::MSGDATA *pData = NULL);
+        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, int64_t *pI = nullptr, OBNSimMsg::MSGDATA *pData = nullptr);
         
         /** \brief Send a given simple message to all nodes and start wait-for event. */
-        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype,  OBNSimMsg::MSGDATA *pData = NULL);
+        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype, int64_t *pI = nullptr, OBNSimMsg::MSGDATA *pData = nullptr);
         
         
         // ============ Wait-for event for the GC algorithm =============

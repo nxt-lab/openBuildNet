@@ -340,7 +340,6 @@ bool YarpNodeBase::connectWithSMN(const char *carrier) {
 /** This method initializes the node before a simulation starts. This is different from the callback for the INIT message. This method is called before the node even starts waiting for the INIT message. */
 void YarpNodeBase::initializeForSimulation() {
     _current_sim_time = 0;
-    _current_updates = 0;
 }
 
 
@@ -376,25 +375,6 @@ void YarpNodeBase::sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I) {
 }
 
 
-/** This method sends a simple ACK message to the SMN.
- \param type The type of the ACK message.
- \param I Integer value for MSGDATA.I
- \param IX Integer value for MSGDATA.IX
- */
-void YarpNodeBase::sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I, int64_t IX) {
-    YarpNodeBase::SMNMsg& msg = _smn_port.prepare();
-    
-    _n2smn_message.set_msgtype(type);
-    _n2smn_message.set_id(_node_id);
-    
-    auto *data = new OBNSimMsg::MSGDATA;
-    data->set_i(I);
-    data->set_ix(IX);
-    _n2smn_message.set_allocated_data(data);
-    
-    msg.setMessage(_n2smn_message);
-    _smn_port.writeStrict();
-}
 
 /** This method runs the node in the openBuildNet simulation network.
  The node must start from state NODE_STOPPED, otherwise it will return immediately.
@@ -531,7 +511,7 @@ void YarpNodeBase::NodeEvent_UPDATEX::executeMain(YarpNodeBase* pnode) {
     basic_processing(pnode);
 
     // Call the callback to perform UPDATE_X
-    pnode->onUpdateX();
+    pnode->onUpdateX(_updates);
 }
 
 
@@ -551,7 +531,7 @@ void YarpNodeBase::NodeEvent_UPDATEY::executeMain(YarpNodeBase* pnode) {
     basic_processing(pnode);
     
     // Save the current update type mask, just in case UPDATE_X needs it
-    pnode->_current_updates = _updates;
+    // pnode->_current_updates = _updates;
     
     // Call the callback to perform UPDATE_Y
     pnode->onUpdateY(_updates);
@@ -795,8 +775,7 @@ void YarpNode::onUpdateY(updatemask_t m) {
 }
 
 /** Callback for UPDATE_X: call the appropriate callbacks in the registered updates. */
-void YarpNode::onUpdateX() {
-    auto m = _current_updates;
+void YarpNode::onUpdateX(updatemask_t m) {
     int idx = 0;
     int n_updates = m_updates.size();
     while (m && idx < n_updates) {

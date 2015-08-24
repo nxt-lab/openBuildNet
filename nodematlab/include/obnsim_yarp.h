@@ -89,6 +89,7 @@ namespace OBNnode {
         } _ml_current_event;
         
         bool _ml_pending_event = false;     ///< if there is a Matlab event pending
+        bool _node_is_stopping = false;     ///< true if the node is going to stop (node's state is already STOPPED but we still need to push the TERM event to Matlab)
         
         /** This variable stores the current node event in the event queue. This is because while this node is running, whenever it needs to execute a callback in Matlab, which is usually in the middle of an event's execution, it must return to Matlab, so later on, when the node is called again, it must resume the current event's execution. Therefore we must save the event object to return to it (to run its post-execution. */
         std::shared_ptr<NodeEvent> _current_node_event;
@@ -112,14 +113,16 @@ namespace OBNnode {
             _ml_current_event.type = MLE_Y;
             _ml_current_event.arg.mask = m;
             _ml_pending_event = true;
+            // mexPrintf("UpdateY for node %s mask = %d\n", name().c_str(), m);
         }
         
         /** \brief Callback for UPDATE_X event */
-        virtual void onUpdateX() {
+        virtual void onUpdateX(updatemask_t m) {
             // Post a Matlab event for SIM_X
             _ml_current_event.type = MLE_X;
-            _ml_current_event.arg.mask = _current_updates;
+            _ml_current_event.arg.mask = m;
             _ml_pending_event = true;
+            // mexPrintf("UpdateX for node %s mask = %d\n", name().c_str(), m);
         }
         
         /** \brief Callback to initialize the node before each simulation. */
@@ -127,6 +130,7 @@ namespace OBNnode {
             // Post a Matlab event for SIM_INIT
             _ml_current_event.type = MLE_INIT;
             _ml_pending_event = true;
+            _node_is_stopping = false;
         }
         
         
@@ -135,6 +139,7 @@ namespace OBNnode {
             // Post a Matlab event for SIM_TERM
             _ml_current_event.type = MLE_TERM;
             _ml_pending_event = true;
+            _node_is_stopping = true;
         }
         
         /* =========== Callback Methods for errors ============= */

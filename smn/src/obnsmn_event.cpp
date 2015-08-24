@@ -64,10 +64,6 @@ bool OBNsmn::GCThread::pushNodeEvent(const OBNSimMsg::N2SMN& msg, int defaultID,
             pe->has_i = 1;
             pe->i = data.i();
         }
-        if (data.has_ix()) {
-            pe->has_ix = 1;
-            pe->ix = data.ix();
-        }
     }
     
     pushEvent(pe);

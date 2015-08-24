@@ -62,7 +62,7 @@ public:
     }
     
     /* This node should not receive UPDATE_X. */
-    virtual void onUpdateX() {
+    virtual void onUpdateX(updatemask_t m) {
         std::cout << "At " << _current_sim_time << " UPDATE_X" << std::endl;
     }
     

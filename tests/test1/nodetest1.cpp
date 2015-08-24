@@ -46,8 +46,8 @@ public:
     bool initialize();
     
     /* Implement this callback to process UPDATE_X. */
-    virtual void onUpdateX() {
-        std::cout << "At " << _current_sim_time << " UPDATE_X" << std::endl;
+    virtual void onUpdateX(updatemask_t m) {
+        std::cout << "At " << _current_sim_time << " UPDATE_X (" << m << ")" << std::endl;
         if (pWaitFor) {
             // Check the result of future update request
             auto r = resultFutureUpdate(pWaitFor);

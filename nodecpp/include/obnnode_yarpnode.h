@@ -155,7 +155,6 @@ namespace OBNnode {
         /** Convenient methods to send an ACK message to the SMN. */
         void sendACK(OBNSimMsg::N2SMN::MSGTYPE type);
         void sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I);
-        void sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I, int64_t IX);
         
         /** Name of the node. */
         std::string _nodeName;
@@ -184,9 +183,6 @@ namespace OBNnode {
         
         /** Current simulation time. */
         simtime_t _current_sim_time;
-        
-        /** The current update type mask, of the latest UPDATE_Y. */
-        updatemask_t _current_updates;
         
         /** The initial wallclock time. */
         std::time_t _initial_wallclock = 0;
@@ -314,7 +310,7 @@ namespace OBNnode {
             virtual void executePost(YarpNodeBase*);
             updatemask_t _updates;
             NodeEvent_UPDATEY(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
-                _updates = (msg.has_data() && msg.data().has_i())?msg.data().i():0;
+                _updates = msg.has_i()?msg.i():0;
             }
         };
         friend NodeEvent_UPDATEY;
@@ -323,7 +319,10 @@ namespace OBNnode {
         struct NodeEvent_UPDATEX: public NodeEventSMN {
             virtual void executeMain(YarpNodeBase*);
             virtual void executePost(YarpNodeBase*);
-            NodeEvent_UPDATEX(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) { }
+            updatemask_t _updates;
+            NodeEvent_UPDATEX(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
+                _updates = msg.has_i()?msg.i():0;
+            }
         };
         friend NodeEvent_UPDATEX;
         
@@ -340,8 +339,8 @@ namespace OBNnode {
                     if ((_has_wallclock = msg.data().has_t())) {
                         _wallclock = msg.data().t();
                     }
-                    if ((_has_timeunit = msg.data().has_i())) {
-                        _timeunit = msg.data().i();
+                    if ((_has_timeunit = msg.has_i())) {
+                        _timeunit = msg.i();
                     }
                 }
             }
@@ -381,9 +380,10 @@ namespace OBNnode {
          
          This callback is called whenever the node receives an UPDATE_X event.
          If a node should update its state using the UPDATE_X event, its class should override this callback and implement the node's state update.
-         The default callback is empty. The current simulation time can be obtained from the node object. The last update type mask (see UPDATE_Y events) can be obtained from the object.
+         The default callback is empty. The current simulation time can be obtained from the node object.
+         \param m The update type mask.
          */
-        virtual void onUpdateX() { }
+        virtual void onUpdateX(updatemask_t m) { }
         
         /** \brief Callback to initialize the node before each simulation.
          
@@ -500,7 +500,7 @@ namespace OBNnode {
         
         virtual void onUpdateY(updatemask_t m);
         
-        virtual void onUpdateX();
+        virtual void onUpdateX(updatemask_t m);
         
         // Some constants for specifying the update's sampling time
         static constexpr double MILLISECOND = 1e3;
