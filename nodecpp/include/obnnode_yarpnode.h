@@ -16,7 +16,7 @@
 #include <cmath>
 #include <iostream>
 #include <memory>               // shared_ptr
-//#include <unordered_map>         // std::unordered_map
+#include <unordered_map>         // std::unordered_map
 #include <forward_list>
 #include <functional>
 #include <vector>
@@ -30,6 +30,66 @@
 
 
 namespace OBNnode {
+    
+    /** The message type for INFO port in YARP. */
+    class YARPInfoPortMsg : public YARPMsgBin {
+    public:
+        /* We can overload setMessage() for different types of ProtoBuf messages for different queries. */
+        /* \brief Set the binary contents of the message from a ProtoBuf message object, to be sent over Yarp. */
+        /*
+         bool setMessage(const TW &msg) {
+         allocateData(msg.ByteSize());
+         return msg.SerializeToArray(_data, _size);
+         }*/
+        
+        /** \brief Get the ProtoBuf message object from the binary contents of the message received from Yarp. */
+        bool getMessage(OBNSimMsg::INFO_QUERY &msg) const {
+            if (!_data || _size <= 0) {
+                return false;
+            }
+            return msg.ParseFromArray(_data, _size);
+        }
+    };
+    
+    
+    /** \brief The INFO port on a node. */
+    class InfoPort: public yarp::os::BufferedPort<YARPInfoPortMsg> {
+    public:
+        InfoPort(YarpNodeBase* node) {
+            assert(node);
+            _the_node = node;
+            
+            // Set the default callback for INFO_QUERY_SUPPORT
+            registerQueryCallback(OBNSimMsg::INFO_QUERY::INFO_QUERY_SUPPORT,
+                                  std::bind(&InfoPort::querySupportCallback, this, std::placeholders::_1));
+        }
+        
+        typedef std::function<bool(YARPInfoPortMsg&)> TQueryCallback;
+        
+        /** Register a callback for a given query.
+         \param t_query The query command.
+         \param t_callback A function object for the callback.
+         \return true if successful, false if not (often the callback already exists).
+         */
+        bool registerQueryCallback(OBNSimMsg::INFO_QUERY::QUERYCMD t_query, TQueryCallback t_callback);
+        
+    private:
+        YarpNodeBase* _the_node;                ///< Pointer to the node to which this port is attached
+        OBNSimMsg::INFO_QUERY m_query_message;      ///< The query message received
+        
+        /** A map between supported query commands and their callback functions for responding to the queries.
+         Each callback receives a buffer to write the response to, and should return true if it is successful and false otherwise.
+         The message is only sent if the callback returns true.
+         The callback functions will always be called in the thread of the Info port (which is different from the main thread), therefore they MUST be made thread-safe.
+         */
+        std::unordered_map<int, TQueryCallback> m_responders;
+        
+        virtual void onRead(YARPInfoPortMsg& b);
+        
+        /** The default callback for INFO_QUERY_SUPPORT, which returns the query commands that this port can respond to. */
+        bool querySupportCallback(YARPInfoPortMsg&) const;
+    };
+
     
     /* ============ YARP Node (managing Yarp ports) Interface ===============*/
     /** \brief Basic YARP Node. */
@@ -92,6 +152,23 @@ namespace OBNnode {
          \return true if successful.
          */
         bool connectWithSMN(const char *carrier = nullptr);
+        
+        /** Enable the Info port on this node.
+         If the port is not yet open, it will be created and opened.
+         \return true if successful (inc. if port is already open); false otherwise.
+         */
+        bool enableInfoPort();
+        
+        /** Disable the Info port on this node.
+         If the port is already open, it will be closed but the port object won't be destroyed.
+         \return true if successful; false otherwise (i.e. port not yet enabled/opened).
+         */
+        bool disableInfoPort();
+        
+        /** Check if the info port is enabled. */
+        bool isInfoPortEnabled() const {
+            return m_info_port && !m_info_port->isClosed();
+        }
         
         /** Returns the current state of the node. */
         NODE_STATE nodeState() const {
@@ -193,6 +270,9 @@ namespace OBNnode {
         
         /** \brief Initialize node for simulation. */
         void initializeForSimulation();
+        
+        /** The info port of this node. */
+        std::unique_ptr<InfoPort> m_info_port;
         
         
         /* ================== Support for asynchronuous waiting for conditions ================== */
@@ -513,46 +593,10 @@ namespace OBNnode {
         static constexpr double DAY = 24*HOUR;
         
     protected:
-        friend class InfoPort;
         /* Here we define the methods of this node that help answering to the queries on the Info port.
          These methods will be called from the Info Port Thread, therefore they should be thread-safe (by using locks).
-         Typically
+         Typically */
     };
-    
-    
-    /** The message type for INFO port in YARP. */
-    class YARPInfoPortMsg : public YARPMsgBin {
-    public:
-        /* We can overload setMessage() for different types of ProtoBuf messages for different queries. */
-        /* \brief Set the binary contents of the message from a ProtoBuf message object, to be sent over Yarp. */
-        /*
-        bool setMessage(const TW &msg) {
-            allocateData(msg.ByteSize());
-            return msg.SerializeToArray(_data, _size);
-        }*/
-        
-        /** \brief Get the ProtoBuf message object from the binary contents of the message received from Yarp. */
-        bool getMessage(OBNSimMsg::INFO_QUERY &msg) const {
-            if (!_data || _size <= 0) {
-                return false;
-            }
-            return msg.ParseFromArray(_data, _size);
-        }
-    };
- 
-    
-    /** \brief The INFO port on a node. */
-    class InfoPort: public yarp::os::BufferedPort<YARPInfoPortMsg> {
-        YarpNode* _the_node;                ///< Pointer to the node to which this port is attached
-        OBNSimMsg::INFO_QUERY _query_message;      ///< The query message received
-        virtual void onRead(YARPInfoPortMsg& b);
-    public:
-        InfoPort(YarpNode* node) {
-            assert(node);
-            _the_node = node;
-        }
-    };
-    
 }
 
 /* OLD CODE: NOT TO BE USED ANYMORE!!!

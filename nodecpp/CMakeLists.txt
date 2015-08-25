@@ -54,7 +54,7 @@ endif()
 ## The libraries and header files of the ProtoBuf framework (not the generated files) are in PROTOBUF_LITE_LIBRARIES and PROTOBUF_INCLUDE_DIRS respectively, because we will generate lite code instead of the full ProtoBuf code.
 
 find_package(Protobuf REQUIRED)
-PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS ${OBN_MAIN_DIR}/msg/obnsim_msg.proto ${OBN_MAIN_DIR}/msg/obnsim_io.proto)
+PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS ${OBN_MAIN_DIR}/msg/obnsim_msg.proto ${OBN_MAIN_DIR}/msg/obnsim_io.proto ${OBN_MAIN_DIR}/msg/obnsim_info.proto)
 
 
 
