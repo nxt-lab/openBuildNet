@@ -915,6 +915,17 @@ namespace {
         output.set(0, ynode->currentSimulationTime());
     }
     
+    // Returns the current wallclock time of the node.
+    // Args: node object pointer
+    // Returns: current wallclock time as a POSIX time value.
+    MEX_DEFINE(wallclock) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 1);
+        OutputArguments output(nlhs, plhs, 1);
+        
+        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        output.set(0, ynode->currentWallClockTime());
+    }
+    
     
     // Request an irregular future update.
     // This is a blocking call, possibly with a timeout, that waits until it receives the response from the SMN or until a timeout.

@@ -454,6 +454,15 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             t = obnsim_yarp_('simTime', this.id_);
         end
         
+        function t = currentWallclockTime(this)
+            %   t = node.currentWallclockTime()
+            %returns the current wallclock time as a datetime value
+            %(Matlab's data type to represent date and time).
+            assert(isscalar(this));
+            tposix = obnsim_yarp_('wallclock', this.id_);
+            t = datetime(tposix, 'ConvertFrom', 'posixtime');
+        end
+        
 %         % Wait until a new event is received and process it (one event only)
 %         function wait(this)
 %             assert(isscalar(this));
