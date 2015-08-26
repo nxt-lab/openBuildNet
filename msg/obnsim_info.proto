@@ -5,24 +5,58 @@
 
 option optimize_for = LITE_RUNTIME;
 
-package OBNSimMsg;  // package or namespace
+package OBNSimInfoMsg;  // package or namespace
+
+import "obnsim_io.proto";
+
+// Query command codes
+enum QUERYCMD {
+  INFO_QUERY_SUPPORT = 0x0000;  // supported queries
+  INFO_QUERY_NODEDEF = 0x0001;  // node's definition (for SMN to use)
+}
 
 // Message to query information from a node
-message INFO_QUERY {
-  // Query command codes
-  enum QUERYCMD {
-    INFO_QUERY_SUPPORT = 0x0000;  // supported queries
-    INFO_QUERY_NODEDEF = 0x0001;  // node's definition (for SMN to use)
-  }
-  
+message INFO_QUERY {  
   required QUERYCMD query = 1;  // Query command code
   optional string args = 2;     // Optional arguments of the command, as a string
 }
 
-///////////////////////////////////////
-// Return message for node's definition
-///////////////////////////////////////
-message INFO_NODEDEF {
-
+// Message to respond to a query
+message INFO_RESPONSE {
+  required QUERYCMD query = 1;  // The query command code that this message responds to
+  optional string args = 2;     // Optional arguments
+  optional AnyValue value = 3;  // Optional value
 }
 
+// Messages to store values of common types
+message AnyValue {
+  oneof atomic_value {
+    double d = 1;
+    string s = 2;
+    float f = 3;
+    int32 i32 = 4;
+    int64 i64 = 5;
+    uint32 u32 = 6;
+    uint64 u64 = 7;
+    bool b = 8;
+
+    OBNSimIOMsg.VectorDouble vd = 9;
+    OBNSimIOMsg.MatrixDouble md = 10;
+    
+    ListAnyValue l = 14;
+    MapAnyValue m = 15;
+  }
+}
+
+message ListAnyValue {
+  repeated AnyValue values = 1;
+}
+
+message MapAnyValue {
+  message MapFieldEntry {
+    required string key = 1;
+    required AnyValue value = 2;
+  }
+  
+  repeated MapFieldEntry fields = 1;
+}
