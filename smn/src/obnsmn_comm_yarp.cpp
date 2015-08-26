@@ -42,7 +42,7 @@ bool YARPMsg::read(yarp::os::ConnectionReader& connection) {
     int newsize = connection.expectInt();
     if (newsize <= 0) {
         _size = 0;
-        return false;
+        return newsize<0?false:true;
     }
     
     allocateData(newsize);
