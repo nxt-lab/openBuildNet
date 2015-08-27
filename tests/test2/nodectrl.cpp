@@ -111,7 +111,7 @@ public:
     
     /* This callback is called everytime this node's simulation starts or restarts.
      This is different from initialize() above. */
-    virtual void onInitialization() {
+    virtual void onInitialization() override {
         // Initial state and output
         x.setZero();
         command = 0.0;
@@ -119,7 +119,7 @@ public:
     }
     
     /* This callback is called when the node's current simulation is about to be terminated. */
-    virtual void onTermination() {
+    virtual void onTermination() override {
         std::cout << "At " << _current_sim_time << " TERMINATED" << std::endl;
     }
     
