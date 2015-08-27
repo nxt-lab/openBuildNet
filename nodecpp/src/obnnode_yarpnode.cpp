@@ -12,6 +12,7 @@
 
 
 #include <obnnode_yarpnode.h>
+#include <obnnode_exceptions.h>
 
 using namespace std;
 using namespace OBNnode;
@@ -420,8 +421,8 @@ void YarpNodeBase::run(double timeout) {
                 pEvent->executePost(this);
             } else {
                 // If timeout then we stop
-                onRunTimeout();
                 onReportInfo("[NODE] Node's execution has a timeout.");
+                onRunTimeout();
                 return;
             }
         }
@@ -578,12 +579,14 @@ void YarpNodeBase::NodeEvent_INITIALIZE::executeMain(YarpNodeBase* pnode) {
 
 /** Handle Initialization before simulation: Post. */
 void YarpNodeBase::NodeEvent_INITIALIZE::executePost(YarpNodeBase* pnode) {
-    // Send out values from output ports, whether updated or not
+    // Send out values from output ports if they have been set / updated
     for (auto port: pnode->_output_ports) {
         //TODO: Should change this to asynchronous send.
-        port->sendSync();
-        if (pnode->hasError()) {
-            break;
+        if (port->isChanged()) {
+            port->sendSync();
+            if (pnode->hasError()) {
+                break;
+            }
         }
     }
     
@@ -624,6 +627,39 @@ void YarpNodeBase::NodeEvent_TERMINATE::executeMain(YarpNodeBase* pnode) {
 void YarpNodeBase::NodeEvent_TERMINATE::executePost(YarpNodeBase* pnode) {
     // No ACK is needed
 }
+
+/** Handle port error */
+void YarpNodeBase::NodeEventException::executeMain(YarpNodeBase* pnode) {
+    // rethrow the exception and catch it to call the appropriate error callback function
+    try {
+        std::rethrow_exception(m_exception);
+    } catch (OBNnode::inputport_error& e) {
+        switch (e.m_errortype) {
+            case OBNnode::inputport_error::ERR_RAWMSG:
+                pnode->onRawMessageError(e.m_port, e.what());
+                break;
+                
+            case OBNnode::inputport_error::ERR_READVALUE:
+                pnode->onReadValueError(e.m_port, e.what());
+                break;
+                
+            default:
+                break;
+        }
+    } catch (OBNnode::outputport_error& e) {
+        switch (e.m_errortype) {
+            case OBNnode::outputport_error::ERR_SENDMSG:
+                pnode->onSendMessageError(e.m_port, e.what());
+                break;
+                
+            default:
+                break;
+        }
+    }
+    
+    // Any unhandled exception will go through and trigger the default handler
+}
+
 
 /**
  \param t_idx The desired index of the new update.

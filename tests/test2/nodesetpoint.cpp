@@ -62,20 +62,20 @@ public:
     }
     
     /* This node should not receive UPDATE_X. */
-    virtual void onUpdateX(updatemask_t m) {
+    virtual void onUpdateX(updatemask_t m) override {
         std::cout << "At " << _current_sim_time << " UPDATE_X" << std::endl;
     }
     
     /* This callback is called everytime this node's simulation starts or restarts.
      This is different from initialize() above. */
-    virtual void onInitialization() {
+    virtual void onInitialization() override {
         // Initial state and output
         setpoint = 0.0;
         std::cout << "At " << _current_sim_time << " INIT" << std::endl;
     }
     
     /* This callback is called when the node's current simulation is about to be terminated. */
-    virtual void onTermination() {
+    virtual void onTermination() override {
         std::cout << "At " << _current_sim_time << " TERMINATED" << std::endl;
     }
     

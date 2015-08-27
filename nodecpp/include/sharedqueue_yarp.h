@@ -16,7 +16,7 @@
 #ifndef MYARP_SHAREDQUEUE_H_
 #define MYARP_SHAREDQUEUE_H_
 
-#include <queue>
+#include <deque>
 #include <memory>
 #include <yarp/os/all.h>
 
@@ -30,7 +30,7 @@ public:
     typedef typename std::shared_ptr<T> item_type; ///< Smart pointer type to the objects.
 
 private :
-    std::queue<item_type> mData;
+    std::deque<item_type> mData;
     mutable yarp::os::Mutex mMut;
     
     /** The semaphore to signal event, shared. */
@@ -38,14 +38,14 @@ private :
 public:
     shared_queue(): mCount(0) { }
     
-    /** Push an object into the queue.
+    /** Push an object into the queue, at the back.
      */
     void push(item_type&& pValue)
     {
         // block execution here, if other thread already locked mMute!
         yarp::os::LockGuard mlock(mMut);
         // if we are here no other thread is owned/locked mMute. so we can modify the internal data
-        mData.push(pValue);
+        mData.push_back(pValue);
         mCount.post();
     }
     
@@ -54,7 +54,7 @@ public:
         // block execution here, if other thread already locked mMute!
         yarp::os::LockGuard mlock(mMut);
         // if we are here no other thread is owned/locked mMute. so we can modify the internal data
-        mData.push(pValue);
+        mData.push_back(pValue);
         mCount.post();
     }
     
@@ -63,13 +63,43 @@ public:
         // block execution here, if other thread already locked mMute!
         yarp::os::LockGuard mlock(mMut);
         // if we are here no other thread is owned/locked mMute. so we can modify the internal data
-        mData.emplace(pValue);
+        mData.emplace_back(pValue);
         mCount.post();
     }
     
-    /** Dynamically create an object of the given type T, wrapped inside a smart pointer and added to the queue.
+    /** Insert an object at the top/front of the queue.
+     */
+    void push_front(item_type&& pValue)
+    {
+        // block execution here, if other thread already locked mMute!
+        yarp::os::LockGuard mlock(mMut);
+        // if we are here no other thread is owned/locked mMute. so we can modify the internal data
+        mData.push_front(pValue);
+        mCount.post();
+    }
+    
+    void push_front(const item_type& pValue)
+    {
+        // block execution here, if other thread already locked mMute!
+        yarp::os::LockGuard mlock(mMut);
+        // if we are here no other thread is owned/locked mMute. so we can modify the internal data
+        mData.push_front(pValue);
+        mCount.post();
+    }
+    
+    void push_front(T* pValue) // The object of type T must be dynamically allocated
+    {
+        // block execution here, if other thread already locked mMute!
+        yarp::os::LockGuard mlock(mMut);
+        // if we are here no other thread is owned/locked mMute. so we can modify the internal data
+        mData.emplace_front(pValue);
+        mCount.post();
+    }
+    
+    /* Dynamically create an object of the given type T, wrapped inside a smart pointer and added to the queue.
      The arguments to this method will be passed directly to the constructor of the object.
      */
+    /* Commented out because not used as T is often a abstract class
     template <class... Args>
     void emplace( Args&&... args )
     {
@@ -77,7 +107,7 @@ public:
         // Create a new
         mData.emplace(new T(args...));
         mCount.post();
-    }
+    }*/
     
     /** Pop the front/top element if there is any.
      After this, any reference to this element is invalid (e.g. reference by calling front()) and should not be accessed anymore. If this is a queue of objects, the object will be destructed.
@@ -109,7 +139,7 @@ public:
     item_type wait_and_pop() {
         mCount.wait();
         item_type v = mData.front();
-        mData.pop();
+        mData.pop_front();
         return v;
     }
     
@@ -120,7 +150,7 @@ public:
     item_type wait_and_pop_timeout(double timeout) {
         if (mCount.waitWithTimeout(timeout)) {
             item_type v = mData.front();
-            mData.pop();
+            mData.pop_front();
             return v;
         } else {
             return item_type();

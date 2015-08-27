@@ -26,6 +26,8 @@
 #include <obnnode_yarpportbase.h>
 #include <obnnode_yarpnode.h>
 
+#include <obnnode_exceptions.h>
+
 namespace OBNnode {
     
     /** \brief Template class for an Yarp input port with specific type.
@@ -330,24 +332,29 @@ namespace OBNnode {
             // This managed input port does not generate events in the main thread
             // It simply saves the value in the message to the value
             
-            // Parse the ProtoBuf message
-            if (!b.getMessage(_PBMessage)) {
-                // Error while parsing the raw message
-                _theNode->onRawMessageError(this);
-                return;
-            }
-            
-            // Read from the ProtoBuf message to the value
-            _valueMutex.lock();
-            bool result = OBN_DATA_TYPE_CLASS<D>::readPBMessage(_cur_value, _PBMessage);
-            if (result) {
-                _pending_value = true;
-            }
-            _valueMutex.unlock();
-            
-            if (!result) {
-                // Error while reading the value, e.g. sizes don't match
-                _theNode->onReadValueError(this);
+            try {
+                // Parse the ProtoBuf message
+                if (!b.getMessage(_PBMessage)) {
+                    // Error while parsing the raw message
+                    throw OBNnode::inputport_error(this, OBNnode::inputport_error::ERR_RAWMSG);
+                }
+                
+                // Read from the ProtoBuf message to the value
+                _valueMutex.lock();
+                bool result = OBN_DATA_TYPE_CLASS<D>::readPBMessage(_cur_value, _PBMessage);
+                if (result) {
+                    _pending_value = true;
+                }
+                _valueMutex.unlock();
+                
+                if (!result) {
+                    // Error while reading the value, e.g. sizes don't match
+                    throw OBNnode::inputport_error(this, OBNnode::inputport_error::ERR_READVALUE);
+                }
+                
+            } catch (...) {
+                // Catch everything and pass it to the main thread
+                _theNode->postExceptionEvent(std::current_exception());
             }
         }
     
@@ -417,17 +424,22 @@ namespace OBNnode {
             // This managed input port does not generate events in the main thread
             // It simply saves the value in the message to the value
             
-            // Parse the ProtoBuf message
-            _valueMutex.lock();
-            bool result = b.getMessage(_cur_message);
-            if (result) {
-                _pending_value = true;
-            }
-            _valueMutex.unlock();
-            
-            if (!result) {
-                // Error while parsing the raw message
-                _theNode->onRawMessageError(this);
+            try {
+                // Parse the ProtoBuf message
+                _valueMutex.lock();
+                bool result = b.getMessage(_cur_message);
+                if (result) {
+                    _pending_value = true;
+                }
+                _valueMutex.unlock();
+                
+                if (!result) {
+                    // Error while parsing the raw message
+                    throw OBNnode::inputport_error(this, OBNnode::inputport_error::ERR_RAWMSG);
+                }
+            } catch (...) {
+                // Catch everything and pass it to the main thread
+                _theNode->postExceptionEvent(std::current_exception());
             }
         }
         
@@ -597,22 +609,27 @@ namespace OBNnode {
         
         /** Send data synchronously */
         virtual void sendSync() {
-            // Convert data to message
-            OBN_DATA_TYPE_CLASS<D>::writePBMessage(_cur_value, _PBMessage);
-            
-            // Prepare the Yarp message to send
-            _port_content_type & output = this->prepare();
-            if (!output.setMessage(_PBMessage)) {
-                // Error while serializing the raw message
-                _theNode->onSendMessageError(this);
-                return;
+            try {
+                // Convert data to message
+                OBN_DATA_TYPE_CLASS<D>::writePBMessage(_cur_value, _PBMessage);
+                
+                // Prepare the Yarp message to send
+                _port_content_type & output = this->prepare();
+                if (!output.setMessage(_PBMessage)) {
+                    // Error while serializing the raw message
+                    throw OBNnode::outputport_error(this, OBNnode::outputport_error::ERR_SENDMSG);
+                }
+                
+                // Actually send the message
+                this->writeStrict();
+                _isChanged = false;
             }
-            
-            // Actually send the message
-            this->writeStrict();
-            _isChanged = false;
+            catch (...) {
+                // Catch everything and pass it to the main thread
+                _theNode->postExceptionEvent(std::current_exception());
+            }
         }
-        
+    
         virtual std::string fullPortName() const {
             return this->getName();
         }
@@ -648,17 +665,21 @@ namespace OBNnode {
         
         /** Send data synchronously */
         virtual void sendSync() {
-            // Prepare the Yarp message to send
-            _port_content_type & output = this->prepare();
-            if (!output.setMessage(_cur_message)) {
-                // Error while serializing the raw message
-                _theNode->onSendMessageError(this);
-                return;
+            try {
+                // Prepare the Yarp message to send
+                _port_content_type & output = this->prepare();
+                if (!output.setMessage(_cur_message)) {
+                    // Error while serializing the raw message
+                    throw OBNnode::outputport_error(this, OBNnode::outputport_error::ERR_SENDMSG);
+                }
+                
+                // Actually send the message
+                this->writeStrict();
+                _isChanged = false;
             }
-            
-            // Actually send the message
-            this->writeStrict();
-            _isChanged = false;
+            catch (...) {
+                _theNode->postExceptionEvent(std::current_exception());
+            }
         }
 
         

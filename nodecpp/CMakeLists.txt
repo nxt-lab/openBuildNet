@@ -130,6 +130,7 @@ set(OBN_CORE_SRCFILES
 set(OBN_CORE_HDRFILES
 	${OBN_NODECPP_INCLUDE_DIR}/obnnode.h
 	${OBN_NODECPP_INCLUDE_DIR}/obnnode_basic.h
+	${OBN_NODECPP_INCLUDE_DIR}/obnnode_exceptions.h
 	${OBNSIM_INCLUDE_DIR}/obnsim_basic.h
 	${PROTO_HDRS}
 	${OBN_COMM_HDR}

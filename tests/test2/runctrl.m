@@ -13,7 +13,7 @@ pause
 
 ctrlnode = nodectrl();
 disp('Starting the controller node: please start all other nodes then the SMN...');
-b = ctrlnode.runSimulation();
+b = ctrlnode.runSimulation(20, false);
 fprintf('Simulation stopped with result (1/true means success): %d.\n', b);
 
 disp('Now plotting the result...');

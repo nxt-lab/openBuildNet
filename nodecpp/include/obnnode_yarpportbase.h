@@ -147,7 +147,7 @@ namespace OBNnode {
         
         /** \brief Get the ProtoBuf message object from the binary contents of the message received from Yarp. */
         bool getMessage(TR &msg) const {
-            if (!_data || _size <= 0) {
+            if (!_data) {
                 return false;
             }
             return msg.ParseFromArray(_data, _size);

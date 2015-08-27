@@ -20,6 +20,7 @@
 #include <forward_list>
 #include <functional>
 #include <vector>
+#include <exception>
 
 #include <obnnode_basic.h>
 #include <obnnode_yarpportbase.h>
@@ -29,7 +30,6 @@
 
 
 namespace OBNnode {
-    
     /* ============ YARP Node (managing Yarp ports) Interface ===============*/
     /** \brief Basic YARP Node. */
     class YarpNodeBase {
@@ -141,7 +141,7 @@ namespace OBNnode {
         class SMNPort: public yarp::os::BufferedPort<SMNMsg> {
             YarpNodeBase* _the_node;                ///< Pointer to the node to which this port is attached
             OBNSimMsg::SMN2N _smn_message;      ///< The SMN2N message received at the node
-            virtual void onRead(SMNMsg& b);
+            virtual void onRead(SMNMsg& b) override ;
         public:
             SMNPort(YarpNodeBase* node) {
                 assert(node);
@@ -284,6 +284,7 @@ namespace OBNnode {
         /** The event queue, which contains smart pointers to event objects. */
         shared_queue<NodeEvent> _event_queue;
         
+        /** Parent event class for SMN events. */
         struct NodeEventSMN: public NodeEvent {
             simtime_t _time;
             bool _hasID;
@@ -306,8 +307,8 @@ namespace OBNnode {
         
         /** Event class for cosimulation's UPDATE_Y messages. */
         struct NodeEvent_UPDATEY: public NodeEventSMN {
-            virtual void executeMain(YarpNodeBase*);
-            virtual void executePost(YarpNodeBase*);
+            virtual void executeMain(YarpNodeBase*) override;
+            virtual void executePost(YarpNodeBase*) override;
             updatemask_t _updates;
             NodeEvent_UPDATEY(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
                 _updates = msg.has_i()?msg.i():0;
@@ -317,8 +318,8 @@ namespace OBNnode {
         
         /** Event class for cosimulation's UPDATE_X messages. */
         struct NodeEvent_UPDATEX: public NodeEventSMN {
-            virtual void executeMain(YarpNodeBase*);
-            virtual void executePost(YarpNodeBase*);
+            virtual void executeMain(YarpNodeBase*) override;
+            virtual void executePost(YarpNodeBase*) override;
             updatemask_t _updates;
             NodeEvent_UPDATEX(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
                 _updates = msg.has_i()?msg.i():0;
@@ -332,8 +333,8 @@ namespace OBNnode {
             simtime_t _timeunit;
             bool _has_wallclock = false;
             bool _has_timeunit = false;
-            virtual void executeMain(YarpNodeBase*);
-            virtual void executePost(YarpNodeBase*);
+            virtual void executeMain(YarpNodeBase*) override;
+            virtual void executePost(YarpNodeBase*) override;
             NodeEvent_INITIALIZE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
                 if (msg.has_data()) {
                     if ((_has_wallclock = msg.data().has_t())) {
@@ -349,18 +350,36 @@ namespace OBNnode {
         
         /** Event class for cosimulation's TERMINATE messages. */
         struct NodeEvent_TERMINATE: public NodeEventSMN {
-            virtual void executeMain(YarpNodeBase*);
-            virtual void executePost(YarpNodeBase*);
+            virtual void executeMain(YarpNodeBase*) override;
+            virtual void executePost(YarpNodeBase*) override;
             NodeEvent_TERMINATE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) { }
         };
         friend NodeEvent_TERMINATE;
+        
+        
+        
+        /** Event class for any exception (error) thrown anywhere in the program but must be caught by the main thread. */
+        struct NodeEventException: public NodeEvent {
+            std::exception_ptr m_exception;
+            
+            NodeEventException(std::exception_ptr e): m_exception(e) {
+                assert(e);  // the exception should not be NULL
+            }
+            
+            virtual void executeMain(YarpNodeBase*) override;
+            virtual void executePost(YarpNodeBase*) override { }
+        };
+
         
     public:
         /** Post a system openBuildNet event to the end of the queue (from an SMN2N message). */
         void postEvent(const OBNSimMsg::SMN2N& msg);
         
+        
         /* Methods for pushing events of other types (node internal events) will be put here */
-   
+        void postExceptionEvent(std::exception_ptr e) {
+            _event_queue.push_front(new NodeEventException(e));
+        }
         
     public:
         /* =========== Simulation callbacks =========== */
@@ -402,18 +421,30 @@ namespace OBNnode {
         /* =========== Callback Methods for errors ============= */
         
         /** Callback for error when parsing the raw binary data into a structured message (e.g. ProtoBuf or JSON) */
-        virtual void onRawMessageError(YarpPortBase * port) {
-            // Currently doing nothing
+        virtual void onRawMessageError(const YarpPortBase * port, const std::string& info) {
+            // Report error and try to exit gracefully
+            std::cerr << "ERROR: error while parsing the raw message from port " << port->fullPortName() << ": "
+            << info << std::endl;
+            
+            stopSimulation();
         }
         
         /** Callback for error when reading the values from a structured message (e.g. ProtoBuf or JSON), e.g. if the type or dimension is invalid. */
-        virtual void onReadValueError(YarpPortBase * port) {
-            // Currently doing nothing
+        virtual void onReadValueError(const YarpPortBase * port, const std::string& info) {
+            // Report error and try to exit gracefully
+            std::cerr << "ERROR: error while reading the value from port " << port->fullPortName() << ": "
+            << info << std::endl;
+            
+            stopSimulation();
         }
         
         /** Callback for error when sending the values (typically happens when serializing the message to be sent). */
-        virtual void onSendMessageError(YarpOutputPortBase * port) {
-            // Currently doing nothing
+        virtual void onSendMessageError(const YarpPortBase * port, const std::string& info) {
+            // Report error and try to exit gracefully
+            std::cerr << "ERROR: error while sending to port " << port->fullPortName() << ": "
+            << info << std::endl;
+            
+            stopSimulation();
         }
         
         /** Callback for timeout error when running the node's simulation.
@@ -427,14 +458,17 @@ namespace OBNnode {
          \param msg A string containing the error message.
          */
         virtual void onOBNError(const std::string& msg) {
+            // Report error and try to exit gracefully
+            std::cerr << "ERROR: OpenBuildNet system error: " << msg << std::endl;
             
+            stopSimulation();
         }
         
         /** Callback for warning issues interacting with the SMN and openBuildNet system, e.g. an unrecognized system message from the SMN.  Usually the simulation may continue without any serious consequence.
          \param msg A string containing the warning message.
          */
         virtual void onOBNWarning(const std::string& msg) {
-            
+            std::cout << "WARNING: OpenBuildNet system warning: " << msg << std::endl;
         }
         
         /* =========== Misc callbacks ============= */
@@ -498,9 +532,9 @@ namespace OBNnode {
         /** Remove an update. */
         bool removeUpdate(int t_idx);
         
-        virtual void onUpdateY(updatemask_t m);
+        virtual void onUpdateY(updatemask_t m) override;
         
-        virtual void onUpdateX(updatemask_t m);
+        virtual void onUpdateX(updatemask_t m) override;
         
         // Some constants for specifying the update's sampling time
         static constexpr double MILLISECOND = 1e3;

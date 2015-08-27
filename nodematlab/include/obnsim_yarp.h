@@ -108,7 +108,7 @@ namespace OBNnode {
         /* =========== Simulation callbacks =========== */
         
         /** \brief Callback for UPDATE_Y event */
-        virtual void onUpdateY(updatemask_t m) {
+        virtual void onUpdateY(updatemask_t m) override {
             // Post a Matlab event for SIM_Y
             _ml_current_event.type = MLE_Y;
             _ml_current_event.arg.mask = m;
@@ -117,7 +117,7 @@ namespace OBNnode {
         }
         
         /** \brief Callback for UPDATE_X event */
-        virtual void onUpdateX(updatemask_t m) {
+        virtual void onUpdateX(updatemask_t m) override {
             // Post a Matlab event for SIM_X
             _ml_current_event.type = MLE_X;
             _ml_current_event.arg.mask = m;
@@ -126,7 +126,7 @@ namespace OBNnode {
         }
         
         /** \brief Callback to initialize the node before each simulation. */
-        virtual void onInitialization() {
+        virtual void onInitialization() override {
             // Post a Matlab event for SIM_INIT
             _ml_current_event.type = MLE_INIT;
             _ml_pending_event = true;
@@ -135,7 +135,7 @@ namespace OBNnode {
         
         
         /** \brief Callback before the node's current simulation is terminated. */
-        virtual void onTermination() {
+        virtual void onTermination() override {
             // Post a Matlab event for SIM_TERM
             _ml_current_event.type = MLE_TERM;
             _ml_pending_event = true;
@@ -145,34 +145,38 @@ namespace OBNnode {
         /* =========== Callback Methods for errors ============= */
         
         /** Callback for error when parsing the raw binary data into a structured message (e.g. ProtoBuf or JSON) */
-        virtual void onRawMessageError(YarpPortBase * port) {
-            auto msg = "Error while parsing the raw message for port: " + port->getPortName();
+        virtual void onRawMessageError(const YarpPortBase * port, const std::string& info) override {
+            _node_state = NODE_ERROR;
+            auto msg = "Error while parsing the raw message from port: " + port->fullPortName() + " (" + info + ")";
             reportError("YARPNODE:communication", msg.c_str());
         }
         
         /** Callback for error when reading the values from a structured message (e.g. ProtoBuf or JSON), e.g. if the type or dimension is invalid. */
-        virtual void onReadValueError(YarpPortBase * port) {
-            auto msg = "Error while extracting value from message for port: " + port->getPortName();
+        virtual void onReadValueError(const YarpPortBase * port, const std::string& info) override {
+            _node_state = NODE_ERROR;
+            auto msg = "Error while extracting value from message for port: " + port->fullPortName() + " (" + info + ")";
             reportError("YARPNODE:communication", msg.c_str());
         }
         
         /** Callback for error when sending the values (typically happens when serializing the message to be sent). */
-        virtual void onSendMessageError(YarpOutputPortBase * port) {
-            auto msg = "Error while sending a value from port: " + port->getPortName();
+        virtual void onSendMessageError(const YarpPortBase * port, const std::string& info) override {
+            _node_state = NODE_ERROR;
+            auto msg = "Error while sending a value from port: " + port->fullPortName() + " (" + info + ")";
             reportError("YARPNODE:communication", msg.c_str());
         }
         
         /** Callback for error interacting with the SMN and openBuildNet system.  Used for serious errors.
          \param msg A string containing the error message.
          */
-        virtual void onOBNError(const std::string& msg) {
+        virtual void onOBNError(const std::string& msg) override {
+            _node_state = NODE_ERROR;
             reportError("YARPNODE:openBuildNet", msg.c_str());
         }
         
         /** Callback for warning issues interacting with the SMN and openBuildNet system, e.g. an unrecognized system message from the SMN.  Usually the simulation may continue without any serious consequence.
          \param msg A string containing the warning message.
          */
-        virtual void onOBNWarning(const std::string& msg) {
+        virtual void onOBNWarning(const std::string& msg) override {
             reportWarning("YARPNODE:openBuildNet", msg.c_str());
         }
     };
