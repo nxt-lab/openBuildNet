@@ -155,6 +155,8 @@ namespace OBNsmn {
              \param _port Name of the incoming YARP port.
              */
             YARPPollingThread(GCThread* _gc, std::string _port): done_execution(true), pGC(_gc), portName(_port) {
+                // Set the function to send a message to the system port
+                pGC->setSendMsgToSysPortFunc(std::bind(&YARPPollingThread::sendMessage, this, std::placeholders::_1));
             }
             
             virtual ~YARPPollingThread() {
@@ -171,6 +173,9 @@ namespace OBNsmn {
             
             /** \brief Return the port object. */
             const YARPPort& getPort() const { return port; }
+            
+            /** \brief Send an SMN2N message to the system port. */
+            bool sendMessage(OBNSimMsg::SMN2N &msg);
             
             /** Set the port's name. */
             void setPortName(const std::string &t_port) {

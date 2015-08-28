@@ -119,6 +119,7 @@ set(OBNSMN_CORE_HDRFILES
 	${PROJECT_INCLUDE_DIR}/obnsmn_basic.h
 	${PROJECT_INCLUDE_DIR}/obnsmn_event.h
 	${PROJECT_INCLUDE_DIR}/obnsmn_gc.h
+	${OBNSMN_INCLUDE_DIR}/obnsmn_gc_inline.h
 	${PROJECT_INCLUDE_DIR}/obnsmn_node.h
 	${PROJECT_INCLUDE_DIR}/obnsmn_nodegraph.h
 	${PROJECT_INCLUDE_DIR}/sharedqueue.h

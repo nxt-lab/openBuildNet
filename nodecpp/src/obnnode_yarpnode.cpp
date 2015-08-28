@@ -460,9 +460,15 @@ void YarpNodeBase::stopSimulation() {
  If the node is currently in ERROR state, this method will not clear the error, use the function stopSimulation() instead.
  */
 void YarpNodeBase::requestStopSimulation() {
-    // Currently doing nothing because the request message has not been designed yet.
     if (_node_state == NODE_RUNNING || _node_state == NODE_STARTED) {
-        // Send the request
+        // Send the request to stop
+        YarpNodeBase::SMNMsg& msg = _smn_port.prepare();
+        
+        _n2smn_message.set_msgtype(OBNSimMsg::N2SMN_MSGTYPE_SYS_REQUEST_STOP);
+        _n2smn_message.set_id(_node_id);
+        
+        msg.setMessage(_n2smn_message);
+        _smn_port.writeStrict();
     }
 }
 
@@ -493,6 +499,11 @@ void YarpNodeBase::postEvent(const OBNSimMsg::SMN2N& msg) {
             
         case SMN2N_MSGTYPE_SIM_INIT:
             _event_queue.push(new NodeEvent_INITIALIZE(msg));
+            break;
+            
+        case SMN2N_MSGTYPE_SYS_REQUEST_STOP_ACK:
+            // We catch this but don't do anything about it for now
+            // Later we should have a waitfor condition for this
             break;
             
         default:
