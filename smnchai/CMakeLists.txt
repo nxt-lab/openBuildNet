@@ -128,12 +128,16 @@ set(OBNSMN_CORE_HDRFILES
 set(SMNCHAI_SRCFILES
 	src/smnchai_api.cpp
 	src/smnchai_export.cpp
+	src/csvparser.c
+	src/smnchai_utils.cpp
 	src/main.cpp
 )
 
 
 set(SMNCHAI_HDRFILES
 	include/smnchai_api.h
+	include/csvparser.h
+	include/smnchai_utils.h
 )
 
 

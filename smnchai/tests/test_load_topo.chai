@@ -1,0 +1,8 @@
+// Test ability of SMNChai to load node topology from a CSV file.
+// This file is part of the openBuildNet software.
+// 2015 by Truong X. Nghiem (xuan.nghiem@epfl.ch)
+
+run_simulation(false);  // Do not run simulation, we only want to test
+
+var v = load_csv_into_chai("case47nodetopo.txt", "iiidddd", ",", false);
+print(v);

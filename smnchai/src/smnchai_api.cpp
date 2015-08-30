@@ -22,6 +22,8 @@
 #include <smnchai_api.h>
 #include <chaiscript/dispatchkit/bootstrap.hpp>
 
+#include <smnchai_utils.h>      // Utility API for SMNChai
+
 #include <yarp/os/Run.h>        // YarpRun support
 
 using namespace chaiscript;
@@ -206,6 +208,10 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
      \param fn File name
      */
     chai.add(fun([&ws](const std::string &fn) { ws.export2graphmlfile(fn); }), "export2graphml");
+    
+    
+    // Add utility API
+    chai.add(SMNChai::APIUtils::smnchai_api_utils_io());
 }
 
 
