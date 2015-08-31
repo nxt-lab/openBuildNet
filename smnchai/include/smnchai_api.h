@@ -319,6 +319,11 @@ namespace SMNChai {
             m_name = t_name;
         }
         
+        /** Get the workspace's name. */
+        std::string get_name() const {
+            return m_name;
+        }
+        
         /** \brief Returns the full path to an object.
          \param t_obj1 Name of the first object.
          \param t_obj2 Optional name of the second object.
@@ -396,8 +401,8 @@ namespace SMNChai {
         
         /** Starts a remote node if it's not online.
          This function checks if the given node is online; if it's not, SMNChai::start_remote_node() is called to start the remote node with the given arguments. */
-        template<typename T>
-        void start_remote_node(const T &t_node, const std::string &t_computer, const std::string &t_tag, const std::string &t_prog, const std::string &t_args) const;
+        void start_remote_node(const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag = "") const;
+        void start_remote_node(const Node &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag = "") const;
         
 
         /** Wait until a node is online or a timeout.

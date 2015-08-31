@@ -50,6 +50,8 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     // Methods to manipulate a node object: ports, updates, etc.
     // *********************************************
     
+    chai.add(fun(&Node::get_name), "get_name");
+    
     chai.add(fun(&Node::add_input), "add_input");
     chai.add(fun(&Node::add_output), "add_output");
     chai.add(fun(&Node::add_dataport), "add_dataport");
@@ -103,8 +105,11 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     chai.add(fun([&ws](PortInfo s, PortInfo t) { ws.connect(std::move(s), std::move(t)); }), "connect");
     chai.add(fun<void (WorkSpace::*)(const std::string &, const std::string &, const std::string &, const std::string &)>(&WorkSpace::connect, &ws), "connect");
     
-    // Function to change the name of the workspace
+    // Function to change the name of the workspace: workspace(new_name)
     chai.add(fun(&WorkSpace::set_name, &ws), "workspace");
+    
+    // Function to get the current workspace's name: workspace() without argument
+    chai.add(fun(&WorkSpace::get_name, &ws), "workspace");
     
     // Function to print the workspace to screen, useful for checking it
     chai.add(fun(&WorkSpace::print, &ws), "print_system");
@@ -119,7 +124,13 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
 
     chai.add(fun<void (WorkSpace::*) (const SMNChai::Node &, const std::string &, const std::string &, const std::string &, const std::string &) const>(&WorkSpace::start_remote_node, &ws), "start_remote_node");
     chai.add(fun<void (WorkSpace::*) (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &) const>(&WorkSpace::start_remote_node, &ws), "start_remote_node");
-
+    
+    chai.add(fun([&ws](const SMNChai::Node &n, const std::string &c, const std::string &p, const std::string &a) {
+        ws.start_remote_node(n, c, p, a);
+    }), "start_remote_node");
+    chai.add(fun([&ws](const std::string &n, const std::string &c, const std::string &p, const std::string &a) {
+        ws.start_remote_node(n, c, p, a);
+    }), "start_remote_node");
     
     chai.add(fun(&run_remote_command), "run_remote_command");
     
@@ -239,14 +250,20 @@ void SMNChai::run_remote_command(const std::string &t_node, const std::string &t
 }
 
 
-template<typename T>
-void SMNChai::WorkSpace::start_remote_node(const T &t_node, const std::string &t_computer, const std::string &t_tag, const std::string &t_prog, const std::string &t_args) const {
+void SMNChai::WorkSpace::start_remote_node(const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag) const {
     // Only start if node is not online
     if (settings.run_simulation && !is_node_online(t_node)) {
-        SMNChai::run_remote_command(t_computer, t_tag, t_prog, t_args);
+        if (t_tag.empty()) {
+            SMNChai::run_remote_command(t_computer, t_node, t_prog, t_args);
+        } else {
+            SMNChai::run_remote_command(t_computer, t_tag, t_prog, t_args);
+        }
     }
 }
 
+void SMNChai::WorkSpace::start_remote_node(const SMNChai::Node &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag) const {
+    start_remote_node(t_node.get_name(), t_computer, t_prog, t_args, t_tag);
+}
 
 bool SMNChai::WorkSpace::is_node_online(const SMNChai::Node &t_node) const {
     return yarp::os::Network::exists(get_full_path(t_node.get_name(), NODE_GC_PORT_NAME));

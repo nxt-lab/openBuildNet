@@ -122,6 +122,7 @@ class POWERNET_BusNode {
   attr m_values;  // const values in case of a const bus
   attr m_added;   // if the bus node has already been added (hence can't be changed anymore)
   attr m_vnode;   // the virtual node which this bus node will implement
+  attr m_node;    // the actual node's full name, after this bus node has been added
   
   def POWERNET_BusNode(string name, double period, int nUsers, Vector values, VNode vnode): nUsers >= 0 && period > 0.0 {
     this.m_name = name;
@@ -130,6 +131,7 @@ class POWERNET_BusNode {
     this.m_values = values;
     this.m_added = false;
     this.m_vnode = vnode;
+    this.m_node = "";
   }
 
   // Return the name of the bus node
@@ -177,6 +179,7 @@ class POWERNET_BusNode {
     mybus.implement(this.m_vnode);
     add_node(mybus);
     this.m_added = true;
+    this.m_node = mybus.get_name();
     return mybus;
   }
 
@@ -189,6 +192,23 @@ class POWERNET_BusNode {
     }
   }
 
+  // Start the bus node on a remote computer
+  // This assumes that the OBN's generic bus program "obn_powernet_bus" is available on the remote system.
+  def start_remote_node(string t_computer, string t_prog, string t_tag) {
+    if (!this.m_added) {
+      throw("A bus node must be added to the workspace before it can be started remotely.");
+    }
+    var args = "${this.m_node} --workspace ${workspace()} ${this.m_nUsers}";
+    if (this.m_nUsers == 0) {
+      // If const bus, construct the values and append to args
+      args = args + foldl(this.m_values, fun(x,s) {"${s} ${x}"}, "");
+    }
+    start_remote_node(this.m_node, t_computer, t_prog, args, t_tag);
+  }
+  def start_remote_node(string t_computer, string t_prog) {
+    this.start_remote_node(t_computer, t_prog, "");
+  }
+  
 }
 
 
