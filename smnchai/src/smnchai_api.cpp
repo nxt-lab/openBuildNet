@@ -87,6 +87,8 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     
     //chai.add(fun<void ()>([](){ Node::m_global_prefix.clear(); }), "clear_current_subsystem");
     chai.add(fun([](){ Node::m_global_prefix.clear(); }), "clear_current_subsystem");
+    
+    chai.add(fun(&SubSystem::current_subsystem), "get_current_subsystem");
              
     // *********************************************
     // Methods to work with the WorkSpace object: add nodes, connect ports...

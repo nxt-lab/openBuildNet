@@ -1,0 +1,19 @@
+// Test ability of SMNChai/PowerNet library to load bus topology from a CSV file.
+// This file is part of the openBuildNet software.
+// 2015 by Truong X. Nghiem (xuan.nghiem@epfl.ch)
+
+run_simulation(false);  // Do not run simulation, we only want to test
+
+use("powernet.chai");  // Load the SMNChai library for Power Networks
+
+workspace("powernet");
+var Tgrid = 15*minute;
+
+// if the last argument is true, power_sys will be a Map object instead.
+var power_sys = POWERNET_network_from_csv("powernet_load_topo.txt", Tgrid, "grid", false);
+
+add_nodes_from_collection(power_sys, true);
+
+print_system();
+
+//export2graphml("system.graphml");

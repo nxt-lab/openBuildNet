@@ -140,7 +140,7 @@ def node(Map nodedef) {
 def add_nodes_from_collection(coll, bool t_recursive) {
   if (coll.is_type("Vector")) {
     for (auto i = 0; i < coll.size(); ++i) {
-      if (coll[i].is_type("Node")) {
+      if (call_exists(add_node, coll[i])) {
 	add_node(coll[i]);
       } else if (t_recursive && (coll[i].is_type("Vector") || coll[i].is_type("Map"))) {
 	add_nodes_from_collection(coll[i], true);
@@ -150,7 +150,7 @@ def add_nodes_from_collection(coll, bool t_recursive) {
     var rng = coll.range();
     while (!rng.empty()) {
       var theElem := rng.front().second();
-      if (theElem.is_type("Node")) {
+      if (call_exists(add_node, theElem)) {
 	add_node(theElem);
       } else if (t_recursive && (theElem.is_type("Vector") || theElem.is_type("Map"))) {
 	add_nodes_from_collection(theElem, true);

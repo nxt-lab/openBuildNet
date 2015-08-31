@@ -229,6 +229,11 @@ namespace SMNChai {
      */
     class SubSystem {
         std::string m_name; ///< Name of the subsystem, a valid identifier
+        friend class Node;
+        
+        // Private constructor with empty name.
+        SubSystem(): m_name() { }
+        
     public:
         std::string get_name() const {
             return m_name;
@@ -253,7 +258,19 @@ namespace SMNChai {
             if (!OBNsim::Utils::isValidIdentifier(t_name)) {
                 throw smnchai_exception("Subsystem name '" + t_name + "' is invalid.");
             }
-            m_name = t_parent.get_name() + '/' + t_name;
+            auto parent_name = t_parent.get_name();
+            if (parent_name.empty()) {
+                m_name = t_name;
+            } else {
+                m_name = parent_name + '/' + t_name;
+            }
+        }
+        
+        /** Returns a SubSystem object of the current active/global subsystem. */
+        static SubSystem current_subsystem() {
+            SubSystem s;
+            s.m_name = Node::m_global_prefix;
+            return s;
         }
         
         /** Create a new node in this subsystem; the node's name is prefixed with the subsystem's name. */
