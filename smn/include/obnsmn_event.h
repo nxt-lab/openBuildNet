@@ -58,26 +58,27 @@ namespace OBNsmn {
         /** Category of a node (event/message), to speed up the event processing in the GC. */
         enum EventCategory {
             EVT_ACK,  ///< Simple acknowledgement message from a node, with no data
-            EVT_SIM   ///< Other co-simulation related message, usually contain extra data
+            EVT_SIM,  ///< Other co-simulation related message, usually contain extra data
+            EVT_SYS   ///< System management message
         };
         EventCategory category;
         
         ///@{
         /** These bits indicate if the event / message has certain optional data (in the data field). They are initialized to 0.
          */
-        unsigned char has_t : 1;
-        unsigned char has_i : 1;
-        unsigned char has_ix: 1;
-        unsigned char has_b : 1;
+        unsigned char has_id: 1;    // The node ID
+        unsigned char has_t : 1;    // Data.T
+        unsigned char has_i : 1;    // Data.I
+        unsigned char has_b : 1;    // Data.B
         ///@}
         
         // Currently we store the fields in this object, but later on, we may optimize for space by providing subclasses which have only t, only i, only b, t & i, t & b, etc.
         simtime_t t;
-        int64_t i, ix;
+        int64_t i;
         std::string b;
         
-        SMNNodeEvent(int _id, OBNSimMsg::N2SMN_MSGTYPE _type, EventCategory _cat):
-        nodeID(_id), type(_type), category(_cat), has_t(0), has_i(0), has_ix(0), has_b(0)
+        SMNNodeEvent(OBNSimMsg::N2SMN_MSGTYPE _type, EventCategory _cat, int _id, bool _hasID = true):
+        nodeID(_id), type(_type), category(_cat), has_id(_hasID), has_t(0), has_i(0), has_b(0)
         { }
     };
 }

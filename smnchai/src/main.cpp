@@ -89,7 +89,7 @@ int main(int argc, const char* argv[]) {
     OBNsmn::YARP::YARPPollingThread yarpThread(&gc, "");
 
     // *************
-    // Running Chaiscript to load the network results in large objects, so we use block code to free them after we've done with them
+    // Running Chaiscript to load the network results in large objects, so we use code block to free them after we've done with them
     {
         // Get the main directory of SMNChai
         boost::filesystem::path smnchai_main_dir;

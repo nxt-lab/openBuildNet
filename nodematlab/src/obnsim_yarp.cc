@@ -257,7 +257,13 @@ int YarpNodeMatlab::runStep(double timeout) {
                 
                 break;
                 
-            case NODE_STOPPED:  // Start the simulation from beginning
+            case NODE_STOPPED:
+                // if _node_is_stopping = true then the node is stopping (we've just pushed the TERM event to Matlab, now we need to actually stop it)
+                if (_node_is_stopping) {
+                    _node_is_stopping = false;
+                    return 2;
+                }
+                // Otherwise, start the simulation from beginning
                 // Make sure that the SMN port is opened (but won't connect it)
                 if (!openSMNPort()) {
                     // Error
@@ -285,8 +291,8 @@ int YarpNodeMatlab::runStep(double timeout) {
     }
     
     // Return appropriate value depending on the current state
-    if (_node_state == NODE_STOPPED) {
-        // Stopped (properly)
+    if (_node_state == NODE_STOPPED && !_node_is_stopping) {
+        // Stopped (properly) but not when the node is stopping (we still need to push a TERM event to Matlab)
         return 2;
     } else if (_node_state == NODE_ERROR) {
         // error
@@ -907,6 +913,17 @@ namespace {
         
         YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
         output.set(0, ynode->currentSimulationTime());
+    }
+    
+    // Returns the current wallclock time of the node.
+    // Args: node object pointer
+    // Returns: current wallclock time as a POSIX time value.
+    MEX_DEFINE(wallclock) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 1);
+        OutputArguments output(nlhs, plhs, 1);
+        
+        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        output.set(0, ynode->currentWallClockTime());
     }
     
     

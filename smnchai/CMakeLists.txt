@@ -114,6 +114,7 @@ set(OBNSMN_CORE_HDRFILES
 	${OBNSMN_INCLUDE_DIR}/obnsmn_basic.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_event.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_gc.h
+	${OBNSMN_INCLUDE_DIR}/obnsmn_gc_inline.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_node.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_nodegraph.h
 	${OBNSMN_INCLUDE_DIR}/sharedqueue.h
@@ -127,12 +128,16 @@ set(OBNSMN_CORE_HDRFILES
 set(SMNCHAI_SRCFILES
 	src/smnchai_api.cpp
 	src/smnchai_export.cpp
+	src/csvparser.c
+	src/smnchai_utils.cpp
 	src/main.cpp
 )
 
 
 set(SMNCHAI_HDRFILES
 	include/smnchai_api.h
+	include/csvparser.h
+	include/smnchai_utils.h
 )
 
 

@@ -13,16 +13,18 @@ package OBNSimMsg;  // package or namespace
 message MSGDATA {
   optional int64 T = 1;  // time stamp
   optional int64 I = 2;  // an integer value
-  optional int64 IX = 3; // another integers
-  optional bytes B = 4;  // a string of bytes, for binary data
+  optional bytes B = 3;  // a string of bytes, for binary data
 }
 
 // Message from the SMN to a node
 message SMN2N {
   enum MSGTYPE {
-    SYS_OUTPUT_NBR = 0x00A0;	// set ACK number of an output
-    SYS_OUTPUT_NBR_DEC = 0x00A1;   // decrease the ACK number of an output
-    SYS_OUTPUT_NBR_INC = 0x00A2;   // increase the ACK number of an output
+    // System control
+    SYS_REQUEST_STOP_ACK = 0x0001;
+    //SYS_OUTPUT_NBR = 0x00A0;	// set ACK number of an output
+    //SYS_OUTPUT_NBR_DEC = 0x00A1;   // decrease the ACK number of an output
+    //SYS_OUTPUT_NBR_INC = 0x00A2;   // increase the ACK number of an output
+    // Co-simulation control
     SIM_INIT = 0x0100;  // initialization before simulation
     SIM_Y = 0x0101;	// regular update-y
     SIM_X = 0x0102;	// update-x (for both regular and irregular update iterations)
@@ -33,13 +35,17 @@ message SMN2N {
   required MSGTYPE MsgType = 1;  // type of message
   required int64 Time = 2;     // simulation time stamp
   optional int32 ID = 3;       // ID of the receiving node
-  optional MSGDATA Data = 4;   // data attached to the message
+  optional int64 I = 4;	       // Optional integer field, used frequently in simulation-control messages
+  optional MSGDATA Data = 5;   // data attached to the message
 }
 
 // Message from a node to the SMN
 message N2SMN {
   enum MSGTYPE {
-    SYS_OUTPUT_NBR_ACK = 0x00A0;
+    // System control
+    SYS_REQUEST_STOP = 0x0001;
+    //SYS_OUTPUT_NBR_ACK = 0x00A0;
+    // Co-simulation control
     SIM_INIT_ACK = 0x0100;
     SIM_Y_ACK = 0x0101;
     SIM_X_ACK = 0x0102;

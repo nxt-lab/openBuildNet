@@ -22,34 +22,39 @@
  */
 bool OBNsmn::GCThread::pushNodeEvent(const OBNSimMsg::N2SMN& msg, int defaultID, bool overrideID) {
     int ID = overrideID?defaultID:(msg.has_id()?msg.id():defaultID);
+    bool hasID = msg.has_id() || overrideID;
     OBNSimMsg::N2SMN::MSGTYPE type = msg.msgtype();
     
-    // Check that the ID is valid, otherwise it may cause security problem
-    if (ID > maxID || ID < 0) {
+    bool isNotSysMsg = static_cast<uint16_t>(type) >= 0x0100;   // Not a system management message
+    
+    // If this is not a system management message (i.e. if type >= 0x0100),
+    // check that the ID is valid, otherwise it may cause security problem
+    if (isNotSysMsg && (!hasID || ID > maxID || ID < 0)) {
         report_warning(0, "Received message (type: " + std::to_string(type) + ") with an invalid ID (" + std::to_string(ID) + ").");
         return false;
     }
     
-    OBNsmn::SMNNodeEvent::EventCategory cat;
+    OBNsmn::SMNNodeEvent::EventCategory cat = OBNsmn::SMNNodeEvent::EVT_SYS;
 
-    // In the switch-case, put the more frequent/typical cases first, to improve performance
-    switch (type) {
-        case OBNSimMsg::N2SMN::SIM_Y_ACK:
-        case OBNSimMsg::N2SMN::SIM_X_ACK:
-            pushEvent(new SMNNodeEvent(ID, type, OBNsmn::SMNNodeEvent::EVT_ACK));
-            return true;
-            
-        case OBNSimMsg::N2SMN::SIM_INIT_ACK:
-        case OBNSimMsg::N2SMN::SYS_OUTPUT_NBR_ACK:
-            cat = OBNsmn::SMNNodeEvent::EVT_ACK;
-            break;
-            
-        default:
-            cat = OBNsmn::SMNNodeEvent::EVT_SIM;
+    if (isNotSysMsg) {
+        // In the switch-case, put the more frequent/typical cases first, to improve performance
+        switch (type) {
+            case OBNSimMsg::N2SMN::SIM_Y_ACK:
+            case OBNSimMsg::N2SMN::SIM_X_ACK:
+                pushEvent(new SMNNodeEvent(type, OBNsmn::SMNNodeEvent::EVT_ACK, ID));
+                return true;
+                
+            case OBNSimMsg::N2SMN::SIM_INIT_ACK:
+                cat = OBNsmn::SMNNodeEvent::EVT_ACK;
+                break;
+                
+            default:
+                cat = OBNsmn::SMNNodeEvent::EVT_SIM;
+        }
     }
     
     // For complex events with attached data
-    OBNsmn::SMNNodeEvent* pe = new OBNsmn::SMNNodeEvent(ID, type, cat);
+    OBNsmn::SMNNodeEvent* pe = new OBNsmn::SMNNodeEvent(type, cat, ID, hasID);
     if (msg.has_data()) {
         OBNSimMsg::MSGDATA data = msg.data();
         if (data.has_b()) {
@@ -63,10 +68,6 @@ bool OBNsmn::GCThread::pushNodeEvent(const OBNSimMsg::N2SMN& msg, int defaultID,
         if (data.has_i()) {
             pe->has_i = 1;
             pe->i = data.i();
-        }
-        if (data.has_ix()) {
-            pe->has_ix = 1;
-            pe->ix = data.ix();
         }
     }
     

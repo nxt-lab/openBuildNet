@@ -57,9 +57,9 @@ def POWERNET_subnetwork(Vector busdef, double timeStep, bool addNow, string dist
     if (!busdef[busIdx].is_type("string")) { throw("A bus name must be a string."); }
     
     thisBusName = busdef[busIdx].trim();
-    if (thisBusName.empty()) { throw("Bus name #" + to_string(busIdx) + " is empty."); }
+    if (thisBusName.empty()) { throw("Bus name #${busIdx} is empty."); }
 
-    if (mBuses.count(thisBusName) > 0) { throw("Bus name " + thisBusName + " has already existed. Bus names must be unique."); }
+    if (mBuses.count(thisBusName) > 0) { throw("Bus name ${thisBusName} has already existed. Bus names must be unique."); }
 
     // Create the virtual bus node
     var thisBusNode = VNode();
@@ -101,4 +101,221 @@ def POWERNET_subnetwork(Vector busdef, double timeStep, bool addNow) {
 
 def POWERNET_subnetwork(Vector busdef, double timeStep) {
   return POWERNET_subnetwork(busdef, timeStep, true, "distribution");
+}
+
+
+
+// POWERNET_BusNode
+// ===================
+// A class that represents a (real) bus node.
+//
+// There are two types of bus nodes: a constant bus node (with 0 user) which always sends a constant vector
+// to the grid node; and a generic bus node (with >0 users) which aggregates the requests of the users
+// and sends the aggregated request to the grid, then fetches the result and disaggregate it to the users.
+//
+// An object of this class has similar behavior as a Node object, and can be used in most functions
+// that use a Node object.
+class POWERNET_BusNode {
+  attr m_name;    // name of the node
+  attr m_period;  // the time period of this node
+  attr m_nUsers;  // number of users (0: const bus)
+  attr m_values;  // const values in case of a const bus
+  attr m_added;   // if the bus node has already been added (hence can't be changed anymore)
+  attr m_vnode;   // the virtual node which this bus node will implement
+  attr m_node;    // the actual node's full name, after this bus node has been added
+  
+  def POWERNET_BusNode(string name, double period, int nUsers, Vector values, VNode vnode): nUsers >= 0 && period > 0.0 {
+    this.m_name = name;
+    this.m_period = period;
+    this.m_nUsers = nUsers;
+    this.m_values = values;
+    this.m_added = false;
+    this.m_vnode = vnode;
+    this.m_node = "";
+  }
+
+  // Return the name of the bus node
+  def get_name() {
+    return this.m_name;
+  }
+
+  // Add this bus node to the system, after this it can't be changed.
+  // Returns the actual Node object.
+  // NOTE: a Node object will be created, therefore if there is an active SubSystem, the node will be created inside that subsystem.
+  def add_node() {
+    if (this.m_added) {
+      throw("This bus node has already been added; hence can't be added again.");
+    }
+
+    var mybus = new_node(this.m_name);
+    if (this.m_nUsers > 0) {
+      // Generic bus with users
+      mybus.add_update(0, this.m_period);  // from users to grid
+      mybus.add_update(1, this.m_period);  // from grid to users
+      
+      mybus.add_input("VfromGrid");
+      mybus.add_output("VtoGrid");
+      mybus.output_from_update(0, "VtoGrid");
+      mybus.input_to_update(1, "VfromGrid", true);
+
+      for (var i = 1; i <= this.m_nUsers; ++i) {
+	var sin = "Vfrom${i}";
+	var sout = "Vto${i}";
+	mybus.add_input(sin);
+	mybus.add_output(sout);
+	mybus.input_to_update(0, sin, true);
+	mybus.output_from_update(1, sout);
+      }
+    } else if (this.m_nUsers == 0) {
+      // Const bus
+      mybus.add_input("VfromGrid");
+      mybus.add_output("VtoGrid");
+      mybus.add_update(0, this.m_period);
+      mybus.output_from_update(0, "VtoGrid");
+    } else {
+      throw("Internal error in POWERNET_BusNode: m_nUsers is invalid.");
+    }
+    mybus.need_updateX(false);
+    mybus.implement(this.m_vnode);
+    add_node(mybus);
+    this.m_added = true;
+    this.m_node = mybus.get_name();
+    return mybus;
+  }
+
+  // Set the name of this bus node
+  def set_name(string newName): newName.empty() == false {
+    if (this.m_added) {
+      throw("This bus node has already been added; hence can't be changed.");
+    } else {
+      m_name = newName;
+    }
+  }
+
+  // Start the bus node on a remote computer
+  // This assumes that the OBN's generic bus program "obn_powernet_bus" is available on the remote system.
+  def start_remote_node(string t_computer, string t_prog, string t_tag) {
+    if (!this.m_added) {
+      throw("A bus node must be added to the workspace before it can be started remotely.");
+    }
+    var args = "${this.m_node} --workspace ${workspace()} ${this.m_nUsers}";
+    if (this.m_nUsers == 0) {
+      // If const bus, construct the values and append to args
+      args = args + foldl(this.m_values, fun(x,s) {"${s} ${x}"}, "");
+    }
+    start_remote_node(this.m_node, t_computer, t_prog, args, t_tag);
+  }
+  def start_remote_node(string t_computer, string t_prog) {
+    this.start_remote_node(t_computer, t_prog, "");
+  }
+  
+}
+
+
+// POWERNET_network_from_csv
+// =========================
+// This function creates a power network (a grid node and a number of bus nodes connected to it)
+// by loading the bus descriptions from a CSV file.
+// The CSV file has one row for each bus. Each row consists of the following fields:
+//   bus-name, nUsers, P, Q, E, theta
+// where
+//   bus-name is the bus' name (string), typically the bus number, e.g. 2
+//   nUsers is an integer which is the number of users attached to this bus, must be >= 0
+//   P,Q,E,theta: if nUsers = 0, this is a constant bus, which always outputs these values at every time step
+// If nUsers > 0, the values P, Q, E, theta are not used, so they can be any values.
+//
+// Inputs:
+//   filename is the name of the CSV file.
+//   timeStep is the sampling time of all the nodes
+//   distName is the name of the grid/distribution node
+//   return_map: see below
+//
+// Returns:
+// - If return_map = false (default): a vector of node objects, the first one (index = 0) is the grid node, the rest (index from 1 to the number of rows in the CSV file) are the bus nodes (of type POWERNET_BusNode above).
+// - If return_map = true: a Map object with two fields: "dist" is the grid/distribution node, "buses" is a Map object of the bus nodes whose keys are the bus names.
+def POWERNET_network_from_csv(string filename, double timeStep, string distName, bool return_map): !filename.empty() && timeStep > 0.0 && !distName.empty() {
+  // Load the CSV file
+  var busdefs = load_csv_into_chai(filename, "sidddd", ",", false);
+  if (!busdefs.is_type("Vector")) {
+    throw("Error: the data read from the CSV file is invalid.");
+  }
+
+  var nBuses = busdefs.size();
+  if (nBuses < 1) {
+    throw("Error: there are no bus definitions in the CSV file.");
+  }
+
+  // Create distribution node
+  var distNode = new_node(distName);
+  distNode.add_update(0, timeStep);
+
+  var mBuses;
+  if (return_map) {
+    mBuses = Map();
+  } else {
+    mBuses = Vector();
+  }
+
+  // Loop through the bus definitions and create the bus nodes
+  var thisBusName = "";  // Name of the current bus
+  
+  // Loop through busdef and create bus nodes
+  for (auto busIdx = 1; busIdx <= nBuses; ++busIdx) {
+    var curRow := busdefs[busIdx-1];
+    if (curRow.size() < 6) {
+      throw("Not enough fields in row ${busIdx} of the CSV file.");
+    }
+
+    thisBusName = curRow[0].trim();
+    if (thisBusName.empty()) { throw("Bus name ${busIdx} is empty."); }
+
+    // Create the virtual bus node and connect it
+    var thisBusNode = VNode();
+
+    // Create the ports between the bus node and the distribution node and connect them
+    var busInName = "VfromGrid";
+    var busOutName = "VtoGrid";
+    thisBusNode.add_input(busInName);
+    thisBusNode.add_output(busOutName);
+
+    var distInName = "Vfrom" + thisBusName;
+    var distOutName = "Vto" + thisBusName;
+    distNode.add_input(distInName);
+    distNode.add_output(distOutName);
+
+    // The inputs from bus are fed directly to the distribution node's computation, which calculates the outputs to the bus
+    distNode.input_to_update(0, distInName, true);
+    distNode.output_from_update(0, distOutName);
+
+    connect(thisBusNode.port(busOutName), distNode.port(distInName));
+    connect(distNode.port(distOutName), thisBusNode.port(busInName));
+
+    // Create the BusNode object
+    var values = Vector();
+    if (curRow[1] == 0) {
+      // const bus: Copy the values to this vector
+      for (var i = 2; i < curRow.size(); ++i) {
+	values.push_back(curRow[i]);
+      }
+    }
+    
+    var obj = POWERNET_BusNode("bus${thisBusName}", timeStep, curRow[1], values, thisBusNode);
+    if (return_map) {
+      mBuses[thisBusName] := obj;
+    } else {
+      mBuses.push_back_ref(obj);
+    }
+  }
+  
+  // Return the nodes
+  if (return_map) {
+    return ["dist" : distNode, "buses" : mBuses];
+  } else {
+    return concat([distNode], mBuses);
+  }
+}
+
+// Version with default value of return_map = false
+def POWERNET_network_from_csv(string filename, double timeStep, string distName) {
+  return POWERNET_network_from_csv(filename, timeStep, distName, false);
 }

@@ -206,6 +206,13 @@ namespace OBNsmn {
         /** Return number of nodes in the node list. */
         int numberOfNodes() const { return _nodes.size(); }
         
+        typedef std::function<bool(OBNSimMsg::SMN2N&)> TSendMsgToSysPortFunc;   ///< A function type to send a SMN2N message to the system port (instead of a node's port)
+        
+        /** Set the function to send an SMN2N message to the system port (_gc_) */
+        void setSendMsgToSysPortFunc(TSendMsgToSysPortFunc f) {
+            m_send_msg_to_sys_port = f;
+        }
+        
         
         // ========== Control the thread =============
         
@@ -286,6 +293,9 @@ namespace OBNsmn {
         
         void GCThreadMain();    ///< This function is the entry point for the GC thread. Do not call it directly.
         
+        TSendMsgToSysPortFunc m_send_msg_to_sys_port;   ///< The function to send a SMN2N message to the system port (instead of a node's port)
+        
+        
         // ============ Node management ==============
         
         /** \brief List of nodes in the network, their indices will be their IDs. */
@@ -348,6 +358,12 @@ namespace OBNsmn {
         /** \brief Process system request, mostly to switch between modes. */
         void gc_process_sysreq(OBNSysRequestType req);
         
+        /** \brief Method to process SIM_EVENT request. */
+        inline void gc_process_msg_sim_event(OBNsmn::SMNNodeEvent* pEv);
+        
+        /** \brief Method to process SYS_REQUEST_STOP request. */
+        inline bool gc_process_msg_sys_request_stop(OBNsmn::SMNNodeEvent* pEv);
+        
         
         // ============ Data and methods related to one simulation iteration ===========
         
@@ -388,10 +404,10 @@ namespace OBNsmn {
         bool gc_send_update_x();
         
         /** \brief Send a given simple message to all nodes without waiting for ACKs. */
-        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::MSGDATA *pData = NULL);
+        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, int64_t *pI = nullptr, OBNSimMsg::MSGDATA *pData = nullptr);
         
         /** \brief Send a given simple message to all nodes and start wait-for event. */
-        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype,  OBNSimMsg::MSGDATA *pData = NULL);
+        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype, int64_t *pI = nullptr, OBNSimMsg::MSGDATA *pData = nullptr);
         
         
         // ============ Wait-for event for the GC algorithm =============

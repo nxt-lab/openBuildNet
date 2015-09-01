@@ -42,7 +42,7 @@ bool YARPMsg::read(yarp::os::ConnectionReader& connection) {
     int newsize = connection.expectInt();
     if (newsize <= 0) {
         _size = 0;
-        return false;
+        return newsize<0?false:true;
     }
     
     allocateData(newsize);
@@ -113,3 +113,21 @@ The ID field (which indicates the ID of the node) is not set by the caller (GC),
 //
 //    return true;
 //}
+
+
+bool YARPPollingThread::sendMessage(OBNSimMsg::SMN2N &msg) {
+    if (port.isClosed()) {
+        return false;
+    }
+    
+    // Prepare the data to send
+    YARPMsg &m = port.prepare();
+    if (!m.setMessage(msg)) {
+        return false;
+    }
+    
+    // Send and strictly make sure that the message will not be dropped
+    port.writeStrict();
+    
+    return true;
+}

@@ -12,6 +12,7 @@
 
 
 #include <obnnode_yarpnode.h>
+#include <obnnode_exceptions.h>
 
 using namespace std;
 using namespace OBNnode;
@@ -340,7 +341,6 @@ bool YarpNodeBase::connectWithSMN(const char *carrier) {
 /** This method initializes the node before a simulation starts. This is different from the callback for the INIT message. This method is called before the node even starts waiting for the INIT message. */
 void YarpNodeBase::initializeForSimulation() {
     _current_sim_time = 0;
-    _current_updates = 0;
 }
 
 
@@ -376,25 +376,6 @@ void YarpNodeBase::sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I) {
 }
 
 
-/** This method sends a simple ACK message to the SMN.
- \param type The type of the ACK message.
- \param I Integer value for MSGDATA.I
- \param IX Integer value for MSGDATA.IX
- */
-void YarpNodeBase::sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I, int64_t IX) {
-    YarpNodeBase::SMNMsg& msg = _smn_port.prepare();
-    
-    _n2smn_message.set_msgtype(type);
-    _n2smn_message.set_id(_node_id);
-    
-    auto *data = new OBNSimMsg::MSGDATA;
-    data->set_i(I);
-    data->set_ix(IX);
-    _n2smn_message.set_allocated_data(data);
-    
-    msg.setMessage(_n2smn_message);
-    _smn_port.writeStrict();
-}
 
 /** This method runs the node in the openBuildNet simulation network.
  The node must start from state NODE_STOPPED, otherwise it will return immediately.
@@ -440,8 +421,8 @@ void YarpNodeBase::run(double timeout) {
                 pEvent->executePost(this);
             } else {
                 // If timeout then we stop
-                onRunTimeout();
                 onReportInfo("[NODE] Node's execution has a timeout.");
+                onRunTimeout();
                 return;
             }
         }
@@ -479,9 +460,15 @@ void YarpNodeBase::stopSimulation() {
  If the node is currently in ERROR state, this method will not clear the error, use the function stopSimulation() instead.
  */
 void YarpNodeBase::requestStopSimulation() {
-    // Currently doing nothing because the request message has not been designed yet.
     if (_node_state == NODE_RUNNING || _node_state == NODE_STARTED) {
-        // Send the request
+        // Send the request to stop
+        YarpNodeBase::SMNMsg& msg = _smn_port.prepare();
+        
+        _n2smn_message.set_msgtype(OBNSimMsg::N2SMN_MSGTYPE_SYS_REQUEST_STOP);
+        _n2smn_message.set_id(_node_id);
+        
+        msg.setMessage(_n2smn_message);
+        _smn_port.writeStrict();
     }
 }
 
@@ -514,6 +501,11 @@ void YarpNodeBase::postEvent(const OBNSimMsg::SMN2N& msg) {
             _event_queue.push(new NodeEvent_INITIALIZE(msg));
             break;
             
+        case SMN2N_MSGTYPE_SYS_REQUEST_STOP_ACK:
+            // We catch this but don't do anything about it for now
+            // Later we should have a waitfor condition for this
+            break;
+            
         default:
             onOBNWarning("Unrecognized system message from SMN with type " + std::to_string(msg.msgtype()));
             break;
@@ -531,7 +523,7 @@ void YarpNodeBase::NodeEvent_UPDATEX::executeMain(YarpNodeBase* pnode) {
     basic_processing(pnode);
 
     // Call the callback to perform UPDATE_X
-    pnode->onUpdateX();
+    pnode->onUpdateX(_updates);
 }
 
 
@@ -551,7 +543,7 @@ void YarpNodeBase::NodeEvent_UPDATEY::executeMain(YarpNodeBase* pnode) {
     basic_processing(pnode);
     
     // Save the current update type mask, just in case UPDATE_X needs it
-    pnode->_current_updates = _updates;
+    // pnode->_current_updates = _updates;
     
     // Call the callback to perform UPDATE_Y
     pnode->onUpdateY(_updates);
@@ -598,12 +590,14 @@ void YarpNodeBase::NodeEvent_INITIALIZE::executeMain(YarpNodeBase* pnode) {
 
 /** Handle Initialization before simulation: Post. */
 void YarpNodeBase::NodeEvent_INITIALIZE::executePost(YarpNodeBase* pnode) {
-    // Send out values from output ports, whether updated or not
+    // Send out values from output ports if they have been set / updated
     for (auto port: pnode->_output_ports) {
         //TODO: Should change this to asynchronous send.
-        port->sendSync();
-        if (pnode->hasError()) {
-            break;
+        if (port->isChanged()) {
+            port->sendSync();
+            if (pnode->hasError()) {
+                break;
+            }
         }
     }
     
@@ -644,6 +638,39 @@ void YarpNodeBase::NodeEvent_TERMINATE::executeMain(YarpNodeBase* pnode) {
 void YarpNodeBase::NodeEvent_TERMINATE::executePost(YarpNodeBase* pnode) {
     // No ACK is needed
 }
+
+/** Handle port error */
+void YarpNodeBase::NodeEventException::executeMain(YarpNodeBase* pnode) {
+    // rethrow the exception and catch it to call the appropriate error callback function
+    try {
+        std::rethrow_exception(m_exception);
+    } catch (OBNnode::inputport_error& e) {
+        switch (e.m_errortype) {
+            case OBNnode::inputport_error::ERR_RAWMSG:
+                pnode->onRawMessageError(e.m_port, e.what());
+                break;
+                
+            case OBNnode::inputport_error::ERR_READVALUE:
+                pnode->onReadValueError(e.m_port, e.what());
+                break;
+                
+            default:
+                break;
+        }
+    } catch (OBNnode::outputport_error& e) {
+        switch (e.m_errortype) {
+            case OBNnode::outputport_error::ERR_SENDMSG:
+                pnode->onSendMessageError(e.m_port, e.what());
+                break;
+                
+            default:
+                break;
+        }
+    }
+    
+    // Any unhandled exception will go through and trigger the default handler
+}
+
 
 /**
  \param t_idx The desired index of the new update.
@@ -795,8 +822,7 @@ void YarpNode::onUpdateY(updatemask_t m) {
 }
 
 /** Callback for UPDATE_X: call the appropriate callbacks in the registered updates. */
-void YarpNode::onUpdateX() {
-    auto m = _current_updates;
+void YarpNode::onUpdateX(updatemask_t m) {
     int idx = 0;
     int n_updates = m_updates.size();
     while (m && idx < n_updates) {

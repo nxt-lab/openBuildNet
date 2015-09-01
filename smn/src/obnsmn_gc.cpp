@@ -13,6 +13,7 @@
 #include <iostream>
 #include <algorithm>
 #include <obnsmn_gc.h>
+#include <obnsmn_gc_inline.h>
 #include <obnsmn_report.h>
 
 
@@ -87,12 +88,15 @@ void GCThread::GCThreadMain() {
     bool noCriticalError;
     
     // Send the SIM_INIT message to all nodes to start the simulation
-    OBNSimMsg::MSGDATA *pMsgData = new OBNSimMsg::MSGDATA();
-    pMsgData->set_t(initial_wallclock); // initial wallclock time
-    pMsgData->set_i(sim_time_unit);     // simulation time unit, in microseconds
+    {
+        OBNSimMsg::MSGDATA *pMsgData = new OBNSimMsg::MSGDATA();
+        pMsgData->set_t(initial_wallclock); // initial wallclock time
+        
+        int64_t time_unit = sim_time_unit;  // simulation time unit, in microseconds
+        
+        noCriticalError = gc_send_to_all(0, OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT, OBNSimMsg::N2SMN_MSGTYPE_SIM_INIT_ACK, &time_unit, pMsgData);
+    }
     
-    noCriticalError = gc_send_to_all(0, OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT, OBNSimMsg::N2SMN_MSGTYPE_SIM_INIT_ACK, pMsgData);
-
     // Wait for ACKs from all nodes, checking for initialization errors
     noCriticalError = noCriticalError && gc_wait_for_ack([this](const SMNNodeEvent* ev) {
         if (ev->has_i && (ev->i != 0)) {
@@ -108,7 +112,6 @@ void GCThread::GCThreadMain() {
             // Error, can't continue simulation
             break;
         }
-        
         
         // Update-Y
         if (gc_update_size > 0) {
@@ -140,7 +143,7 @@ void GCThread::GCThreadMain() {
             break;
         }
         
-        // Wait for ACKs while processing all events: returns true if there is an error (e.g. timeout)
+        // Wait for ACKs while processing all events: returns false if the simulation should stop (e.g. timeout)
         if (!gc_wait_for_ack()) {
             break;
         }
@@ -412,6 +415,10 @@ bool GCThread::gc_wait_for_ack(F f) {
     // Loop until the wait-for is done, or until an unexpected termination
     // The loop is broken out by conditions inside the loop
     while (true) {
+        if (gc_exec_state == GCSTATE_TERMINATING) {
+            return false;
+        }
+        
         // Obtain the next event
         timed_out = !gc_wait_for_next_event(ev, sysreq);
         
@@ -482,46 +489,14 @@ bool GCThread::gc_wait_for_ack(F f) {
  \return false if the simulation must stop unexpectedly (e.g. error); true otherwise.
  */
 bool GCThread::gc_process_node_events(OBNsmn::SMNNodeEvent* pEv) {
+    
     switch (pEv->type) {
         case OBNSimMsg::N2SMN_MSGTYPE_SIM_EVENT:
-        {
-            OBNSimMsg::SMN2N msg;
-            msg.set_msgtype(OBNSimMsg::SMN2N_MSGTYPE_SIM_EVENT_ACK);
-            msg.set_time(current_sim_time);
-            
-            auto *data = new OBNSimMsg::MSGDATA;
-
-            // Request for an irregular update
-            // It must contain the requested time
-            if (pEv->has_t) {
-                data->set_t(pEv->t);
-                
-                if (pEv->t > current_sim_time) {
-                    // Requested time is in the future: it's accepted
-                    data->set_i(0);  // OK
-                    _nodes[pEv->nodeID]->insertIrregularUpdate(pEv->t, (pEv->has_i)?pEv->i:0);
-                    //report_info(0, "Accept event for node " + _nodes[pEv->nodeID]->name + " for mask " + std::to_string((pEv->has_i)?pEv->i:0) + " at time " + std::to_string(pEv->t));
-                }
-                else {
-                    // Requested time is invalid: denied
-                    report_warning(0, "An invalid irregular update request from node " + std::to_string(pEv->nodeID) +
-                                   " (" + _nodes[pEv->nodeID]->name + ") with past time.");
-
-                    data->set_i(1);  // Error code 1 = invalid requested time (past time)
-                }
-            }
-            else {
-                report_warning(0, "An irregular update request from node " + std::to_string(pEv->nodeID) +
-                               " (" + _nodes[pEv->nodeID]->name + ") doesn't specify time; it is ignored.");
-                data->set_t(0);
-                data->set_i(2);  // Error code 2 = no time requested
-            }
-            
-            msg.set_allocated_data(data);
-            _nodes[pEv->nodeID]->sendMessage(pEv->nodeID, msg);
-            
+            gc_process_msg_sim_event(pEv);
             break;
-        }
+            
+        case OBNSimMsg::N2SMN_MSGTYPE_SYS_REQUEST_STOP:
+            return gc_process_msg_sys_request_stop(pEv);
     
         default:
             report_warning(0, "Unrecognized and unprocessed message of type " + std::to_string(pEv->type) +
@@ -616,10 +591,8 @@ bool GCThread::gc_send_update_y() {
         
         // We don't set ID here because it's dependent on the comm protocol (see node.sendMessage())
         // msg.set_id(node);
+        msg.set_i(node.second); // Set the update mask specified in the update list
 
-        OBNSimMsg::MSGDATA *msgdata = new OBNSimMsg::MSGDATA();
-        msgdata->set_i(node.second);    // Set the update mask specified in the update list
-        msg.set_allocated_data(msgdata);
         _nodes[thisNodeID]->sendMessage(thisNodeID, msg);
     }
     
@@ -730,7 +703,9 @@ bool GCThread::gc_send_update_x() {
         if (_nodes[ID]->needUPDATEX) {
             // We don't set ID here because it's dependent on the comm protocol (see node.sendMessage())
             // msg.set_id(ID);
-            
+
+            msg.set_i(gc_update_list[k].updateMask);    // Set the update mask specified in the update list
+
             _nodes[ID]->sendMessage(ID, msg);
             
             // Mark the corresponding bit for wait-for event
@@ -763,14 +738,19 @@ bool GCThread::gc_send_update_x() {
  The message is simple with no custom data.
  \param t The time value sent with the message.
  \param msgtype The type of the message sent to nodes.
+ \param pI Pointer to an optional int64 integer field for SMN2N.I field; if null, the field is not set.
  \param pData Pointer to an optional message data block; null pointer (default) if no data. The function will take ownership of this data, therefore the data block should be created dynamically and not released by the caller.
  \return true if successful; false if not (error)
  */
-bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::MSGDATA *pData) {
+bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, int64_t *pI, OBNSimMsg::MSGDATA *pData) {
     // Send the message to all nodes
     OBNSimMsg::SMN2N msg;
     msg.set_msgtype(msgtype);
     msg.set_time(t);
+    
+    if (pI) {
+        msg.set_i(*pI);
+    }
     
     // Set message data (none = clear if NULL)
     msg.set_allocated_data(pData);
@@ -797,18 +777,20 @@ bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OB
  \param t The time value sent with the message.
  \param msgtype The type of the message sent to nodes.
  \param acktype The type of the ACK message sent from nodes.
+ \param pI Pointer to an optional int64 integer field for SMN2N.I field; if null, the field is not set.
  \param pData Pointer to an optional message data block; null pointer (default) if no data. The function will take ownership of this data, therefore the data block should be created dynamically and not released by the caller.
  \return true if successful; false if not (error)
  */
-bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype, OBNSimMsg::MSGDATA *pData) {
+bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype, int64_t *pI, OBNSimMsg::MSGDATA *pData) {
     if (gc_waitfor_active) {
         // It's an error that wait-for is still active
         report_error(0, "Internal error: wait-for event is active before sending message #");
         return false;
     }
     
+    
     // Send the message to all nodes
-    if (!gc_send_to_all(t, msgtype, pData)) {
+    if (!gc_send_to_all(t, msgtype, pI, pData)) {
         return false;
     }
     

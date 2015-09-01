@@ -130,6 +130,7 @@ set(OBNSMN_CORE_HDRFILES
 	${OBNSMN_INCLUDE_DIR}/obnsmn_basic.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_event.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_gc.h
+	${OBNSMN_INCLUDE_DIR}/obnsmn_gc_inline.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_node.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_nodegraph.h
 	${OBNSMN_INCLUDE_DIR}/sharedqueue.h
@@ -142,6 +143,7 @@ set(OBNSMN_CORE_HDRFILES
 set(OBNNODE_CORE_HDRFILES
 	${OBN_NODECPP_INCLUDE_DIR}/obnnode.h
 	${OBN_NODECPP_INCLUDE_DIR}/obnnode_basic.h
+	${OBN_NODECPP_INCLUDE_DIR}/obnnode_exceptions.h
 	${OBNSIM_INCLUDE_DIR}/obnsim_basic.h
 	${PROTO_HDRS}
 	${OBNNODE_COMM_HDR}
