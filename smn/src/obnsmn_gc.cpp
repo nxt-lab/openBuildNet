@@ -151,9 +151,9 @@ void GCThread::GCThreadMain() {
         gc_timer_reset();   // Turn off the timer, just in case
         
         
-        // Update all nodes in the update list to their next regular updates.
-        for (const auto & node: gc_update_list) {
-            _nodes[node.nodeID]->finishCurrentUpdate();
+        // Update nodes in the update list to their next regular updates.
+        for (auto i = 0; i < gc_update_size; ++i) {
+            _nodes[gc_update_list[i].nodeID]->finishCurrentUpdate();
         }
         
         
