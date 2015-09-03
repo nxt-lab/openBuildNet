@@ -224,7 +224,10 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     
     
     // Add utility API
-    chai.add(SMNChai::APIUtils::smnchai_api_utils_io());
+    chaiscript::ModulePtr util_module(SMNChai::APIUtils::smnchai_api_utils_io());
+    util_module = SMNChai::APIUtils::smnchai_api_utils_math(util_module);
+    util_module = SMNChai::APIUtils::smnchai_api_utils_fixes(util_module);
+    chai.add(util_module);
 }
 
 
@@ -507,7 +510,7 @@ void SMNChai::WorkSpace::add_node(const SMNChai::Node &p_node) {
     m_nodes.emplace(nodeName, std::make_pair(p_node, 0));
 }
 
-void SMNChai::WorkSpace::connect(SMNChai::PortInfo &&t_from, SMNChai::PortInfo &&t_to) {
+void SMNChai::WorkSpace::connect(const SMNChai::PortInfo &t_from, const SMNChai::PortInfo &t_to) {
     // Check that these ports can be connected
     if (t_from.port_type == SMNChai::PortInfo::INPUT) {
         throw smnchai_exception("Port " + t_from.node_name + '/' + t_from.port_name + " is an input and can't be the source of a connection.");

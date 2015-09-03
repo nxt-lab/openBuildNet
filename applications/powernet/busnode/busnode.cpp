@@ -10,7 +10,7 @@
  */
 
 #include <cstdlib>      // String utilities (atoi,...)
-#include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -133,7 +133,7 @@ private:
     
     // Memory variables to store the requested values P's and Q's of users
     struct VWithLimits {
-        double value, minvalue, maxmindiff;
+        double value, minvalue, maxvalue;
     };
     std::vector<VWithLimits> m_Ps, m_Qs;
     
@@ -198,17 +198,257 @@ private:
     void doFeedbackUpdate() {
         auto result = m_input_grid();
         
-        // Ratios for distributing P/Q to flexible users (i.e. NaN users)
-        double Pr = m_nPNaNs>0?((result[0] - m_Psum) - m_Pmin)/(m_Pmax - m_Pmin):0;
-        double Qr = m_nQNaNs>0?((result[1] - m_Qsum) - m_Qmin)/(m_Qmax - m_Qmin):0;
-        
-        // Disaggregate the result to individual users
+        // For E and theta
         for (auto i = 0; i < m_nUsers; ++i) {
             auto& user_v = **m_output_users[i];
-            user_v[0] = std::isfinite(m_Ps[i].value)?m_Ps[i].value:(m_Ps[i].maxmindiff*Pr + m_Ps[i].minvalue);
-            user_v[1] = std::isfinite(m_Qs[i].value)?m_Qs[i].value:(m_Qs[i].maxmindiff*Qr + m_Qs[i].minvalue);
             user_v[2] = result[2];
             user_v[3] = result[3];
+        }
+        
+        /* There are 4 cases for each P and Q:
+         1) Both m_Pmin and m_Pmax are finite: in this case, we distribute the value among variable Pi's by a ratio Pr.
+         2) Only m_Pmin is finite: for all variable Pi's except the last one, we assign Pi_min. The rest goes to the last one.
+         3) Only m_Pmax is finite: similar to case 2 but use the upper bounds.
+         4) Both m_Pmax and m_Pmin are infinite: this case is tricky because of all the constraints. There are two sub-cases:
+           4a) One Pi is completely unconstrained (-Inf..Inf): assign everyone with their min/max/midpoint; the rest goes to the unconstrained one.
+           4b) Otherwise, there must be Pi, Pj such that one is upper bounded, one is lower bounded. We distribute the others as min/max/midpoint; the rest x goes to Pi <= A, Pj >= B as: Pi = x - Pj <= A => Pj >= x - A. If x-A > B then we take Pj = x - A; o.w. Pj = B. Then Pi = x - Pj.
+         */
+        
+        if (std::isfinite(m_Pmin) && std::isfinite(m_Pmax)) {
+            // Case 1
+            // Ratios for distributing P/Q to flexible users (i.e. NaN users)
+            double Pr = m_nPNaNs>0?((result[0] - m_Psum) - m_Pmin)/(m_Pmax - m_Pmin):0;
+            for (auto i = 0; i < m_nUsers; ++i) {
+                auto& user_v = **m_output_users[i];
+                user_v[0] = std::isfinite(m_Ps[i].value)?m_Ps[i].value:((m_Ps[i].maxvalue-m_Ps[i].minvalue)*Pr + m_Ps[i].minvalue);
+            }
+        } else if (std::isfinite(m_Pmin)) {
+            // Case 2
+            // Find one user whose P is unbounded above
+            auto Pr = result[0];
+            int theOne = -1;
+            for (auto i = 0; i < m_nUsers; ++i) {
+                auto& user_v = **m_output_users[i];
+                if (std::isfinite(m_Ps[i].value)) {
+                    auto tmp = m_Ps[i].value;
+                    user_v[0] = tmp;
+                    Pr -= tmp;
+                } else if (theOne < 0 && std::isinf(m_Ps[i].maxvalue)) {
+                    theOne = i; // Found the one
+                } else {
+                    auto tmp = m_Ps[i].minvalue;
+                    user_v[0] = tmp;
+                    Pr -= tmp;
+                }
+                (**m_output_users[theOne])[0] = Pr;
+            }
+        } else if (std::isfinite(m_Pmax)) {
+            // Case 3
+            // Find one user whose P is unbounded below
+            auto Pr = result[0];
+            int theOne = -1;
+            for (auto i = 0; i < m_nUsers; ++i) {
+                auto& user_v = **m_output_users[i];
+                if (std::isfinite(m_Ps[i].value)) {
+                    auto tmp = m_Ps[i].value;
+                    user_v[0] = tmp;
+                    Pr -= tmp;
+                } else if (theOne < 0 && std::isinf(m_Ps[i].minvalue)) {
+                    theOne = i; // Found the one
+                } else {
+                    auto tmp = m_Ps[i].maxvalue;
+                    user_v[0] = tmp;
+                    Pr -= tmp;
+                }
+                (**m_output_users[theOne])[0] = Pr;
+            }
+        } else {
+            // Case 4
+            int theI = -1, theJ = -1;
+            double A, B;
+            
+            // Find case 4a or 4b
+            for (auto i = 0; i < m_nUsers; ++i) {
+                auto maxInf = std::isinf(m_Ps[i].maxvalue);
+                auto minInf = std::isinf(m_Ps[i].minvalue);
+                
+                if (maxInf && minInf) {
+                    theI = theJ = i;
+                    break;
+                } else if (minInf && theI < 0) {
+                    theI = i;
+                    A = m_Ps[i].maxvalue;
+                } else if (maxInf && theJ < 0) {
+                    theJ = i;
+                    B = m_Ps[i].minvalue;
+                }
+                if (theI >= 0 && theJ >= 0) {
+                    break;
+                }
+            }
+            
+            assert(theI >= 0 && theJ >= 0);
+            
+            auto Pr = result[0];
+            for (auto i = 0; i < m_nUsers; ++i) {
+                auto& user_v = **m_output_users[i];
+                if (std::isfinite(m_Ps[i].value)) {
+                    auto tmp = m_Ps[i].value;
+                    user_v[0] = tmp;
+                    Pr -= tmp;
+                } else if (std::isfinite(m_Ps[i].maxvalue) && std::isfinite(m_Ps[i].minvalue)) {
+                    auto tmp = (m_Ps[i].maxvalue + m_Ps[i].minvalue) / 2.0;
+                    user_v[0] = tmp;
+                    Pr -= tmp;
+                } else if (std::isinf(m_Ps[i].maxvalue) && std::isinf(m_Ps[i].minvalue)) {
+                    if (i != theI) {
+                        user_v[0] = 0.0;
+                    }
+                } else if (std::isinf(m_Ps[i].maxvalue)) {
+                    // maxvalue must be inf and minvalue must be finite
+                    if (i != theJ) {
+                        auto tmp = m_Ps[i].minvalue;
+                        user_v[0] = tmp;
+                        Pr -= tmp;
+                    }
+                } else {
+                    // minvalue must be inf and maxvalue must be finite
+                    if (i != theI) {
+                        auto tmp = m_Ps[i].maxvalue;
+                        user_v[0] = tmp;
+                        Pr -= tmp;
+                    }
+                }
+                if (theI == theJ) {
+                    // Case 4a
+                    (**m_output_users[theI])[0] = Pr;
+                } else {
+                    // Case 4b
+                    // If x-A > B then we take Pj = x - A; o.w. Pj = B. Then Pi = x - Pj.
+                    double Pj = (Pr-A > B)?Pr-A:B;
+                    (**m_output_users[theI])[0] = Pr - Pj;
+                    (**m_output_users[theJ])[0] = Pj;
+                }
+            }
+        }
+        
+        
+        // Same thing but for Q
+        if (std::isfinite(m_Qmin) && std::isfinite(m_Qmax)) {
+            // Case 1
+            // Ratios for distributing P/Q to flexible users (i.e. NaN users)
+            double Qr = m_nQNaNs>0?((result[1] - m_Qsum) - m_Qmin)/(m_Qmax - m_Qmin):0;
+            for (auto i = 0; i < m_nUsers; ++i) {
+                auto& user_v = **m_output_users[i];
+                user_v[1] = std::isfinite(m_Qs[i].value)?m_Qs[i].value:((m_Qs[i].maxvalue - m_Qs[i].minvalue)*Qr + m_Qs[i].minvalue);
+            }
+        } else if (std::isfinite(m_Qmin)) {
+            // Case 2
+            // Find one user whose Q is unbounded above
+            auto Qr = result[1];
+            int theOne = -1;
+            for (auto i = 0; i < m_nUsers; ++i) {
+                auto& user_v = **m_output_users[i];
+                if (std::isfinite(m_Qs[i].value)) {
+                    auto tmp = m_Qs[i].value;
+                    user_v[1] = tmp;
+                    Qr -= tmp;
+                } else if (theOne < 0 && std::isinf(m_Qs[i].maxvalue)) {
+                    theOne = i; // Found the one
+                } else {
+                    auto tmp = m_Qs[i].minvalue;
+                    user_v[1] = tmp;
+                    Qr -= tmp;
+                }
+                (**m_output_users[theOne])[1] = Qr;
+            }
+        } else if (std::isfinite(m_Qmax)) {
+            // Case 3
+            // Find one user whose Q is unbounded below
+            auto Qr = result[1];
+            int theOne = -1;
+            for (auto i = 0; i < m_nUsers; ++i) {
+                auto& user_v = **m_output_users[i];
+                if (std::isfinite(m_Qs[i].value)) {
+                    auto tmp = m_Qs[i].value;
+                    user_v[1] = tmp;
+                    Qr -= tmp;
+                } else if (theOne < 0 && std::isinf(m_Qs[i].minvalue)) {
+                    theOne = i; // Found the one
+                } else {
+                    auto tmp = m_Qs[i].maxvalue;
+                    user_v[1] = tmp;
+                    Qr -= tmp;
+                }
+                (**m_output_users[theOne])[1] = Qr;
+            }
+        } else {
+            // Case 4
+            int theI = -1, theJ = -1;
+            double A, B;
+            
+            // Find case 4a or 4b
+            for (auto i = 0; i < m_nUsers; ++i) {
+                auto maxInf = std::isinf(m_Qs[i].maxvalue);
+                auto minInf = std::isinf(m_Qs[i].minvalue);
+                
+                if (maxInf && minInf) {
+                    theI = theJ = i;
+                    break;
+                } else if (minInf && theI < 0) {
+                    theI = i;
+                    A = m_Qs[i].maxvalue;
+                } else if (maxInf && theJ < 0) {
+                    theJ = i;
+                    B = m_Qs[i].minvalue;
+                }
+                if (theI >= 0 && theJ >= 0) {
+                    break;
+                }
+            }
+            
+            assert(theI >= 0 && theJ >= 0);
+            
+            auto Qr = result[1];
+            for (auto i = 0; i < m_nUsers; ++i) {
+                auto& user_v = **m_output_users[i];
+                if (std::isfinite(m_Qs[i].value)) {
+                    auto tmp = m_Qs[i].value;
+                    user_v[1] = tmp;
+                    Qr -= tmp;
+                } else if (std::isfinite(m_Qs[i].maxvalue) && std::isfinite(m_Qs[i].minvalue)) {
+                    auto tmp = (m_Qs[i].maxvalue + m_Qs[i].minvalue) / 2.0;
+                    user_v[1] = tmp;
+                    Qr -= tmp;
+                } else if (std::isinf(m_Qs[i].maxvalue) && std::isinf(m_Qs[i].minvalue)) {
+                    if (i != theI) {
+                        user_v[1] = 0.0;
+                    }
+                } else if (std::isinf(m_Qs[i].maxvalue)) {
+                    // maxvalue must be inf and minvalue must be finite
+                    if (i != theJ) {
+                        auto tmp = m_Qs[i].minvalue;
+                        user_v[1] = tmp;
+                        Qr -= tmp;
+                    }
+                } else {
+                    // minvalue must be inf and maxvalue must be finite
+                    if (i != theI) {
+                        auto tmp = m_Qs[i].maxvalue;
+                        user_v[1] = tmp;
+                        Qr -= tmp;
+                    }
+                }
+                if (theI == theJ) {
+                    // Case 4a
+                    (**m_output_users[theI])[1] = Qr;
+                } else {
+                    // Case 4b
+                    double Qj = (Qr-A > B)?Qr-A:B;
+                    (**m_output_users[theI])[1] = Qr - Qj;
+                    (**m_output_users[theJ])[1] = Qj;
+                }
+            }
         }
         
         //std::cout << "At " << _current_sim_time << " UPDATE_Y" << std::endl;
@@ -331,15 +571,25 @@ bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta) {
             return false;
         }
         double Pmin = values[4], Pmax = values[5];
-        if (!std::isfinite(Pmin) || !std::isfinite(Pmax) || Pmin >= Pmax) {
-            // Invalid Pmin and Pmax
+        if (std::isnan(Pmin) || std::isnan(Pmax) || (std::isfinite(Pmin) && std::isfinite(Pmax) && Pmin > Pmax)) {
+            // Invalid Pmin and Pmax: they must be non-NAN (can be INF) and Pmin <= Pmax
             std::cout << "At " << currentSimulationTime() << " User#" << idx << " gave invalid P limits.\n";
             return false;
         }
         m_Ps[i].minvalue = Pmin;
-        m_Pmin += Pmin;
-        m_Ps[i].maxmindiff = Pmax - Pmin;
-        m_Pmax += Pmax;
+        if (std::isfinite(Pmin)) {
+            m_Pmin += Pmin;
+        } else {
+            // take care of INF case
+            m_Pmin = -INFINITY;
+        }
+        m_Ps[i].maxvalue = Pmax;
+        if (std::isfinite(Pmax)) {
+            m_Pmax += Pmax;
+        } else {
+            // take care of INF case
+            m_Pmax = INFINITY;
+        }
     } else {
         m_Ps[i].value = P;
         m_Psum += P;
@@ -355,15 +605,25 @@ bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta) {
             return false;
         }
         double Qmin = values[isPNaN?6:4], Qmax = values[isPNaN?7:5];
-        if (!std::isfinite(Qmin) || !std::isfinite(Qmax) || Qmin >= Qmax) {
-            // Invalid Qmin and Qmax
+        if (std::isnan(Qmin) || std::isnan(Qmax) || (std::isfinite(Qmin) && std::isfinite(Qmax) && Qmin > Qmax)) {
+            // Invalid Qmin and Qmax: they must be non-NAN (can be INF) and Qmin <= Qmax
             std::cout << "At " << currentSimulationTime() << " User#" << idx << " gave invalid Q limits.\n";
             return false;
         }
         m_Qs[i].minvalue = Qmin;
-        m_Qmin += Qmin;
-        m_Qs[i].maxmindiff = Qmax - Qmin;
-        m_Qmax += Qmax;
+        if (std::isfinite(Qmin)) {
+            m_Qmin += Qmin;
+        } else {
+            // take care of INF case
+            m_Qmin = -INFINITY;
+        }
+        m_Qs[i].maxvalue = Qmax;
+        if (std::isfinite(Qmax)) {
+            m_Qmax += Qmax;
+        } else {
+            // take care of INF case
+            m_Qmax = INFINITY;
+        }
     } else {
         m_Qs[i].value = Q;
         m_Qsum += Q;
