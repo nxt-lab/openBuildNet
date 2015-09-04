@@ -350,7 +350,7 @@ namespace SMNChai {
          \sa Node::port()
          \exception smnchai_exception an error happenned, e.g. an input port can't be a source port.
          */
-        void connect(PortInfo &&t_from, PortInfo &&t_to);
+        void connect(const PortInfo &t_from, const PortInfo &t_to);
         
         /** Connect 2 ports by their names, unless they are already connected.
          \param from_node,from_port The source node and port.

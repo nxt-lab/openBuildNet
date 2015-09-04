@@ -123,7 +123,7 @@ namespace OBNsmn {
             // virtual ~OBNNodeYARP() { //std::cout << "OBNNodeYARP deleted." << std::endl; }
             
             /** \brief Asynchronously send a message to a node. */
-            virtual bool sendMessage(int nodeID, OBNSimMsg::SMN2N &msg);
+            virtual bool sendMessage(int nodeID, OBNSimMsg::SMN2N &msg) override;
             
             /* \brief Synchronously send a message to a node.  */
             // virtual bool sendMessageSync(int nodeID, OBNSimMsg::SMN2N &msg);

@@ -15,7 +15,8 @@
 
 #include <type_traits>
 #include <string>
-#include <deque>        // std::deque
+#include <queue>        // std::queue
+#include <algorithm>    // std::copy_n, etc.
 
 #include <yarp/os/all.h>
 #include <sharedqueue_yarp.h>
@@ -116,11 +117,17 @@ namespace OBNnode {
         /** The input data type, e.g. a vector or a scalar or a matrix. */
         using input_data_type = T;
         
+        /** Initializer for the input type. */
+        static const T init_input_data;
+        
+        /** The output data type, from variable to encoded message. */
+        using output_data_type = T;
+        
         /** The class type of the ProtoBuf message. */
         using PB_message_class = typename obn_scalar_PB_message_class<T>::theclass;
         
         /** Static function to write data to a ProtoBuf message. */
-        static void writePBMessage(const input_data_type& data, PB_message_class& msg) {
+        static void writePBMessage(const output_data_type& data, PB_message_class& msg) {
             msg.set_value(data);
         }
         
@@ -130,14 +137,25 @@ namespace OBNnode {
             return true;
         }
     };
+    template<typename T> const T obn_scalar<T>::init_input_data(0); // = static_cast<T>(0);
     
     
-    /** \brief Template class for input data as a vector of a given type. */
+    /** \brief Template class for input data as a vector of a given type, using Eigen library. */
     template <typename T>
     class obn_vector {
     public:
-        /** The input data type, e.g. a vector or a scalar or a matrix. */
-        using input_data_type = Eigen::Matrix<T, Eigen::Dynamic, 1>;
+        /** The input data type for reading from an encoded format (e.g. ProtoBuf) into the given type.
+         We use Eigen::Map to avoid copying data, i.e. we directly access the internal data of the encoded message,
+         therefore the message must be permanent (it can't be a temporary variable that will be destroyed) and
+         anytime the message changes, the vector variable must be updated. */
+        using input_data_type = Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, 1> >; // const because this is read-only
+        
+        /** Initializer for the input type. */
+        static const input_data_type init_input_data;
+        
+        /** The output data type for writing from the given type to an encoded format (e.g. ProtoBuf).
+         We use an Eigen variable as a buffer, and will only write it to the message on demand. */
+        using output_data_type = Eigen::Matrix<T, Eigen::Dynamic, 1>;
         
         /** The class type of the ProtoBuf message. */
         using PB_message_class = typename obn_vector_PB_message_class<T>::theclass;
@@ -145,17 +163,11 @@ namespace OBNnode {
         /** Static function to write data to a ProtoBuf message.
          It works with raw arrays as much as possible because speed is important.
          */
-        static void writePBMessage(const input_data_type& data, PB_message_class& msg) {
+        static void writePBMessage(const output_data_type& data, PB_message_class& msg) {
             auto sz = data.size();
             auto dest = msg.mutable_value();
             dest->Resize(sz, T());    // resize the field in msg to hold the values
-            if (sz > 0) {
-                auto itfrom = data.data();
-                auto itto = dest->begin();
-                for (int i = 0; i < sz; ++i) {
-                    *(itto++) = *(itfrom++);
-                }
-            }
+            std::copy_n(data.data(), sz, dest->begin());
         }
         
         /** Static function to read data from a ProtoBuf message.
@@ -163,43 +175,50 @@ namespace OBNnode {
          */
         static bool readPBMessage(input_data_type& data, const PB_message_class& msg) {
             auto sz = msg.value_size();
-            data.resize(sz, 1);   // resize the vector to match the size of msg
-            if (sz != data.size()) return false;
-            if (sz > 0) {
-                auto itfrom = msg.value().begin();
-                auto itto = data.data();
-                for (int i = 0; i < sz; ++i) {
-                    *(itto++) = *(itfrom++);
-                }
-            }
+            new (&data) input_data_type(msg.value().data(), sz);
+            
+//            data.resize(sz, 1);   // resize the vector to match the size of msg
+//            if (sz != data.size()) return false;
+//            if (sz > 0) {
+//                auto itfrom = msg.value().begin();
+//                auto itto = data.data();
+//                for (int i = 0; i < sz; ++i) {
+//                    *(itto++) = *(itfrom++);
+//                }
+//            }
             return true;
         }
     };
+    template<typename T> const typename obn_vector<T>::input_data_type obn_vector<T>::init_input_data(nullptr, 0);
     
     /** \brief Template class for input data as a dynamic-sized matrix of a given type. */
     template <typename T>
     class obn_matrix {
     public:
-        /** The input data type, e.g. a vector or a scalar or a matrix. */
-        using input_data_type = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
+        /** The input data type for reading from an encoded format (e.g. ProtoBuf) into the given type.
+         We use Eigen::Map to avoid copying data, i.e. we directly access the internal data of the encoded message,
+         therefore the message must be permanent (it can't be a temporary variable that will be destroyed) and
+         anytime the message changes, the matrix variable must be updated. */
+        using input_data_type = Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> >;  // const because this is read-only
+        
+        /** Initializer for the input type. */
+        static const input_data_type init_input_data;
+        
+        /** The output data type for writing from the given type to an encoded format (e.g. ProtoBuf).
+         We use an Eigen variable as a buffer, and will only write it to the message on demand. */
+        using output_data_type = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
         
         /** The class type of the ProtoBuf message. */
         using PB_message_class = typename obn_matrix_PB_message_class<T>::theclass;
         
         /** Static function to write data to a ProtoBuf message. */
-        static void writePBMessage(const input_data_type& data, PB_message_class& msg) {
+        static void writePBMessage(const output_data_type& data, PB_message_class& msg) {
             msg.set_nrows(data.rows());
             msg.set_ncols(data.cols());
             auto sz = data.size();
             auto dest = msg.mutable_value();
             dest->Resize(sz, T());    // resize the field in msg to hold the values
-            if (sz > 0) {
-                auto itfrom = data.data();
-                auto itto = dest->begin();
-                for (int i = 0; i < sz; ++i) {
-                    *(itto++) = *(itfrom++);
-                }
-            }
+            std::copy_n(data.data(), sz, dest->begin());
         }
         
         /** Static function to read data from a ProtoBuf message. */
@@ -209,19 +228,22 @@ namespace OBNnode {
             auto sz = nrows * ncols;
             if (msg.value_size() < sz) return false;
             
-            data.resize(nrows, ncols);   // resize the matrix to match the size of msg
-            if (data.rows() != nrows || data.cols() != ncols) return false;
+            new (&data) input_data_type(msg.value().data(), nrows, ncols);
             
-            if (sz > 0) {
-                auto itfrom = msg.value().begin();
-                auto itto = data.data();
-                for (int i = 0; i < sz; ++i) {
-                    *(itto++) = *(itfrom++);
-                }
-            }
+//            data.resize(nrows, ncols);   // resize the matrix to match the size of msg
+//            if (data.rows() != nrows || data.cols() != ncols) return false;
+//            
+//            if (sz > 0) {
+//                auto itfrom = msg.value().begin();
+//                auto itto = data.data();
+//                for (int i = 0; i < sz; ++i) {
+//                    *(itto++) = *(itfrom++);
+//                }
+//            }
             return true;
         }
     };
+    template<typename T> const typename obn_matrix<T>::input_data_type obn_matrix<T>::init_input_data(nullptr, 0, 0);
     
     
     /** \brief Template class for input data as a fixed-length vector of a given type. */
@@ -230,34 +252,34 @@ namespace OBNnode {
     public:
         static_assert(N > 0, "Vector length must be positive.");
         
-        /** The input data type, e.g. a vector or a scalar or a matrix. */
+        /** The input data type: a vector. For fixed size types, to be safe, we use an actual vector, not a Map. This is because the user can access the input port when it hasn't been initialized (by an input message), potentially crashing the program. */
         using input_data_type = Eigen::Matrix<T, N, 1, Eigen::DontAlign>; // Disable alignment to be safe
+        
+        /** Initializer for the input type. */
+        static const std::size_t init_input_data;
+        
+        /** The output data type for writing from the given type to an encoded format (e.g. ProtoBuf).
+         We use an Eigen variable as a buffer, and will only write it to the message on demand. */
+        using output_data_type = Eigen::Matrix<T, N, 1, Eigen::DontAlign>;
         
         /** The class type of the ProtoBuf message. */
         using PB_message_class = typename obn_vector_PB_message_class<T>::theclass;
         
         /** Static function to write data to a ProtoBuf message. */
-        static void writePBMessage(const input_data_type& data, PB_message_class& msg) {
+        static void writePBMessage(const output_data_type& data, PB_message_class& msg) {
             auto dest = msg.mutable_value();
             dest->Resize(N, T());    // resize the field in msg to hold the values
-            auto itfrom = data.data();
-            auto itto = dest->begin();
-            for (int i = 0; i < N; ++i) {
-                *(itto++) = *(itfrom++);
-            }
+            std::copy_n(data.data(), N, dest->begin());
         }
         
         /** Static function to read data from a ProtoBuf message. */
         static bool readPBMessage(input_data_type& data, const PB_message_class& msg) {
             if (msg.value_size() < N) return false;
-            auto itfrom = msg.value().begin();
-            auto itto = data.data();
-            for (int i = 0; i < N; ++i) {
-                *(itto++) = *(itfrom++);
-            }
+            std::copy_n(msg.value().begin(), N, data.data());
             return true;
         }
     };
+    template<typename T, const std::size_t N> const std::size_t obn_vector_fixed<T, N>::init_input_data = N;
 
     
     /** \brief Template class for input data as a fixed-size matrix of a given type. */
@@ -266,24 +288,27 @@ namespace OBNnode {
     public:
         static_assert((NR > 0) && (NC > 0), "Matrix dimensions must be positive.");
         
-        /** The input data type, e.g. a vector or a scalar or a matrix. */
+        /** The input data type: a matrix. For fixed size types, to be safe, we use an actual matrix, not a Map. This is because the user can access the input port when it hasn't been initialized (by an input message), potentially crashing the program. */
         using input_data_type = Eigen::Matrix<T, NR, NC, Eigen::DontAlign>; // Disable alignment to be safe
+
+        /** Initializer for the input type. */
+        static const input_data_type init_input_data;
+        
+        /** The output data type for writing from the given type to an encoded format (e.g. ProtoBuf).
+         We use an Eigen variable as a buffer, and will only write it to the message on demand. */
+        using output_data_type = Eigen::Matrix<T, NR, NC, Eigen::DontAlign>;
         
         /** The class type of the ProtoBuf message. */
         using PB_message_class = typename obn_matrix_PB_message_class<T>::theclass;
         
         /** Static function to write data to a ProtoBuf message. */
-        static void writePBMessage(const input_data_type& data, PB_message_class& msg) {
+        static void writePBMessage(const output_data_type& data, PB_message_class& msg) {
             msg.set_nrows(NR);
             msg.set_ncols(NC);
             auto sz = data.size();
             auto dest = msg.mutable_value();
             dest->Resize(sz, T());    // resize the field in msg to hold the values
-            auto itfrom = data.data();
-            auto itto = dest->begin();
-            for (int i = 0; i < sz; ++i) {
-                *(itto++) = *(itfrom++);
-            }
+            std::copy_n(data.data(), sz, dest->begin());
         }
         
         /** Static function to read data from a ProtoBuf message. */
@@ -291,14 +316,11 @@ namespace OBNnode {
             if (msg.nrows() != NR || msg.ncols() != NC) return false;
             auto sz = data.size();
             if (msg.value_size() < sz) return false;
-            auto itfrom = msg.value().begin();
-            auto itto = data.data();
-            for (int i = 0; i < sz; ++i) {
-                *(itto++) = *(itfrom++);
-            }
+            std::copy_n(msg.value().begin(), sz, data.data());
             return true;
         }
     };
+    template<typename T, const std::size_t NR, const std::size_t NC> const typename obn_matrix_fixed<T,NR,NC>::input_data_type obn_matrix_fixed<T,NR,NC>::init_input_data(NR, NC);
     
     
     /** This templated type is the wrapper class for the data type, e.g. obn_scalar<D> or obn_vector<D>.
@@ -325,12 +347,16 @@ namespace OBNnode {
         typedef typename _obn_data_type_class::input_data_type ValueType;
 
     private:
-        ValueType _cur_value;    ///< The value stored in this port
+        ValueType _cur_value;    ///< The typed value stored in this port
         bool _pending_value;    ///< If a new value is pending (hasn't been read)
-        typename _obn_data_type_class::PB_message_class _PBMessage;   ///< The ProtoBuf message object to receive the data
+        
+        /** The ProtoBuf message object to receive the data.
+         This should be a permanent variable (a class member) rather than a temporary variable (in a function)
+         because some implementations directly use the data stored in this message, rather than copying the data over.
+         If a temporary message variable is used, in those cases, the program may crash (invalid access error). */
+        typename _obn_data_type_class::PB_message_class _PBMessage;
         
         mutable yarp::os::Mutex _valueMutex;    ///< Mutex for accessing the value
-        
         
         virtual void onRead(_port_content_type& b) {
             // printf("Callback[%s]\n", getName().c_str());
@@ -365,7 +391,7 @@ namespace OBNnode {
         }
     
     public:
-        YarpInput(const std::string& _name): YarpPortBase(_name), _pending_value(false) {
+        YarpInput(const std::string& _name): YarpPortBase(_name), _cur_value(_obn_data_type_class::init_input_data), _pending_value(false) {
             
         }
         
@@ -846,7 +872,7 @@ namespace OBNnode {
         typedef YARPMsgPB<typename OBN_DATA_TYPE_CLASS<D>::PB_message_class, OBNSimIOMsg::IOAck> _port_content_type;
 
     public:
-        typedef typename _obn_data_type_class::input_data_type ValueType;
+        typedef typename _obn_data_type_class::output_data_type ValueType;
         
     private:
         ValueType _cur_value;    ///< The value stored in this port

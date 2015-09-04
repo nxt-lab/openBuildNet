@@ -224,7 +224,10 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     
     
     // Add utility API
-    chai.add(SMNChai::APIUtils::smnchai_api_utils_io());
+    chaiscript::ModulePtr util_module(SMNChai::APIUtils::smnchai_api_utils_io());
+    util_module = SMNChai::APIUtils::smnchai_api_utils_math(util_module);
+    util_module = SMNChai::APIUtils::smnchai_api_utils_fixes(util_module);
+    chai.add(util_module);
 }
 
 
@@ -507,7 +510,7 @@ void SMNChai::WorkSpace::add_node(const SMNChai::Node &p_node) {
     m_nodes.emplace(nodeName, std::make_pair(p_node, 0));
 }
 
-void SMNChai::WorkSpace::connect(SMNChai::PortInfo &&t_from, SMNChai::PortInfo &&t_to) {
+void SMNChai::WorkSpace::connect(const SMNChai::PortInfo &t_from, const SMNChai::PortInfo &t_to) {
     // Check that these ports can be connected
     if (t_from.port_type == SMNChai::PortInfo::INPUT) {
         throw smnchai_exception("Port " + t_from.node_name + '/' + t_from.port_name + " is an input and can't be the source of a connection.");
@@ -624,14 +627,24 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
         
         // The GC has a dedicated output port for each node
         if (!p_port->addOutput(remote_gc_port)) {
-            // Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
-            throw smnchai_exception("Could not connect to remote node " + mynode->first);
+            // Try a second time
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            
+            if (!p_port->addOutput(remote_gc_port)) {
+                // Still Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
+                throw smnchai_exception("Could not connect to remote node " + mynode->first);
+            }
         }
         
         // However, all nodes send to the same GC input port
-        if (!yarp::os::Network::connect(remote_gc_port, get_full_path("_smn_", NODE_GC_PORT_NAME))) {
-            // Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
-            throw smnchai_exception("Could not connect from remote node " + mynode->first + " to the SMN.");
+        if (!yarp::os::Network::connect(remote_gc_port, get_full_path("_smn_", NODE_GC_PORT_NAME), "", false)) {
+            // Try a second time
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            
+            if (!yarp::os::Network::connect(remote_gc_port, get_full_path("_smn_", NODE_GC_PORT_NAME), "", false)) {
+                // Still Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
+                throw smnchai_exception("Could not connect from remote node " + mynode->first + " to the SMN.");
+            }
         }
     }
     
@@ -644,9 +657,14 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
     for (auto myconn = m_connections.begin(); myconn != m_connections.end(); ++myconn) {
         std::string from_port = get_full_path(myconn->first), to_port = get_full_path(myconn->second);
         
-        if (!yarp::os::Network::connect(from_port, to_port)) {
-            // Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
-            throw smnchai_exception("Could not connect " + from_port + " to " + to_port);
+        if (!yarp::os::Network::connect(from_port, to_port, "", false)) {
+            // Try a second time
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            
+            if (!yarp::os::Network::connect(from_port, to_port, "", false)) {
+                // Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
+                throw smnchai_exception("Could not connect " + from_port + " to " + to_port);
+            }
         }
         
         // Add a dependency link for this connection iff:

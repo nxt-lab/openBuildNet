@@ -32,7 +32,7 @@ class MyNodeClass: public YarpNode {
     /* All ports should be defined as members of the node class.
      They can be defined as member objects which must be initialized in the node's constructor, or pointers to objects which can be dynamically initialized later. */
     YarpInput<OBN_PB, double, false> input1;
-    YarpInput<OBN_PB, obn_vector_fixed<double, 3>, false> *input2 = nullptr;  // input2 is dynamically allocated
+    YarpInput<OBN_PB, obn_vector<double>, false> *input2 = nullptr;  // input2 is dynamically allocated
     
     YarpOutput<OBN_PB, obn_vector_fixed<double, 3> > output1;
 
@@ -53,7 +53,7 @@ public:
      */
     bool initialize() {
         // Dynamically create input2
-        input2 = new YarpInput<OBN_PB, obn_vector_fixed<double, 3>, false>("u2");
+        input2 = new YarpInput<OBN_PB, obn_vector<double>, false>("u2");
         
         bool success;
         
@@ -135,6 +135,9 @@ public:
 
 
 int main() {
+    // Set verbosity level
+    yarp::os::Network::setVerbosity(-1);
+    
     MyNodeClass mynode("mynode", "myexperiment");   // Node named "mynode" in the workspace "myexperiment"
     
     if (!mynode.initialize()) {
@@ -152,6 +155,10 @@ int main() {
 
     // It's a good practice to clean up the ProtoBuf library, though not required
     google::protobuf::ShutdownProtobufLibrary();
+    
+    // It's a good practice to delay the termination of the node by a small amount of time
+    // to avoid overloading the nameserver
+    mynode.delayBeforeShutdown();
     
     // If the node has error (and terminated due to that) we can detect it here
     return mynode.hasError()?3:0;

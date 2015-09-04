@@ -125,6 +125,21 @@ namespace OBNnode {
         void removePort(YarpPortBase* port);
         void removePort(YarpOutputPortBase* port);
         
+        /** \brief Delay by a short amount of time before shutting down the node.
+         
+         When a simulation system has too many nodes/ports (hundreds) which all terminate at approximately the same time
+         the nameserver can be overloaded with requests to close ports from all the nodes. This may cause some ports fail
+         to close.
+         
+         A simple, but not every elegant, solution is to make each node delay for different short amounts of time before
+         shutting down, hence reducing the load on the nameserver.
+         This function implements a mechanism for such a delay.
+         There are several ways to determine the delay amount of each node, e.g. randomly.
+         In this implementation, a simple mechanism is used, which delays a node accordingly to its node ID
+         (with some rounding).
+         */
+        void delayBeforeShutdown() const;
+        
         /* Create a Yarp port managed by this manager.
          \param name Name of the new port, must be a valid and unique name.
          \param callback true [default] if the port uses callback (so that events are caught); if false, no events will be generated for this port.
