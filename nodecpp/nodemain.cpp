@@ -135,6 +135,9 @@ public:
 
 
 int main() {
+    // Set verbosity level
+    yarp::os::Network::setVerbosity(-1);
+    
     MyNodeClass mynode("mynode", "myexperiment");   // Node named "mynode" in the workspace "myexperiment"
     
     if (!mynode.initialize()) {
@@ -152,6 +155,10 @@ int main() {
 
     // It's a good practice to clean up the ProtoBuf library, though not required
     google::protobuf::ShutdownProtobufLibrary();
+    
+    // It's a good practice to delay the termination of the node by a small amount of time
+    // to avoid overloading the nameserver
+    mynode.delayBeforeShutdown();
     
     // If the node has error (and terminated due to that) we can detect it here
     return mynode.hasError()?3:0;

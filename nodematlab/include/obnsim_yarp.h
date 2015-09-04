@@ -62,6 +62,8 @@ namespace OBNnode {
         int createOutputPort(char container, const std::string &element, const std::string &name);
         
         YarpNodeMatlab(const std::string& name, const std::string& ws = ""): YarpNodeBase(name, ws) {
+            // Turn off feedback messages from Yarp
+            yarp::os::Network::setVerbosity(-1);
         }
         
         virtual ~YarpNodeMatlab();

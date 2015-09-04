@@ -10,7 +10,8 @@
  * \author Truong X. Nghiem (xuan.nghiem@epfl.ch)
  */
 
-
+#include <chrono>
+#include <thread>
 #include <obnnode_yarpnode.h>
 #include <obnnode_exceptions.h>
 
@@ -326,14 +327,22 @@ void YarpNodeBase::removePort(YarpOutputPortBase* port) {
 //
 
 
+void YarpNodeBase::delayBeforeShutdown() const {
+    // Delay by an amount proportional to the node's ID
+    // In ms, with a max value (we don't want to wait too long)
+    auto mydelay = (std::max(0, _node_id) % 400) * 10;
+    std::this_thread::sleep_for(std::chrono::milliseconds(mydelay));
+}
+
+
 bool YarpNodeBase::connectWithSMN(const char *carrier) {
     if (!openSMNPort()) { return false; }
     if (carrier) {
-        return yarp::os::Network::connect(fullPortName("_gc_"), _workspace + "_smn_/_gc_", carrier) &&   // Connect from node to SMN
-        yarp::os::Network::connect(_workspace + "_smn_/" + _nodeName, fullPortName("_gc_"), carrier);    // Connect from SMN to node
+        return yarp::os::Network::connect(fullPortName("_gc_"), _workspace + "_smn_/_gc_", carrier, false) &&   // Connect from node to SMN
+        yarp::os::Network::connect(_workspace + "_smn_/" + _nodeName, fullPortName("_gc_"), carrier, false);    // Connect from SMN to node
     } else {
-        return yarp::os::Network::connect(fullPortName("_gc_"), _workspace + "_smn_/_gc_") &&   // Connect from node to SMN
-        yarp::os::Network::connect(_workspace + "_smn_/" + _nodeName, fullPortName("_gc_"));    // Connect from SMN to node
+        return yarp::os::Network::connect(fullPortName("_gc_"), _workspace + "_smn_/_gc_", "", false) &&   // Connect from node to SMN
+        yarp::os::Network::connect(_workspace + "_smn_/" + _nodeName, fullPortName("_gc_"), "", false);    // Connect from SMN to node
     }
 }
 

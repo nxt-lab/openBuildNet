@@ -69,6 +69,13 @@ void show_usage(const char *prog) {
     "  ARGS is an optional list of arguments to the script file.\n";
 }
 
+// Function to shut down the SMN, should be called before exiting
+void shutdown_SMN() {
+    google::protobuf::ShutdownProtobufLibrary();
+    // Wait a bit before shutting down so that we won't overload the nameserver (hopefully)
+    std::this_thread::sleep_for(std::chrono::seconds(4));
+}
+
 int main(int argc, const char* argv[]) {
     std::cout << copyright << std::endl;
     
@@ -81,6 +88,7 @@ int main(int argc, const char* argv[]) {
     }
 
     yarp::os::Network yarp;
+    yarp.setVerbosity(-1);
     
     // The Global clock thread
     OBNsmn::GCThread gc;
@@ -217,11 +225,11 @@ int main(int argc, const char* argv[]) {
         
         // As yarpThread is already running, we should try to stop it cleanly
         gc.simple_thread_terminate = true;
-        std::this_thread::sleep_for(std::chrono::seconds(3));
+        std::this_thread::sleep_for(std::chrono::seconds(2));
         
         if (yarpThread.done_execution) {
             // Good
-            google::protobuf::ShutdownProtobufLibrary();
+            shutdown_SMN();
             return 1;
         } else {
             // Crap, we have to terminate
@@ -238,7 +246,8 @@ int main(int argc, const char* argv[]) {
     //////////////////////
     // Clean up before exiting
     //////////////////////
-    google::protobuf::ShutdownProtobufLibrary();
+    std::cout << "SHUTTING DOWN THE SERVER..." << std::endl;
+    shutdown_SMN();
     
     return 0;
 }

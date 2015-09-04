@@ -805,6 +805,9 @@ int main(int argc, char **argv) {
     }
     std::cout << "\n\n";
     
+    // Set verbosity level
+    yarp::os::Network::setVerbosity(-1);
+    
     // Create the node
     std::unique_ptr<YarpNode> pbus;
     bool success;
@@ -834,6 +837,8 @@ int main(int argc, char **argv) {
     // Clean up before exiting
     //////////////////////
     google::protobuf::ShutdownProtobufLibrary();
+    
+    pbus->delayBeforeShutdown();
     
     return pbus->hasError()?3:0;
 }
