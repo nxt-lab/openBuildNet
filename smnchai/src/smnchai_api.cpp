@@ -227,6 +227,7 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     chaiscript::ModulePtr util_module(SMNChai::APIUtils::smnchai_api_utils_io());
     util_module = SMNChai::APIUtils::smnchai_api_utils_math(util_module);
     util_module = SMNChai::APIUtils::smnchai_api_utils_fixes(util_module);
+    util_module = SMNChai::APIUtils::smnchai_api_utils_misc(util_module);
     chai.add(util_module);
 }
 
