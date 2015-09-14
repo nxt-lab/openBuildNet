@@ -53,8 +53,14 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     chai.add(fun(&Node::get_name), "get_name");
     
     chai.add(fun(&Node::add_input), "add_input");
+    chai.add(fun([](Node& node, const std::string &name){ return node.add_input(name); }), "add_input");
+    
     chai.add(fun(&Node::add_output), "add_output");
+    chai.add(fun([](Node& node, const std::string &name){ return node.add_output(name); }), "add_output");
+    
     chai.add(fun(&Node::add_dataport), "add_dataport");
+    chai.add(fun([](Node& node, const std::string &name){ return node.add_dataport(name); }), "add_dataport");
+    
     chai.add(fun(&Node::add_update), "add_update");
     chai.add(fun(&Node::set_need_updateX), "need_updateX");
     
@@ -270,11 +276,13 @@ void SMNChai::WorkSpace::start_remote_node(const SMNChai::Node &t_node, const st
 }
 
 bool SMNChai::WorkSpace::is_node_online(const SMNChai::Node &t_node) const {
-    return yarp::os::Network::exists(get_full_path(t_node.get_name(), NODE_GC_PORT_NAME));
+    // YARP requires / at the beginning
+    return yarp::os::Network::exists('/' + get_full_path(t_node.get_name(), NODE_GC_PORT_NAME));
 }
 
 bool SMNChai::WorkSpace::is_node_online(const std::string &t_node) const {
-    return yarp::os::Network::exists(get_full_path(t_node, NODE_GC_PORT_NAME));
+    // YARP requires / at the beginning
+    return yarp::os::Network::exists('/' + get_full_path(t_node, NODE_GC_PORT_NAME));
 }
 
 void SMNChai::WorkSpace::waitfor_node_online(const std::string &t_node, double timeout) const {
@@ -338,7 +346,7 @@ void SMNChai::WorkSpace::waitfor_all_nodes_online(double timeout) const {
 
 bool SMNChai::WorkSpace::are_all_nodes_online() const {
     for (auto it = m_nodes.begin(); it != m_nodes.end(); ++it) {
-        if (!yarp::os::Network::exists(get_full_path(it->second.first.get_name(), NODE_GC_PORT_NAME))) {
+        if (!yarp::os::Network::exists('/' + get_full_path(it->second.first.get_name(), NODE_GC_PORT_NAME))) {
             return false;
         }
     }
@@ -367,7 +375,26 @@ OBNsmn::YARP::OBNNodeYARP* SMNChai::Node::create_yarp_node(OBNsmn::YARP::YARPPor
 }
 
 
-void SMNChai::Node::add_input(const std::string &t_name) {
+SMNChai::CommProtocol SMNChai::comm_protocol_from_string(const std::string& t_comm) {
+    std::string comm = OBNsim::Utils::toLower(t_comm);
+    if (comm == "yarp") {
+#ifdef OBNSIM_COMM_YARP
+        return SMNChai::COMM_YARP;
+#else
+        throw smnchai_exception("YARP is not supported by this SMNChai program.");
+#endif
+    } else if (comm == "mqtt") {
+#ifdef OBNSIM_COMM_MQTT
+        return SMNChai::COMM_MQTT;
+#else
+        throw smnchai_exception("MQTT is not supported by this SMNChai program.");
+#endif
+    } else {
+        throw smnchai_exception("The communication protocol " + t_comm + " is not supported by this SMNChai program.");
+    }
+}
+
+void SMNChai::Node::add_input(const std::string &t_name, const std::string &t_comm) {
     if (!OBNsim::Utils::isValidIdentifier(t_name)) {
         throw smnchai_exception("Input port name '" + t_name + "' in node '" + m_name + "' is invalid.");
     }
@@ -377,11 +404,13 @@ void SMNChai::Node::add_input(const std::string &t_name) {
         throw smnchai_exception("Input port name '" + t_name + "' already exists in node '" + m_name + "'.");
     }
     
+    auto comm = comm_protocol_from_string(t_comm);
+    
     // It's ok to add the port now
-    m_inputs.emplace(t_name, 0);
+    m_inputs.emplace(t_name, PhysicalPortProperties{0, comm});  // PhysicalPortProperties = {mask, comm-protocol}
 }
 
-void SMNChai::Node::add_output(const std::string &t_name) {
+void SMNChai::Node::add_output(const std::string &t_name, const std::string &t_comm) {
     if (!OBNsim::Utils::isValidIdentifier(t_name)) {
         throw smnchai_exception("Output port name '" + t_name + "' in node '" + m_name + "' is invalid.");
     }
@@ -391,12 +420,14 @@ void SMNChai::Node::add_output(const std::string &t_name) {
         throw smnchai_exception("Output port name '" + t_name + "' already exists in node '" + m_name + "'.");
     }
     
+    auto comm = comm_protocol_from_string(t_comm);
+    
     // It's ok to add the port now
-    m_outputs.emplace(t_name, 0);
+    m_outputs.emplace(t_name, PhysicalPortProperties{0, comm});  // PhysicalPortProperties = {mask, comm-protocol}
 }
 
 
-void SMNChai::Node::add_dataport(const std::string &t_name) {
+void SMNChai::Node::add_dataport(const std::string &t_name, const std::string &t_comm) {
     if (!OBNsim::Utils::isValidIdentifier(t_name)) {
         throw smnchai_exception("Data port name '" + t_name + "' in node '" + m_name + "' is invalid.");
     }
@@ -406,8 +437,10 @@ void SMNChai::Node::add_dataport(const std::string &t_name) {
         throw smnchai_exception("Data port name '" + t_name + "' already exists in node '" + m_name + "'.");
     }
     
+    auto comm = comm_protocol_from_string(t_comm);
+    
     // It's ok to add the port now
-    m_dataports.emplace(t_name);
+    m_dataports.emplace(t_name, comm);
 }
 
 
@@ -443,7 +476,7 @@ void SMNChai::Node::input_to_update(unsigned int t_id, const std::string &t_port
     
     // If this input has direct feedthrough, set the according bit
     if (t_direct) {
-        it->second |= (1 << t_id);
+        it->second.m_mask |= (1 << t_id);
     }
 }
 
@@ -464,7 +497,7 @@ void SMNChai::Node::output_from_update(unsigned int t_id, const std::string &t_p
         throw smnchai_exception("In output_from_update, port name '" + t_port + "' on node '" + m_name + "' does not exist.");
     }
     
-    it->second |= (1 << t_id);
+    it->second.m_mask |= (1 << t_id);
 }
 
 
@@ -477,21 +510,21 @@ SMNChai::PortInfo SMNChai::Node::port(const std::string &t_port) const {
     {
         auto it = m_inputs.find(t_port);
         if (it != m_inputs.end()) {
-            return SMNChai::PortInfo(m_name, t_port, SMNChai::PortInfo::INPUT);
+            return SMNChai::PortInfo{m_name, t_port, SMNChai::PortInfo::INPUT, it->second.m_comm};
         }
     }
     
     {
         auto it = m_outputs.find(t_port);
         if (it != m_outputs.end()) {
-            return SMNChai::PortInfo(m_name, t_port, SMNChai::PortInfo::OUTPUT);
+            return SMNChai::PortInfo{m_name, t_port, SMNChai::PortInfo::OUTPUT, it->second.m_comm};
         }
     }
     
     {
         auto it = m_dataports.find(t_port);
         if (it != m_dataports.end()) {
-            return SMNChai::PortInfo(m_name, t_port, SMNChai::PortInfo::DATA);
+            return SMNChai::PortInfo{m_name, t_port, SMNChai::PortInfo::DATA, it->second};
         }
     }
     
@@ -519,6 +552,11 @@ void SMNChai::WorkSpace::connect(const SMNChai::PortInfo &t_from, const SMNChai:
     
     if (t_to.port_type == SMNChai::PortInfo::OUTPUT) {
         throw smnchai_exception("Port " + t_to.node_name + '/' + t_to.port_name + " is an output and can't be the target of a connection.");
+    }
+    
+    // Both ports must use the same communication protocol
+    if (t_from.comm != t_to.comm) {
+        throw smnchai_exception("Ports " + t_from.node_name + '/' + t_from.port_name + " and " + t_to.node_name + '/' + t_to.port_name + " must use the same communication protocol to be connected.");
     }
     
     // Check if this connection has already existed
@@ -564,7 +602,7 @@ void SMNChai::WorkSpace::print() const {
 
 std::string SMNChai::WorkSpace::get_full_path(const std::string &t_obj1, const std::string &t_obj2) const {
     assert(!t_obj1.empty());
-    return (m_name.empty()?"/":('/'+m_name+'/')) + t_obj1 + (t_obj2.empty()?"":('/'+t_obj2));
+    return (m_name.empty()?t_obj1:(m_name+'/'+t_obj1)) + (t_obj2.empty()?"":('/'+t_obj2));
 }
 
 
@@ -597,7 +635,7 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
     for (auto mynode = m_nodes.begin(); mynode != m_nodes.end(); ++mynode) {
         // Create a GC port for it and try to open it
         OBNsmn::YARP::YARPPort *p_port = new OBNsmn::YARP::YARPPort;
-        std::string sys_port_name = get_full_path("_smn_", mynode->first);
+        std::string sys_port_name = '/' + get_full_path("_smn_", mynode->first);  // YARP requires / at the beginning
         if (!p_port->open(sys_port_name)) {
             delete p_port;
             throw smnchai_exception("Could not open system port " + sys_port_name);
@@ -618,7 +656,7 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
         
         // Connect the SMN and the ports (via their system ports)
         // Remote ports must already exist, i.e. remote nodes have already started and are waiting
-        std::string remote_gc_port = get_full_path(mynode->first, NODE_GC_PORT_NAME);
+        std::string remote_gc_port = '/' + get_full_path(mynode->first, NODE_GC_PORT_NAME);  // YARP requires / at the beginning
         
         // Check that the remote port exists
         if (!yarp::os::Network::exists(remote_gc_port)) {
@@ -638,11 +676,12 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
         }
         
         // However, all nodes send to the same GC input port
-        if (!yarp::os::Network::connect(remote_gc_port, get_full_path("_smn_", NODE_GC_PORT_NAME), "", false)) {
+        // YARP requires / at the beginning
+        if (!yarp::os::Network::connect(remote_gc_port, '/'+get_full_path("_smn_", NODE_GC_PORT_NAME), "", false)) {
             // Try a second time
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             
-            if (!yarp::os::Network::connect(remote_gc_port, get_full_path("_smn_", NODE_GC_PORT_NAME), "", false)) {
+            if (!yarp::os::Network::connect(remote_gc_port, '/' + get_full_path("_smn_", NODE_GC_PORT_NAME), "", false)) {
                 // Still Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
                 throw smnchai_exception("Could not connect from remote node " + mynode->first + " to the SMN.");
             }
@@ -656,7 +695,8 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
     OBNsmn::NodeDepGraph* nodeGraph = new OBNsmn::NodeDepGraph_BGL(m_nodes.size());
     
     for (auto myconn = m_connections.begin(); myconn != m_connections.end(); ++myconn) {
-        std::string from_port = get_full_path(myconn->first), to_port = get_full_path(myconn->second);
+        // YARP requires / at the beginning
+        std::string from_port = '/' + get_full_path(myconn->first), to_port = '/' + get_full_path(myconn->second);
         
         if (!yarp::os::Network::connect(from_port, to_port, "", false)) {
             // Try a second time

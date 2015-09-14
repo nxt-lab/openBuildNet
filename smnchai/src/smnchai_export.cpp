@@ -195,7 +195,7 @@ void Node::export2dot_full(std::ostream &tos, const std::string &tprops) const {
         
         bool has_connection = false;    // If an input has no connection, a virtual, invisible one is created to enforce the order
         for (OBNsim::updatemask_t id = 0; id <= OBNsim::MAX_UPDATE_INDEX; ++id) {
-            if (it->second & (OBNsim::updatemask_t(1) << id)) {
+            if (it->second.m_mask & (OBNsim::updatemask_t(1) << id)) {
                 // This UDPATE-id has this port as direct input
                 tos << TAB << portname << "->" << gen_update_name(id) << ";\n";
                 has_connection = true;
@@ -221,7 +221,7 @@ void Node::export2dot_full(std::ostream &tos, const std::string &tprops) const {
         
         bool has_connection = false;    // If an output has no connection, a virtual, invisible one is created to enforce the order
         for (OBNsim::updatemask_t id = 0; id <= OBNsim::MAX_UPDATE_INDEX; ++id) {
-            if (it->second & (OBNsim::updatemask_t(1) << id)) {
+            if (it->second.m_mask & (OBNsim::updatemask_t(1) << id)) {
                 // This UDPATE-id has this port as output
                 tos << TAB << gen_update_name(id) << "->" << portname << ";\n";
                 has_connection = true;
@@ -302,7 +302,7 @@ void Node::export2dot_compact(std::ostream &tos, const std::string &tprops) cons
 
         // Create each line for each data port
         for (auto it = m_dataports.cbegin(); it != m_dataports.cend(); ++it) {
-            tos << TAB << "<TR><TD PORT=\"" << *it << "\"><I>" << *it << "</I></TD></TR>\n";
+            tos << TAB << "<TR><TD PORT=\"" << it->first << "\"><I>" << it->first << "</I></TD></TR>\n";
         }
         
         // Closing table for data ports
@@ -360,8 +360,8 @@ void Node::export2dot_compact_cluster(std::ostream &tos, const std::string &tpro
     if (!m_dataports.empty()) {
         // Each port is a node
         for (auto it = m_dataports.cbegin(); it != m_dataports.cend(); ++it) {
-            portname = m_name + '/' + *it;
-            tos << TAB << TAB << QUOTE << portname << QUOTE << " [shape=octagon,label=\"" << *it << "\"];\n";
+            portname = m_name + '/' + it->first;
+            tos << TAB << TAB << QUOTE << portname << QUOTE << " [shape=octagon,label=\"" << it->first << "\"];\n";
         }
     }
     
@@ -402,9 +402,9 @@ void Node::export2graphml(std::ostream &tos) const {
     if (!m_dataports.empty()) {
         // Each port is a node
         for (auto it = m_dataports.cbegin(); it != m_dataports.cend(); ++it) {
-            portname = convert_to_xml_id(m_name + "::" + *it);
+            portname = convert_to_xml_id(m_name + "::" + it->first);
             tos << "<node id=" << QUOTE << portname << QUOTE << ">\n<data key=\"d5\">\n"
-            << "<y:ShapeNode><y:NodeLabel>"<< *it << "</y:NodeLabel><y:Shape type=\"octagon\"/></y:ShapeNode>\n</data>\n</node>\n";
+            << "<y:ShapeNode><y:NodeLabel>"<< it->first << "</y:NodeLabel><y:Shape type=\"octagon\"/></y:ShapeNode>\n</data>\n</node>\n";
         }
     }
     

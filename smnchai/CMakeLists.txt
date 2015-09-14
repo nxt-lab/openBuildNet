@@ -59,6 +59,28 @@ if(YARP_FOUND)
 endif()
 
 
+## To use MQTT (optionally)
+option(WITH_PAHOMQTT3 "Build SMNChai with Paho MQTT3 support for communication." OFF)
+if(WITH_PAHOMQTT3)
+  find_library(PAHOMQTT3A NAMES paho-mqtt3a)
+  if(PAHOMQTT3A_NOTFOUND)
+    # Use the local source files (submodule)
+    message("Did not find Paho MQTT3 library in the system; will use the local source files. This may bloat your program, so it's best to install Paho into your system before building SMNChai.")
+
+    find_package(OpenSSL REQUIRED)
+    AUX_SOURCE_DIRECTORY(${OBN_MAIN_DIR}/thirdparties/paho/src PAHOMQTT3A_SRC)
+    INCLUDE_DIRECTORIES(${OBN_MAIN_DIR}/thirdparties/paho/src)
+    set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${PAHOMQTT3A_SRC})
+
+    set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${OBNSMN_SRC_DIR}/.cpp)
+    set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${OBNSMN_INCLUDE_DIR}/.h)
+  else()
+    message("Found Paho MQTT3 library in the system; will use this library.")
+    link_libraries(${PAHOMQTT3A})
+  endif()
+  add_definitions(-DOBNSIM_COMM_MQTT)
+endif(WITH_PAHOMQTT3)
+
 ## These are the include directories used by the compiler.
 
 INCLUDE_DIRECTORIES(

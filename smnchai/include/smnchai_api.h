@@ -14,7 +14,6 @@
 #include <exception>
 #include <string>
 #include <map>
-#include <set>
 #include <forward_list>
 #include <utility>      // std::pair
 #include <limits>       // limits of integers (time, etc.)
@@ -53,16 +52,25 @@ namespace SMNChai {
         smnchai_exception(const char *msg): m_message(msg) { }
     };
     
+    /** Communication protocol/platform selection. */
+    enum CommProtocol {
+        COMM_YARP,
+        COMM_MQTT
+    };
+    
+    /** Returns the Communication protocol value from a string.
+     \param t_comm A string specifying the comm. protocol, currently "YARP" and "MQTT" are supported.
+     \exception smnchai_exception if the specified protocol is not supported (built into SMNChai).
+     */
+    CommProtocol comm_protocol_from_string(const std::string& t_comm);
+    
     
     /** \brief Information about a port on a node, used for specifying connections. */
     struct PortInfo {
         const std::string node_name;
         const std::string port_name;
         const enum PortType { INPUT = 0, OUTPUT = 1, DATA = 2 } port_type;
-        
-        PortInfo(const std::string &t_node, const std::string t_port, PortType t_type):
-        node_name(t_node), port_name(t_port), port_type(t_type)
-        { }
+        const CommProtocol comm;        
     };
     
     class WorkSpace;
@@ -70,27 +78,38 @@ namespace SMNChai {
     /** \brief Class that represents a node, to be created in Chaiscript
      */
     class Node {
-        // DATA MEMBERS
-        std::string m_name;     ///< Name of the node
-        
-        bool m_updateX = true;         ///< Whether this node needs UPDATE_X messages
-
-        /** Set of physical inputs and associated updates for which an input has direct feedthrough. */
-        std::map<std::string, OBNsim::updatemask_t> m_inputs;
-        
-        /** Set of physical outputs and associated updates that change the output. */
-        std::map<std::string, OBNsim::updatemask_t> m_outputs;
-        
-        /** Set of data ports. */
-        std::set<std::string> m_dataports;
-        
-        /** Set of update types: map from unique int ID to sampling period (in microseconds). */
-        std::map<unsigned int, double> m_updates;
     public:
         /** Prefix to node name created by the global new_node.
          Typically this prefix is empty, however it can be set to the name of a subsystem so that new nodes are automatically placed inside it.
          */
         static std::string m_global_prefix;
+
+    protected:
+        // DATA MEMBERS
+        std::string m_name;     ///< Name of the node
+        
+        bool m_updateX = true;         ///< Whether this node needs UPDATE_X messages
+
+        /** Store the properties/configuration of a physical input/output port. */
+        struct PhysicalPortProperties {
+            OBNsim::updatemask_t m_mask;
+            CommProtocol m_comm;    // The communication protocol used for this port
+        };
+        
+        /** Set of physical inputs and associated updates for which an input has direct feedthrough. */
+        std::map<std::string, PhysicalPortProperties> m_inputs;
+        
+        /** Set of physical outputs and associated updates that change the output. */
+        std::map<std::string, PhysicalPortProperties> m_outputs;
+        
+        /** Set of data ports. */
+        std::map<std::string, CommProtocol> m_dataports;
+        
+        /** Set of update types: map from unique int ID to sampling period (in microseconds). */
+        std::map<unsigned int, double> m_updates;
+        
+        /** The communication protocol used for this node's GC port. */
+        CommProtocol m_comm_protocol = COMM_YARP;
         
     public:
         /** Constructor of a node object given its name. The node is not yet added to the network.
@@ -109,23 +128,31 @@ namespace SMNChai {
         /** Set whether this node needs the UPDATE_X messages. */
         void set_need_updateX(bool b) { m_updateX = b; }
         
+        /** Set the communication protocol.
+         \param t_comm A string specifying the comm. protocol, currently "YARP" and "MQTT" are supported.
+         \exception smnchai_exception if the specified protocol is not supported (built into SMNChai).
+         */
+        void set_comm_protocol(const std::string& t_comm) {
+            m_comm_protocol = comm_protocol_from_string(t_comm);
+        }
+        
         /** \brief Add a new physical input port to the node.
          \param t_name The name of the port.
          \exception smnchai_exception an error happens, e.g. invalid name, port already exists...
          */
-        void add_input(const std::string &t_name);
+        void add_input(const std::string &t_name, const std::string &t_comm = "YARP");
         
         /** \brief Add a new physical output port to the node.
          \param t_name The name of the port.
          \exception smnchai_exception an error happens, e.g. invalid name, port already exists...
          */
-        void add_output(const std::string &t_name);
+        void add_output(const std::string &t_name, const std::string &t_comm = "YARP");
         
         /** \brief Add a new data output port to the node.
          \param t_name The name of the port.
          \exception smnchai_exception an error happens, e.g. invalid name, port already exists...
          */
-        void add_dataport(const std::string &t_name);
+        void add_dataport(const std::string &t_name, const std::string &t_comm = "YARP");
         
         /** Check if a given port's name exists. */
         bool port_exists(const std::string &t_name) const;
@@ -171,12 +198,20 @@ namespace SMNChai {
         
         /** Returns the update mask of a given input port, exception if port does not exist. */
         OBNsim::updatemask_t input_updatemask(const std::string &port_name) const {
-            return m_inputs.at(port_name);
+            auto it = m_inputs.find(port_name);
+            if (it == m_inputs.end()) {
+                throw smnchai_exception("Port " + port_name + " does not exist on node " + m_name);
+            }
+            return it->second.m_mask;
         }
         
         /** Returns the update mask of a given output port, exception if port does not exist. */
         OBNsim::updatemask_t output_updatemask(const std::string &port_name) const {
-            return m_outputs.at(port_name);
+            auto it = m_outputs.find(port_name);
+            if (it == m_outputs.end()) {
+                throw smnchai_exception("Port " + port_name + " does not exist on node " + m_name);
+            }
+            return it->second.m_mask;
         }
         
     public:
@@ -327,13 +362,13 @@ namespace SMNChai {
         /** \brief Returns the full path to an object.
          \param t_obj1 Name of the first object.
          \param t_obj2 Optional name of the second object.
-         \return Generally /workspace/obj1/obj2, where workspace and obj2 can be empty.
+         \return Generally workspace/obj1/obj2, where workspace and obj2 can be empty.
          */
         std::string get_full_path(const std::string &t_obj1, const std::string &t_obj2 = "") const;
         
         /** \brief Returns the full path to a port.
          \param t_port PortInfo object specifying a port.
-         \return Generally /workspace/node/port, where workspace can be empty.
+         \return Generally workspace/node/port, where workspace can be empty.
          */
         std::string get_full_path(const PortInfo &t_port) const;
         

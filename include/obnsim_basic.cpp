@@ -9,6 +9,7 @@
  */
 
 #include <obnsim_basic.h>
+#include <cctype>
 
 using namespace std;
 
@@ -26,6 +27,21 @@ std::string OBNsim::Utils::trim(const std::string& s0) {
     return s;
 }
 
+std::string OBNsim::Utils::toUpper(const string& s0) {
+    string s(s0);
+    for (auto& c: s) {
+        c = toupper(c);
+    }
+    return s;
+}
+
+std::string OBNsim::Utils::toLower(const string& s0) {
+    string s(s0);
+    for (auto& c: s) {
+        c = tolower(c);
+    }
+    return s;
+}
 
 bool OBNsim::Utils::isValidIdentifier(const std::string &name) {
     if (name.empty() || name[0] == '_') {

@@ -45,7 +45,7 @@ void OBNsmn::report_info(int code, std::string msg) {
 
 /** The following macros are defined by CMake to indicate which libraries this SMN build supports:
  - OBNSIM_COMM_YARP: if YARP is supported for communication.
- - OBNSIM_SMN_COMM_MQTT: if MQTT is supported for communication.
+ - OBNSIM_COMM_MQTT: if MQTT is supported for communication.
  */
 
 
@@ -192,7 +192,7 @@ int main(int argc, const char* argv[]) {
         }
         
         // Set the GC port name on this SMN
-        yarpThread.setPortName(ws.get_full_path("_smn_", "_gc_"));
+        yarpThread.setPortName('/' + ws.get_full_path("_smn_", "_gc_"));  // YARP requires / at the beginning
         
         // Must open the GC port on this SMN because other nodes will be connected to it in generate_obn_system()
         if (!yarpThread.openPort()) {

@@ -25,6 +25,12 @@ namespace OBNsim {
         /** \brief Trim a string from spaces at both ends. */
         std::string trim(const std::string& s0);
         
+        /** \brief Convert a string to upper-case. */
+        std::string toUpper(const std::string& s);
+        
+        /** \brief Convert a string to lower-case. */
+        std::string toLower(const std::string& s);
+        
         /** \brief Check if a given name is a valid identifier.
          \param name A string to be checked.
          \return true if name is a valid identifier.
