@@ -380,7 +380,7 @@ namespace OBNnode {
                 
             } catch (...) {
                 // Catch everything and pass it to the main thread
-                _theNode->postExceptionEvent(std::current_exception());
+                m_node->postExceptionEvent(std::current_exception());
             }
         }
     
@@ -408,11 +408,6 @@ namespace OBNnode {
             return _cur_value;
         }
         
-        /** Return the full port name in the network. */
-        virtual std::string fullPortName() const {
-            return this->getName();
-        }
-        
         /** Check if there is a pending input value (that hasn't been read). */
         bool isValuePending() const {
             return _pending_value;
@@ -420,7 +415,11 @@ namespace OBNnode {
         
         
     protected:
-        virtual yarp::os::Contactable& getYarpPort() {
+        virtual yarp::os::Contactable& getYarpPort() override {
+            return *this;
+        }
+        
+        virtual const yarp::os::Contactable& getYarpPort() const override {
             return *this;
         }
         
@@ -465,7 +464,7 @@ namespace OBNnode {
                 }
             } catch (...) {
                 // Catch everything and pass it to the main thread
-                _theNode->postExceptionEvent(std::current_exception());
+                m_node->postExceptionEvent(std::current_exception());
             }
         }
         
@@ -483,11 +482,6 @@ namespace OBNnode {
             return _cur_message;
         }
         
-        /** Return the full port name in the network. */
-        virtual std::string fullPortName() const {
-            return this->getName();
-        }
-        
         /** Check if there is a pending input value (that hasn't been read). */
         bool isValuePending() const {
             return _pending_value;
@@ -495,7 +489,11 @@ namespace OBNnode {
         
         
     protected:
-        virtual yarp::os::Contactable& getYarpPort() {
+        virtual yarp::os::Contactable& getYarpPort() override {
+            return *this;
+        }
+        
+        virtual const yarp::os::Contactable& getYarpPort() const override {
             return *this;
         }
         
@@ -546,11 +544,6 @@ namespace OBNnode {
             return _cur_message;
         }
         
-        /** Return the full port name in the network. */
-        virtual std::string fullPortName() const {
-            return this->getName();
-        }
-        
         /** Check if there is a pending input value (that hasn't been read). */
         bool isValuePending() const {
             return _pending_value;
@@ -558,7 +551,11 @@ namespace OBNnode {
         
         
     protected:
-        virtual yarp::os::Contactable& getYarpPort() {
+        virtual yarp::os::Contactable& getYarpPort() override {
+            return *this;
+        }
+        
+        virtual const yarp::os::Contactable& getYarpPort() const override {
             return *this;
         }
         
@@ -614,21 +611,21 @@ namespace OBNnode {
          Once all computations are done, the new value can be assigned to the port using either this operator or the assignment operator.
          */
         ValueType& operator* () {
-            _isChanged = true;
+            m_isChanged = true;
             return _cur_value;
         }
         
         /** Assign new value to the port. */
         ValueType& operator= (const ValueType && rhs) {
             _cur_value = rhs;
-            _isChanged = true;
+            m_isChanged = true;
             return _cur_value;
         }
         
         /** Assign new value to the port. */
         ValueType& operator= (const ValueType & rhs) {
             _cur_value = rhs;
-            _isChanged = true;
+            m_isChanged = true;
             return _cur_value;
         }
         
@@ -648,24 +645,22 @@ namespace OBNnode {
                 
                 // Actually send the message
                 this->writeStrict();
-                _isChanged = false;
+                m_isChanged = false;
             }
             catch (...) {
                 // Catch everything and pass it to the main thread
-                _theNode->postExceptionEvent(std::current_exception());
+                m_node->postExceptionEvent(std::current_exception());
             }
         }
     
-        virtual std::string fullPortName() const {
-            return this->getName();
-        }
-        
-        
     protected:
-        virtual yarp::os::Contactable& getYarpPort() {
+        virtual yarp::os::Contactable& getYarpPort() override {
             return *this;
         }
         
+        virtual const yarp::os::Contactable& getYarpPort() const override {
+            return *this;
+        }
     };
     
     
@@ -685,7 +680,7 @@ namespace OBNnode {
         
         /** Directly access the ProtoBuf message stored in this port; can change it (so it'll be marked as changed). */
         PBCLS& message() {
-            _isChanged = true;
+            m_isChanged = true;
             return _cur_message;
         }
         
@@ -701,24 +696,21 @@ namespace OBNnode {
                 
                 // Actually send the message
                 this->writeStrict();
-                _isChanged = false;
+                m_isChanged = false;
             }
             catch (...) {
-                _theNode->postExceptionEvent(std::current_exception());
+                m_node->postExceptionEvent(std::current_exception());
             }
         }
-
-        
-        virtual std::string fullPortName() const {
-            return this->getName();
-        }
-        
         
     protected:
-        virtual yarp::os::Contactable& getYarpPort() {
+        virtual yarp::os::Contactable& getYarpPort() override {
             return *this;
         }
         
+        virtual const yarp::os::Contactable& getYarpPort() const override {
+            return *this;
+        }
     };
 
     
@@ -738,19 +730,19 @@ namespace OBNnode {
         
         /** Directly access the ProtoBuf message stored in this port; can change it (so it'll be marked as changed). */
         std::string& message() {
-            _isChanged = true;
+            m_isChanged = true;
             return _cur_message;
         }
         
         /** Set the binary data content to a std::string */
         std::string& message(const std::string &s) {
-            _isChanged = true;
+            m_isChanged = true;
             return _cur_message.assign(s);
         }
         
         /** Set the binary data content to n characters starting from a pointer. */
         std::string& message(const char* s, std::size_t n) {
-            _isChanged = true;
+            m_isChanged = true;
             return _cur_message.assign(s, n);
         }
         
@@ -762,20 +754,17 @@ namespace OBNnode {
             
             // Actually send the message
             this->writeStrict();
-            _isChanged = false;
-        }
-        
-        
-        virtual std::string fullPortName() const {
-            return this->getName();
-        }
-        
+            m_isChanged = false;
+        }        
         
     protected:
-        virtual yarp::os::Contactable& getYarpPort() {
+        virtual yarp::os::Contactable& getYarpPort() override {
             return *this;
         }
         
+        virtual const yarp::os::Contactable& getYarpPort() const override {
+            return *this;
+        }
     };
     
 }

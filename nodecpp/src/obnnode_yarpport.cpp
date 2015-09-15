@@ -13,24 +13,3 @@
 #include <obnnode_yarpnode.h>
 
 using namespace OBNnode;
-
-
-YarpPortBase::~YarpPortBase() {
-    //std::cout << "~YarpPortBase" << std::endl;
-    if (isValid()) {
-        // Notify the node to remove me
-        _theNode->removePort(this);
-        _theNode = nullptr;
-        //std::cout << "Calling removePort." << std::endl;
-    }
-}
-
-YarpOutputPortBase::~YarpOutputPortBase() {
-    //std::cout << "~YarpOutputPortBase" << std::endl;
-    if (isValid()) {
-        // Notify the node to remove me
-        _theNode->removePort(this);
-        _theNode = nullptr;
-        //std::cout << "Calling removePort for output." << std::endl;
-    }
-}

@@ -21,9 +21,7 @@ message SMN2N {
   enum MSGTYPE {
     // System control
     SYS_REQUEST_STOP_ACK = 0x0001;
-    //SYS_OUTPUT_NBR = 0x00A0;	// set ACK number of an output
-    //SYS_OUTPUT_NBR_DEC = 0x00A1;   // decrease the ACK number of an output
-    //SYS_OUTPUT_NBR_INC = 0x00A2;   // increase the ACK number of an output
+    SYS_PORT_CONNECT = 0x00A0;
     // Co-simulation control
     SIM_INIT = 0x0100;  // initialization before simulation
     SIM_Y = 0x0101;	// regular update-y
@@ -44,7 +42,7 @@ message N2SMN {
   enum MSGTYPE {
     // System control
     SYS_REQUEST_STOP = 0x0001;
-    //SYS_OUTPUT_NBR_ACK = 0x00A0;
+    SYS_PORT_CONNECT_ACK = 0x00A0;
     // Co-simulation control
     SIM_INIT_ACK = 0x0100;
     SIM_Y_ACK = 0x0101;

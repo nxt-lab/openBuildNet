@@ -20,6 +20,11 @@
  */
 
 
+/** The following macros are defined by CMake to indicate which libraries this build supports:
+ - OBN_COMM_YARP: if YARP is supported for communication.
+ - OBN_COMM_MQTT: if MQTT is supported for communication.
+ */
+
 #include <obnnode.h>
 
 using namespace OBNnode;

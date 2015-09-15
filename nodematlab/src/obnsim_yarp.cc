@@ -117,8 +117,8 @@ int YarpNodeMatlab::createInputPort(char container, const std::string &element, 
         return -2;
     }
     
-    // Add the port to the node
-    bool result = addInput(portinfo.port);
+    // Add the port to the node, which will OWN the port and will delete it
+    bool result = addInput(portinfo.port, true);
     if (!result) {
         // failed to add to node
         delete portinfo.port;
@@ -174,8 +174,8 @@ int YarpNodeMatlab::createOutputPort(char container, const std::string &element,
         return -2;
     }
     
-    // Add the port to the node
-    bool result = addOutput(port);
+    // Add the port to the node, which will OWN the port and will delete it
+    bool result = addOutput(port, true);
     if (!result) {
         // failed to add to node
         delete port;
@@ -195,10 +195,11 @@ YarpNodeMatlab::~YarpNodeMatlab() {
     // If the node is still running, we need to stop it first
     stopSimulation();
     
-    // Delete all port objects belonging to this node
-    for (auto p:_all_ports) {
-        delete p.port;
-    }
+    // We don't need to delete all port objects belonging to this node (in _all_ports vector) because this node object OWNS these ports and will delete them in the destructor ~NodeBase()
+    // Although deleting them here won't cause error.
+    //for (auto p:_all_ports) {
+    //    delete p.port;
+    //}
 }
 
 
@@ -318,7 +319,7 @@ template class mexplus::Session<YarpNode::WaitForCondition>;
 
 // For vectors, regardless of how vectors are stored in Matlab's mxArray vs. in Eigen, we can simply copy the exact number of values from one to another.
 template <typename ETYPE>
-mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::YarpPortBase *port) {
+mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port) {
     YarpInput<OBN_PB,obn_vector<ETYPE>,false> *p = dynamic_cast<YarpInput<OBN_PB,obn_vector<ETYPE>,false>*>(port);
     if (p) {
         auto &pv = p->get();
@@ -333,7 +334,7 @@ mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnod
 
 // For matrices, the order in which Matlab and Eigen store matrices (column-major or row-major) will affect how data can be copied.  Because both Eigen and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.  For completeness, there are commented code lines that safely transfer data by accessing element-by-element, but this would be slower.
 template <typename ETYPE>
-mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::YarpPortBase *port) {
+mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port) {
     YarpInput<OBN_PB,obn_matrix<ETYPE>,false> *p = dynamic_cast<YarpInput<OBN_PB,obn_matrix<ETYPE>,false>*>(port);
     if (p) {
         auto &pv = p->get();
@@ -368,7 +369,7 @@ mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnod
 // - Use Eigen::Map to create an Eigen's vector on the data returned by the vector object.
 // - Assign the map object to the Eigen vector object (inside the port object).
 template <typename ETYPE>
-void write_output_vector_helper(const InputArguments &input, OBNnode::YarpPortBase *port) {
+void write_output_vector_helper(const InputArguments &input, OBNnode::PortBase *port) {
     YarpOutput<OBN_PB,obn_vector<ETYPE>> *p = dynamic_cast<YarpOutput<OBN_PB,obn_vector<ETYPE>>*>(port);
     if (p) {
         auto from = MxArray(input.get(2)); // MxArray object
@@ -391,7 +392,7 @@ void write_output_vector_helper(const InputArguments &input, OBNnode::YarpPortBa
 
 // For matrices, the order in which Matlab and Eigen store matrices (column-major or row-major) will affect how data can be copied.  Because both Eigen and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.  For completeness, there are commented code lines that safely transfer data by accessing element-by-element, but this would be slower.
 template <typename ETYPE>
-void write_output_matrix_helper(const InputArguments &input, OBNnode::YarpPortBase *port) {
+void write_output_matrix_helper(const InputArguments &input, OBNnode::PortBase *port) {
     YarpOutput<OBN_PB,obn_matrix<ETYPE>> *p = dynamic_cast<YarpOutput<OBN_PB,obn_matrix<ETYPE>>*>(port);
     if (p) {
         auto from = MxArray(input.get(2)); // MxArray object

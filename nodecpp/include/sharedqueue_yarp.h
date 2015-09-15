@@ -24,7 +24,7 @@
 /** \brief Template of thread-safe shared queue of shared_ptr pointers to objects of given type.
  */
 template <typename T>
-class shared_queue
+class shared_queue_yarp
 {
 public:
     typedef typename std::shared_ptr<T> item_type; ///< Smart pointer type to the objects.
@@ -36,7 +36,7 @@ private :
     /** The semaphore to signal event, shared. */
     mutable yarp::os::Semaphore mCount;
 public:
-    shared_queue(): mCount(0) { }
+    shared_queue_yarp(): mCount(0) { }
     
     /** Push an object into the queue, at the back.
      */

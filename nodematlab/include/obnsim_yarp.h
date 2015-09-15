@@ -45,7 +45,7 @@ namespace OBNnode {
         
         /** Structure containing info about a port in this node. */
         struct PortInfo {
-            OBNnode::YarpPortBase *port;
+            OBNnode::PortBase *port;
             enum { INPUTPORT, OUTPUTPORT, DATAPORT } type;
             char container;     ///< 's', 'v', 'm', 'b'
             enum { NONE, DOUBLE, LOGICAL, INT32, UINT32, INT64, UINT64 } elementType;
@@ -147,21 +147,21 @@ namespace OBNnode {
         /* =========== Callback Methods for errors ============= */
         
         /** Callback for error when parsing the raw binary data into a structured message (e.g. ProtoBuf or JSON) */
-        virtual void onRawMessageError(const YarpPortBase * port, const std::string& info) override {
+        virtual void onRawMessageError(const PortBase * port, const std::string& info) override {
             _node_state = NODE_ERROR;
             auto msg = "Error while parsing the raw message from port: " + port->fullPortName() + " (" + info + ")";
             reportError("YARPNODE:communication", msg.c_str());
         }
         
         /** Callback for error when reading the values from a structured message (e.g. ProtoBuf or JSON), e.g. if the type or dimension is invalid. */
-        virtual void onReadValueError(const YarpPortBase * port, const std::string& info) override {
+        virtual void onReadValueError(const PortBase * port, const std::string& info) override {
             _node_state = NODE_ERROR;
             auto msg = "Error while extracting value from message for port: " + port->fullPortName() + " (" + info + ")";
             reportError("YARPNODE:communication", msg.c_str());
         }
         
         /** Callback for error when sending the values (typically happens when serializing the message to be sent). */
-        virtual void onSendMessageError(const YarpPortBase * port, const std::string& info) override {
+        virtual void onSendMessageError(const PortBase * port, const std::string& info) override {
             _node_state = NODE_ERROR;
             auto msg = "Error while sending a value from port: " + port->fullPortName() + " (" + info + ")";
             reportError("YARPNODE:communication", msg.c_str());

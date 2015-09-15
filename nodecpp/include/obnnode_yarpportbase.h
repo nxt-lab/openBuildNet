@@ -15,6 +15,7 @@
 
 #include <cassert>
 #include <string>
+#include <obnnode_basic.h>
 #include <yarp/os/all.h>
 
 namespace OBNnode {
@@ -157,78 +158,55 @@ namespace OBNnode {
     
     /** \brief Base class for an openBuildNet port, contains name, mode, etc.
      */
-    class YarpPortBase {
+    class YarpPortBase: public PortBase {
     protected:
-        std::string _nameInNode;       ///< The name of the port in the node (i.e. without the node name prefix
-        YarpNodeBase* _theNode;  ///< The node managing/owning this port (where event queue and callback interface are handled)
-
-        ///< Returns the actual Yarp port
+        /** Returns the actual Yarp port. */
         virtual yarp::os::Contactable& getYarpPort() = 0;
+        virtual const yarp::os::Contactable& getYarpPort() const = 0;
         
-        /** Attach the port to make it a valid port */
-        virtual bool attach(YarpNodeBase* node) {
-            assert(node != nullptr);
-            _theNode = node;
-            return true;
+        /** Close the port. */
+        virtual void close() override {
+            getYarpPort().close();
         }
         
-        /** Detach the port from its current node, making it invalid. Close the port if necessary. */
-        virtual void detach() {
-            if (isValid()) {
-                getYarpPort().close();
-                _theNode = nullptr;
-            }
+        /** Open the port given a full network name. */
+        virtual bool open(const std::string& full_name) {
+            return getYarpPort().open(full_name[0]=='/'?full_name:('/'+full_name));
         }
-        
-        /** Configure the port (e.g. to set its callback, type of communication, etc.) */
-        virtual bool configure() {
-            return true;
-        }
-        
-        friend class YarpNodeBase;
         
     public:
-        YarpPortBase(const std::string& _name): _nameInNode(_name), _theNode(nullptr) { }
+        YarpPortBase(const std::string& t_name): PortBase(t_name) { }
+        //virtual ~YarpPortBase() { }
         
-        virtual ~YarpPortBase();
-        
-        const std::string& getPortName() const {
-            return _nameInNode;
+        virtual std::string fullPortName() const override {
+            return getYarpPort().getName();
         }
-        
-        /** \brief Whether the port is valid (i.e. attached to a node and can be used properly)
-         */
-        bool isValid() const {
-            return (_theNode != nullptr);
-        }
-        
-        /** \brief Returns the full port name in the Yarp network (not the name inside the ndoe). */
-        virtual std::string fullPortName() const = 0;
     };
     
     /** \brief Base class for an openBuildNet output port.
      */
-    class YarpOutputPortBase: public YarpPortBase {
-        // Properties and methods will be defined here for ACKs, asynchronous/synchronous writing, etc.
+    class YarpOutputPortBase: public OutputPortBase {
     protected:
-        /** Whether the value of this output has been changed (and not yet sent out).
-         The subclass should set this variable to true whenever a value is assigned, and set this variable to false whenever it sends the value out.
-         */
-        bool _isChanged;
-    public:
-        YarpOutputPortBase(const std::string& _name): YarpPortBase(_name), _isChanged(false) { }
-        virtual ~YarpOutputPortBase();
+        /** Returns the actual Yarp port. */
+        virtual yarp::os::Contactable& getYarpPort() = 0;
+        virtual const yarp::os::Contactable& getYarpPort() const = 0;
         
-        bool isChanged() const {
-            return _isChanged;
+        /** Close the port. */
+        virtual void close() override {
+            getYarpPort().close();
         }
         
-        /** Send the data out in a synchronous manner.
-         The function should wait until the data has been sent out successfully and, if ACK is required, all ACKs have been received.
-         For asynchronous sending (does not wait until writing is complete and/or all ACKs have been received), \see sendAsync().
-         The method does not return the status of the sending (successful or failed), but it may call the error handlers of the node object (which centralize the error handling of each node).
-         */
-        virtual void sendSync() = 0;
+        /** Open the port given a full network name. */
+        virtual bool open(const std::string& full_name) {
+            return getYarpPort().open(full_name[0]=='/'?full_name:('/'+full_name));
+        }
+    public:
+        YarpOutputPortBase(const std::string& t_name): OutputPortBase(t_name) { }
+        //virtual ~YarpOutputPortBase() { }
+        
+        virtual std::string fullPortName() const override {
+            return getYarpPort().getName();
+        }
     };
 }
 
