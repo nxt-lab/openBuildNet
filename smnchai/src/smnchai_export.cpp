@@ -421,7 +421,7 @@ void Node::export2graphml(std::ostream &tos) const {
  \param tprops Optional extra properties of the graph can be specified in this string.
  */
 void SMNChai::export2dot(const std::string m_name,
-                const std::map<std::string, std::pair<Node,std::size_t> > &m_nodes,
+                const std::map<std::string, const Node&> &m_nodes,
                 const std::forward_list< std::pair<PortInfo, PortInfo> > &m_connections,
                 std::ostream &tos, bool t_cluster, const std::string &tprops)
 {
@@ -446,9 +446,9 @@ void SMNChai::export2dot(const std::string m_name,
     
     for (auto mynode = m_nodes.cbegin(); mynode != m_nodes.cend(); ++mynode) {
         if (t_cluster) {
-            mynode->second.first.export2dot_compact_cluster(tos);
+            mynode->second.export2dot_compact_cluster(tos);
         } else {
-            mynode->second.first.export2dot_compact(tos);
+            mynode->second.export2dot_compact(tos);
         }
         tos << std::endl << std::endl;
     }
@@ -465,7 +465,7 @@ void SMNChai::export2dot(const std::string m_name,
             if (nit == m_nodes.end()) {
                 throw smnchai_exception("In a connection, source node " + myconn->first.node_name + " does not exist.");
             } else {
-                if (!nit->second.first.port_exists(myconn->first.port_name)) {
+                if (!nit->second.port_exists(myconn->first.port_name)) {
                     throw smnchai_exception("In a connection, source port " + myconn->first.port_name + " does not exist on node " + myconn->first.node_name);
                 }
             }
@@ -476,7 +476,7 @@ void SMNChai::export2dot(const std::string m_name,
             if (nit == m_nodes.end()) {
                 throw smnchai_exception("In a connection, target node " + myconn->second.node_name + " does not exist.");
             } else {
-                if (!nit->second.first.port_exists(myconn->second.port_name)) {
+                if (!nit->second.port_exists(myconn->second.port_name)) {
                     throw smnchai_exception("In a connection, target port " + myconn->second.port_name + " does not exist on node " + myconn->second.node_name);
                 }
             }
@@ -511,7 +511,7 @@ void SMNChai::export2dot(const std::string m_name,
  \param tprops Optional extra properties of the graph can be specified in this string.
  */
 void SMNChai::export2graphml(const std::string m_name,
-                         const std::map<std::string, std::pair<Node,std::size_t> > &m_nodes,
+                         const std::map<std::string, const Node&> &m_nodes,
                          const std::forward_list< std::pair<PortInfo, PortInfo> > &m_connections,
                          std::ostream &tos)
 {
@@ -552,7 +552,7 @@ void SMNChai::export2graphml(const std::string m_name,
 )grouplabel";
 
         // The node as a nested graoup
-        mynode->second.first.export2graphml(tos);
+        mynode->second.export2graphml(tos);
         tos << "\n</node>\n";
     }
     
@@ -564,7 +564,7 @@ void SMNChai::export2graphml(const std::string m_name,
             if (nit == m_nodes.end()) {
                 throw smnchai_exception("In a connection, source node " + myconn->first.node_name + " does not exist.");
             } else {
-                if (!nit->second.first.port_exists(myconn->first.port_name)) {
+                if (!nit->second.port_exists(myconn->first.port_name)) {
                     throw smnchai_exception("In a connection, source port " + myconn->first.port_name + " does not exist on node " + myconn->first.node_name);
                 }
             }
@@ -575,7 +575,7 @@ void SMNChai::export2graphml(const std::string m_name,
             if (nit == m_nodes.end()) {
                 throw smnchai_exception("In a connection, target node " + myconn->second.node_name + " does not exist.");
             } else {
-                if (!nit->second.first.port_exists(myconn->second.port_name)) {
+                if (!nit->second.port_exists(myconn->second.port_name)) {
                     throw smnchai_exception("In a connection, target port " + myconn->second.port_name + " does not exist on node " + myconn->second.node_name);
                 }
             }
@@ -597,7 +597,14 @@ void SMNChai::export2graphml(const std::string m_name,
  */
 void WorkSpace::export2dotfile(const std::string &fn, bool cluster, const std::string &tprops) const {
     std::stringstream ss(std::ios_base::out);
-    SMNChai::export2dot(m_name, m_nodes, m_connections, ss, cluster, tprops);
+    
+    // Generate a list of nodes to export
+    std::map<std::string, const Node&> nodelist;
+    for (const auto& mynode: m_nodes) {
+        nodelist.emplace(mynode.first, mynode.second.node);
+    }
+    
+    SMNChai::export2dot(m_name, nodelist, m_connections, ss, cluster, tprops);
     std::ofstream fs(fn);
     if (fs.is_open()) {
         fs << ss.str();
@@ -612,7 +619,14 @@ void WorkSpace::export2dotfile(const std::string &fn, bool cluster, const std::s
  */
 void WorkSpace::export2graphmlfile(const std::string &fn) const {
     std::stringstream ss(std::ios_base::out);
-    SMNChai::export2graphml(m_name, m_nodes, m_connections, ss);
+    
+    // Generate a list of nodes to export
+    std::map<std::string, const Node&> nodelist;
+    for (const auto& mynode: m_nodes) {
+        nodelist.emplace(mynode.first, mynode.second.node);
+    }
+    
+    SMNChai::export2graphml(m_name, nodelist, m_connections, ss);
     std::ofstream fs(fn);
     if (fs.is_open()) {
         fs << ss.str();

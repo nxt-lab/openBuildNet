@@ -69,6 +69,15 @@ namespace OBNnode {
          */
         bool open();
         
+        
+        /** \brief Request to establish a connection from a given port to this port.
+         
+         \param source The full path of the source port.
+         \return A pair of the connection result and an optional error message.
+         See the message N2SMN:SYS_PORT_CONNECT_ACK for details.
+         */
+        virtual std::pair<int, std::string> connect_from_port(const std::string& source) = 0;
+        
         friend class NodeBase;
         
     public:
@@ -98,6 +107,11 @@ namespace OBNnode {
          The subclass should set this variable to true whenever a value is assigned, and set this variable to false whenever it sends the value out.
          */
         bool m_isChanged;
+        
+        virtual std::pair<int, std::string> connect_from_port(const std::string& source) override {
+            // Connection to an output port is forbidden
+            return std::make_pair(-1, "An output port can't accept an incoming connection.");
+        }
     public:
         OutputPortBase(const std::string& t_name): PortBase(t_name), m_isChanged(false) { }
         virtual ~OutputPortBase();  // This destructor is important to detach the output port from the node. DO NOT REMOVE IT.
@@ -267,9 +281,11 @@ namespace OBNnode {
          The event will be executed on the main thread only. Events are posted to the queue by the threads of the ports.
          The execution of the event handler consists of two functions, in the following order: executeMain, executePost.
          */
-        struct NodeEvent {
-            virtual void executeMain(NodeBase*) = 0;     ///< Main Execution of the event
-            virtual void executePost(NodeBase*) = 0;     ///< Post-Execution of the event
+        class NodeEvent {
+        public:
+            virtual ~NodeEvent() { }                    // VERY IMPORTANT because NodeEvent will be derived; this is to make sure child classes will be destroyed cleanly
+            virtual void executeMain(NodeBase*) = 0;    ///< Main Execution of the event
+            virtual void executePost(NodeBase*) { }     ///< Post-Execution of the event
         };
         
         /* An implementation of a node should manage a queue of NodeEvent objects, and implements the following methods. */
@@ -300,16 +316,11 @@ namespace OBNnode {
         virtual std::shared_ptr<NodeEvent> eventqueue_wait_and_pop(double timeout) = 0;
         
         /** Parent event class for SMN events. */
-        struct NodeEventSMN: public NodeEvent {
+        class NodeEventSMN: public NodeEvent {
+        protected:
             simtime_t _time;
             bool _hasID;
             int32_t _id;
-            
-            /** Populate basic info of an event from an SMN2N message. */
-            NodeEventSMN(const OBNSimMsg::SMN2N& msg) {
-                _time = msg.time();
-                if ((_hasID = msg.has_id())) { _id = msg.id(); }
-            }
             
             /** Method to process basic details of an SMN event; should be called in the execute() methods of child classes. */
             void basic_processing(NodeBase* p) {
@@ -318,13 +329,20 @@ namespace OBNnode {
                     p->_node_id = _id;
                 }
             }
+        public:
+            /** Populate basic info of an event from an SMN2N message. */
+            NodeEventSMN(const OBNSimMsg::SMN2N& msg) {
+                _time = msg.time();
+                if ((_hasID = msg.has_id())) { _id = msg.id(); }
+            }
         };
         
         /** Event class for cosimulation's UPDATE_Y messages. */
-        struct NodeEvent_UPDATEY: public NodeEventSMN {
+        class NodeEvent_UPDATEY: public NodeEventSMN {
+            updatemask_t _updates;
+        public:
             virtual void executeMain(NodeBase*) override;
             virtual void executePost(NodeBase*) override;
-            updatemask_t _updates;
             NodeEvent_UPDATEY(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
                 _updates = msg.has_i()?msg.i():0;
             }
@@ -332,10 +350,11 @@ namespace OBNnode {
         friend NodeEvent_UPDATEY;
         
         /** Event class for cosimulation's UPDATE_X messages. */
-        struct NodeEvent_UPDATEX: public NodeEventSMN {
+        class NodeEvent_UPDATEX: public NodeEventSMN {
+            updatemask_t _updates;
+        public:
             virtual void executeMain(NodeBase*) override;
             virtual void executePost(NodeBase*) override;
-            updatemask_t _updates;
             NodeEvent_UPDATEX(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
                 _updates = msg.has_i()?msg.i():0;
             }
@@ -343,11 +362,12 @@ namespace OBNnode {
         friend NodeEvent_UPDATEX;
         
         /** Event class for cosimulation's INITIALIZE messages. */
-        struct NodeEvent_INITIALIZE: public NodeEventSMN {
+        class NodeEvent_INITIALIZE: public NodeEventSMN {
             std::time_t _wallclock;
             simtime_t _timeunit;
             bool _has_wallclock = false;
             bool _has_timeunit = false;
+        public:
             virtual void executeMain(NodeBase*) override;
             virtual void executePost(NodeBase*) override;
             NodeEvent_INITIALIZE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
@@ -364,7 +384,8 @@ namespace OBNnode {
         friend NodeEvent_INITIALIZE;
         
         /** Event class for cosimulation's TERMINATE messages. */
-        struct NodeEvent_TERMINATE: public NodeEventSMN {
+        class NodeEvent_TERMINATE: public NodeEventSMN {
+        public:
             virtual void executeMain(NodeBase*) override;
             virtual void executePost(NodeBase*) override;
             NodeEvent_TERMINATE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) { }
@@ -373,12 +394,13 @@ namespace OBNnode {
         
         
         /** Event class for system's SYS_PORT_CONNECT messages. */
-        struct NodeEvent_PORT_CONNECT: public NodeEventSMN {
+        class NodeEvent_PORT_CONNECT: public NodeEventSMN {
             std::string _myport;
             std::string _otherport;
             bool _valid_msg;  ///< true if the received request message is valid
+        public:
             virtual void executeMain(NodeBase*) override;
-            virtual void executePost(NodeBase*) override;
+            
             NodeEvent_PORT_CONNECT(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
                 // Extract the names of the ports
                 _valid_msg = msg.has_data() && msg.data().has_i() && msg.data().has_b();
@@ -396,15 +418,14 @@ namespace OBNnode {
         
         
         /** Event class for any exception (error) thrown anywhere in the program but must be caught by the main thread. */
-        struct NodeEventException: public NodeEvent {
+        class NodeEventException: public NodeEvent {
             std::exception_ptr m_exception;
-            
+        public:
             NodeEventException(std::exception_ptr e): m_exception(e) {
                 assert(e);  // the exception should not be NULL
             }
             
             virtual void executeMain(NodeBase*) override;
-            virtual void executePost(NodeBase*) override { }
         };
         
         

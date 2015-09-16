@@ -131,3 +131,28 @@ bool YARPPollingThread::sendMessage(OBNSimMsg::SMN2N &msg) {
     
     return true;
 }
+
+void YARPPollingThread::ThreadMain() {
+    done_execution = false;
+    
+    // This thread simply polls the main GC port
+    OBNSimMsg::N2SMN msg;
+    
+    while (!pGC->simple_thread_terminate) {
+        YARPMsg *b = port.read(false);
+        if (b) {
+            // data received in *b
+            if (!b->getMessage(msg)) {
+                // We should report an error here
+                std::cout << "Critical error: error while parsing input message from a node." << std::endl;
+            }
+            
+            pGC->pushNodeEvent(msg, 0);
+        }
+    }
+    
+    // Close the port after finishing
+    port.close();
+    
+    done_execution = true;
+}

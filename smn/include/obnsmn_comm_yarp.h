@@ -163,8 +163,8 @@ namespace OBNsmn {
                 if (pThread) {
                     // Although we can detach the thread, it's not a good idea because the thread's main procedure uses members of this object; once this object is deleted, the thread may not be able to run anymore. So in this destructor, we need to finish the thread's execution before we can destroy the object.
                     
-                    if (pThread->joinable()) pThread->join();
-                    pThread->detach();
+                    if (pThread->joinable()) { pThread->join(); }
+                    //pThread->detach();
                     delete pThread;
                 }
                 
@@ -246,30 +246,7 @@ namespace OBNsmn {
             std::thread * pThread = nullptr;
             
             /** This function is the entry point for the thread. Do not call it directly. */
-            void ThreadMain() {
-                done_execution = false;
-                
-                // This thread simply polls the main GC port
-                OBNSimMsg::N2SMN msg;
-                
-                while (!pGC->simple_thread_terminate) {
-                    YARPMsg *b = port.read(false);
-                    if (b) {
-                        // data received in *b
-                        if (!b->getMessage(msg)) {
-                            // We should report an error here
-                            std::cout << "Critical error: error while parsing input message from a node." << std::endl;
-                        }
-                        
-                        pGC->pushNodeEvent(msg, 0);
-                    }
-                }
-                
-                // Close the port after finishing
-                port.close();
-                
-                done_execution = true;
-            }
+            void ThreadMain();
         };
     }
 }

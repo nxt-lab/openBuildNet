@@ -174,6 +174,7 @@ namespace OBNnode {
             return getYarpPort().open(full_name[0]=='/'?full_name:('/'+full_name));
         }
         
+        virtual std::pair<int, std::string> connect_from_port(const std::string& source) override;
     public:
         YarpPortBase(const std::string& t_name): PortBase(t_name) { }
         //virtual ~YarpPortBase() { }

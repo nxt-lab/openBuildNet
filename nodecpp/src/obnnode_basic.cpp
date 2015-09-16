@@ -339,6 +339,11 @@ void NodeBase::postEvent(const OBNSimMsg::SMN2N& msg) {
             eventqueue_push(new NodeEvent_INITIALIZE(msg));
             break;
             
+        case SMN2N_MSGTYPE_SYS_PORT_CONNECT:
+            // Request from the SMN to connect ports
+            eventqueue_push(new NodeEvent_PORT_CONNECT(msg));
+            break;
+            
         case SMN2N_MSGTYPE_SYS_REQUEST_STOP_ACK:
             // We catch this but don't do anything about it for now
             // Later we should have a waitfor condition for this
@@ -507,4 +512,46 @@ void NodeBase::NodeEventException::executeMain(NodeBase* pnode) {
     }
     
     // Any unhandled exception will go through and trigger the default handler
+}
+
+/** Handle port connection request. */
+void NodeBase::NodeEvent_PORT_CONNECT::executeMain(NodeBase* pnode) {
+    std::pair<int, std::string> result{_valid_msg?-1:-3, ""};
+    
+    if (_valid_msg) {
+        // Find the port on this node
+        PortBase* myport = nullptr;
+        for (const auto& p: pnode->_input_ports) {
+            if (p.first->getPortName() == _myport) {
+                myport = p.first;
+                break;
+            }
+        }
+        
+        // Do not find the port in the list of physical output ports
+        
+        if (myport) {
+            // Found --> ask the port to connect
+            result = myport->connect_from_port(_otherport);
+        }
+    }
+    
+    // Prepare the ACK message
+    pnode->_n2smn_message.Clear();
+    pnode->_n2smn_message.set_msgtype(OBNSimMsg::N2SMN_MSGTYPE_SYS_PORT_CONNECT_ACK);
+    if (_hasID) {
+        pnode->_n2smn_message.set_id(_id);
+    }
+
+    // Only need Data field if not successful
+    if (result.first != 0) {
+        OBNSimMsg::MSGDATA* pData = new OBNSimMsg::MSGDATA();
+        pData->set_i(result.first);
+        if (!result.second.empty()) {
+            pData->set_b(result.second);
+        }
+        pnode->_n2smn_message.set_allocated_data(pData);
+    }
+    
+    pnode->sendN2SMNMsg();
 }

@@ -76,6 +76,11 @@ void shutdown_SMN() {
     std::this_thread::sleep_for(std::chrono::seconds(4));
 }
 
+void shutdown_communication_threads(OBNsmn::GCThread& gc) {
+    gc.simple_thread_terminate = true;
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+}
+
 int main(int argc, const char* argv[]) {
     std::cout << copyright << std::endl;
     
@@ -201,31 +206,35 @@ int main(int argc, const char* argv[]) {
         }
         
         std::cout << "Done loading the script file. Now constructing the simulation network...\n";
+        
+        // Need to start the YARP thread here to get certain messages from the nodes
+        if (!yarpThread.startThread()) {
+            std::cerr << "ERROR: could not start Yarp communication thread." << std::endl;
+            return 1;
+        }
+        
         try {
             ws.generate_obn_system(gc);
         } catch (SMNChai::smnchai_exception const &e) {
             std::cerr << "ERROR: " << e.what() << std::endl;
+            
+            // As the communication thread(s) already started, we try to signal them to stop
+            shutdown_communication_threads(gc);
+            
             return 1;
         }
     }
     // Done with running Chaiscript to load the network -> memory is freed, now we only need to run the simulation
     // *************
     
-    
-    if (!yarpThread.startThread()) {
-        std::cerr << "ERROR: could not start GC thread." << std::endl;
-        return 1;
-    }
-    
     std::cout << "Done constructing the network.\nStart simulation...\n";
     
     // Start running the GC thread
     if (!gc.startThread()) {
-        std::cerr << "ERROR: could not start GC thread." << std::endl;
+        std::cerr << "ERROR: could not start GC thread. Shutting down..." << std::endl;
         
-        // As yarpThread is already running, we should try to stop it cleanly
-        gc.simple_thread_terminate = true;
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+        // As the communication thread(s) already started, we try to signal them to stop
+        shutdown_communication_threads(gc);
         
         if (yarpThread.done_execution) {
             // Good

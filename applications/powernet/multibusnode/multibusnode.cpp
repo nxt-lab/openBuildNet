@@ -19,14 +19,9 @@
 #include <obnnode.h>
 
 
-#ifndef OBNSIM_COMM_YARP
-#error This test requires YARP to run
-#endif
-
-
 /** The following macros are defined by CMake to indicate which libraries this SMN build supports:
- - OBNSIM_COMM_YARP: if YARP is supported for communication.
- - OBNSIM_SMN_COMM_MQTT: if MQTT is supported for communication.
+ - OBNNODE_COMM_YARP: if YARP is supported for communication.
+ - OBNNODE_COMM_MQTT: if MQTT is supported for communication.
  */
 
 using namespace OBNnode;

@@ -207,6 +207,8 @@ void GCThread::GCThreadMain() {
 
     // Signal simple threads, which are associated with this GC, to terminate
     simple_thread_terminate = true;
+    
+    gc_exec_state = GCSTATE_STOPPED;
 }
 
 
@@ -401,8 +403,7 @@ bool GCThread::gc_wait_for_next_event(OBNEventQueueType::item_type& ev, OBNSysRe
  
  \return false if the simulation must stop unexpectedly (e.g. error); true if the wait-for has finished and the simulation can continue normally.
  */
-template <class F>
-bool GCThread::gc_wait_for_ack(F f) {
+bool GCThread::gc_wait_for_ack(std::function<bool (const OBNsmn::SMNNodeEvent*)> f) {
     if (!gc_waitfor_active) {
         // Clearly if no wait-for is active, we don't need to block
         return true;
@@ -536,6 +537,9 @@ void GCThread::gc_process_sysreq(OBNSysRequestType req) {
             } else if (req == SYSREQ_PAUSE) {
                 gc_exec_state = GCSTATE_PAUSED;
             }
+            break;
+        case GCSTATE_STOPPED:
+            // Do nothing
             break;
     }
 }
@@ -807,4 +811,74 @@ bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OB
     }
     
     return true;
+}
+
+
+/* Connect a port to a port on a node. */
+std::pair<int, std::string> GCThread::request_port_connect(std::size_t idx, const std::string& target, const std::string& source, unsigned int timeout) {
+    assert(!target.empty() && !source.empty());
+    
+    // Only run when the simulation is not running
+    if (gc_exec_state != GCSTATE_STOPPED) {
+        return std::make_pair(-15, "Port connections can only be requested when the simulation is not running.");
+    }
+    
+    if (idx >= _nodes.size()) {
+        return std::make_pair(-10, std::string());
+    }
+    
+    // Prepare the request message
+    OBNSimMsg::SMN2N msg;
+    msg.set_time(current_sim_time);
+    msg.set_msgtype(OBNSimMsg::SMN2N_MSGTYPE_SYS_PORT_CONNECT);
+    // We don't set ID here because it's dependent on the comm protocol (see node.sendMessage())
+    // msg.set_id(idx);
+    
+    OBNSimMsg::MSGDATA* pData = new OBNSimMsg::MSGDATA();
+    pData->set_i(target.size());
+    pData->set_b(target + source);
+    msg.set_allocated_data(pData);
+    
+    if (!_nodes[idx]->sendMessage(idx, msg)) {
+        // Communication error
+        return std::make_pair(-11, std::string());
+    }
+    
+    // Wait for the next incoming message, which MUST be the ACK of this request
+    gc_timer_start(timeout);
+    
+    OBNEventQueueType::item_type ev;    // To receive the node event
+    OBNSysRequestType sysreq = SYSREQ_NONE;  // To receive the system request
+
+    //bool timed_out = !
+    gc_wait_for_next_event(ev, sysreq);
+    
+    // Process some urgent system request
+    if (sysreq == SYSREQ_TERMINATE || sysreq == SYSREQ_STOP) {
+        // stop immediately
+        return std::make_pair(-15, "User requested to stop.");
+    }
+    
+    // Process the event
+    if (ev) {
+        if (ev->category == SMNNodeEvent::EVT_SYS &&
+            ev->type == OBNSimMsg::N2SMN_MSGTYPE_SYS_PORT_CONNECT_ACK &&
+            ev->has_id && ev->nodeID == idx)
+        {
+            // Get the result
+            int result = ev->has_i?ev->i:0;
+            if (ev->has_b) {
+                return std::make_pair(result, ev->b);
+            } else {
+                return std::make_pair(result, std::string());
+            }
+        }
+        else {
+            // Not the msg we need
+            return std::make_pair(-13, std::string());
+        }
+    } else {
+        // must be timeout
+        return std::make_pair(-12, std::string());
+    }
 }

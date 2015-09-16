@@ -15,7 +15,7 @@
 #include <string>
 #include <map>
 #include <forward_list>
-#include <utility>      // std::pair
+//#include <utility>      // std::pair
 #include <limits>       // limits of integers (time, etc.)
 #include <iostream>
 
@@ -54,12 +54,14 @@ namespace SMNChai {
     
     /** Communication protocol/platform selection. */
     enum CommProtocol {
+        COMM_DEFAULT,   // For nodes: default option set by the system; for ports: any comm. protocol
         COMM_YARP,
         COMM_MQTT
     };
     
     /** Returns the Communication protocol value from a string.
-     \param t_comm A string specifying the comm. protocol, currently "YARP" and "MQTT" are supported.
+     \param t_comm A string specifying the comm. protocol.
+     Currently supported: "DEFAULT" or "ANY", "YARP" and "MQTT".
      \exception smnchai_exception if the specified protocol is not supported (built into SMNChai).
      */
     CommProtocol comm_protocol_from_string(const std::string& t_comm);
@@ -109,7 +111,7 @@ namespace SMNChai {
         std::map<unsigned int, double> m_updates;
         
         /** The communication protocol used for this node's GC port. */
-        CommProtocol m_comm_protocol = COMM_YARP;
+        CommProtocol m_comm_protocol = COMM_DEFAULT;
         
     public:
         /** Constructor of a node object given its name. The node is not yet added to the network.
@@ -129,8 +131,9 @@ namespace SMNChai {
         void set_need_updateX(bool b) { m_updateX = b; }
         
         /** Set the communication protocol.
-         \param t_comm A string specifying the comm. protocol, currently "YARP" and "MQTT" are supported.
+         \param t_comm A string specifying the comm. protocol (see CommProtocol).
          \exception smnchai_exception if the specified protocol is not supported (built into SMNChai).
+         \sa CommProtocol
          */
         void set_comm_protocol(const std::string& t_comm) {
             m_comm_protocol = comm_protocol_from_string(t_comm);
@@ -140,19 +143,19 @@ namespace SMNChai {
          \param t_name The name of the port.
          \exception smnchai_exception an error happens, e.g. invalid name, port already exists...
          */
-        void add_input(const std::string &t_name, const std::string &t_comm = "YARP");
+        void add_input(const std::string &t_name, const std::string &t_comm = "any");
         
         /** \brief Add a new physical output port to the node.
          \param t_name The name of the port.
          \exception smnchai_exception an error happens, e.g. invalid name, port already exists...
          */
-        void add_output(const std::string &t_name, const std::string &t_comm = "YARP");
+        void add_output(const std::string &t_name, const std::string &t_comm = "any");
         
         /** \brief Add a new data output port to the node.
          \param t_name The name of the port.
          \exception smnchai_exception an error happens, e.g. invalid name, port already exists...
          */
-        void add_dataport(const std::string &t_name, const std::string &t_comm = "YARP");
+        void add_dataport(const std::string &t_name, const std::string &t_comm = "any");
         
         /** Check if a given port's name exists. */
         bool port_exists(const std::string &t_name) const;
@@ -324,8 +327,14 @@ namespace SMNChai {
     class WorkSpace {
         std::string m_name;     ///< Name of the workspace: all nodes will be under this name
         
-        /** Mapping nodes' names to Node objects and their IDs (to be used later on). */
-        std::map<std::string, std::pair<Node,std::size_t> > m_nodes;
+        /** Mapping nodes' names to Node objects, their IDs (to be used later on), and pointers to the Node object. */
+        struct NodeInfo {
+            Node node;
+            std::size_t index;
+            //OBNsmn::OBNNode* pnodeobj = nullptr;  // Pointer to the actual node object
+            NodeInfo(const Node& n): node(n), index(0) { }
+        };
+        std::map<std::string, NodeInfo> m_nodes;
         
         /** List of all connections between ports in this workspace. */
         std::forward_list< std::pair<PortInfo, PortInfo> > m_connections;
@@ -488,7 +497,7 @@ namespace SMNChai {
      It is used to export an entire network or any subsystem, or any collection of nodes within a network.
      */
     void export2dot(const std::string m_name,
-                    const std::map<std::string, std::pair<Node,std::size_t> > &m_nodes,
+                    const std::map<std::string, const Node&> &m_nodes,
                     const std::forward_list< std::pair<PortInfo, PortInfo> > &m_connections,
                     std::ostream &tos, bool t_cluster = false, const std::string &tprops = "");
 
@@ -499,7 +508,7 @@ namespace SMNChai {
      It is used to export an entire network or any subsystem, or any collection of nodes within a network.
      */
     void export2graphml(const std::string m_name,
-                        const std::map<std::string, std::pair<Node,std::size_t> > &m_nodes,
+                        const std::map<std::string, const Node&> &m_nodes,
                         const std::forward_list< std::pair<PortInfo, PortInfo> > &m_connections,
                         std::ostream &tos);
     

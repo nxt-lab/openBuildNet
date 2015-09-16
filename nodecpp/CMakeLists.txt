@@ -59,8 +59,8 @@ PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS ${OBN_MAIN_DIR}/msg/obnsim_msg.proto
 
 
 ## Find communication libraries and add appropriate source files
-set(OBN_COMM_SRC "")
-set(OBN_COMM_HDR "")
+set(OBNNODE_COMM_SRC "")
+set(OBNNODE_COMM_HDR "")
 
 ## To use YARP (optionally)
 option(WITH_YARP "Build with YARP support for communication." ON)
@@ -69,17 +69,17 @@ if(WITH_YARP)
   if(YARP_FOUND)
     include_directories(${YARP_INCLUDE_DIRS})
     link_libraries(${YARP_LIBRARIES})
-    set(OBN_COMM_SRC ${OBN_COMM_SRC}
+    set(OBNNODE_COMM_SRC ${OBNNODE_COMM_SRC}
       ${OBN_NODECPP_SOURCE_DIR}/obnnode_yarpnode.cpp
       ${OBN_NODECPP_SOURCE_DIR}/obnnode_yarpport.cpp
     )
-    set(OBN_COMM_HDR ${OBN_COMM_HDR}
+    set(OBNNODE_COMM_HDR ${OBNNODE_COMM_HDR}
       ${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpnode.h
       ${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpportbase.h
       ${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpport.h
       ${OBN_NODECPP_INCLUDE_DIR}/sharedqueue_yarp.h
     )
-    add_definitions(-DOBN_COMM_YARP)
+    add_definitions(-DOBNNODE_COMM_YARP)
     message("Found YARP library; will build node with YARP support.")
   endif()
 endif(WITH_YARP)
@@ -96,16 +96,15 @@ if(WITH_PAHOMQTT3)
     find_package(OpenSSL REQUIRED)
     AUX_SOURCE_DIRECTORY(${OBN_MAIN_DIR}/thirdparties/paho/src PAHOMQTT3A_SRC)
     INCLUDE_DIRECTORIES(${OBN_MAIN_DIR}/thirdparties/paho/src)
-    set(OBN_COMM_SRC ${OBN_COMM_SRC} ${PAHOMQTT3A_SRC})
+    set(OBNNODE_COMM_SRC ${OBNNODE_COMM_SRC} ${PAHOMQTT3A_SRC})
   else()
     message("Found Paho MQTT3 library in the system; will use this library.")
     link_libraries(${PAHOMQTT3A})
   endif()
-  add_definitions(-DOBN_COMM_MQTT)
-  #set(OBN_COMM_SRC ${OBN_COMM_SRC} ${OBN_NODECPP_SOURCE_DIR}/.cpp)
-  #set(OBN_COMM_HDR ${OBN_COMM_HDR} ${OBN_NODECPP_INCLUDE_DIR}/.h)  
+  add_definitions(-DOBNNODE_COMM_MQTT)
+  #set(OBNNODE_COMM_SRC ${OBNNODE_COMM_SRC} ${OBN_NODECPP_SOURCE_DIR}/.cpp)
+  #set(OBNNODE_COMM_HDR ${OBNNODE_COMM_HDR} ${OBN_NODECPP_INCLUDE_DIR}/.h)  
 endif(WITH_PAHOMQTT3)
-
 
 
 ## These are the include directories used by the compiler.
@@ -151,7 +150,7 @@ set(OBN_CORE_SRCFILES
 	${OBNSIM_INCLUDE_DIR}/obnsim_basic.cpp
 	${OBN_NODECPP_SOURCE_DIR}/obnnode_basic.cpp
 	${PROTO_SRCS}
-	${OBN_COMM_SRC}
+	${OBNNODE_COMM_SRC}
 )
 
 set(OBN_CORE_HDRFILES
@@ -160,7 +159,7 @@ set(OBN_CORE_HDRFILES
 	${OBN_NODECPP_INCLUDE_DIR}/obnnode_exceptions.h
 	${OBNSIM_INCLUDE_DIR}/obnsim_basic.h
 	${PROTO_HDRS}
-	${OBN_COMM_HDR}
+	${OBNNODE_COMM_HDR}
 )
 
 ## When we generate Xcode projects, we need to include both the C++ and H files so that they will all be included in the projects.

@@ -346,7 +346,7 @@ void SMNChai::WorkSpace::waitfor_all_nodes_online(double timeout) const {
 
 bool SMNChai::WorkSpace::are_all_nodes_online() const {
     for (auto it = m_nodes.begin(); it != m_nodes.end(); ++it) {
-        if (!yarp::os::Network::exists('/' + get_full_path(it->second.first.get_name(), NODE_GC_PORT_NAME))) {
+        if (!yarp::os::Network::exists('/' + get_full_path(it->second.node.get_name(), NODE_GC_PORT_NAME))) {
             return false;
         }
     }
@@ -389,6 +389,8 @@ SMNChai::CommProtocol SMNChai::comm_protocol_from_string(const std::string& t_co
 #else
         throw smnchai_exception("MQTT is not supported by this SMNChai program.");
 #endif
+    } else if (comm == "default" || comm == "any") {
+        return SMNChai::COMM_DEFAULT;
     } else {
         throw smnchai_exception("The communication protocol " + t_comm + " is not supported by this SMNChai program.");
     }
@@ -541,7 +543,7 @@ void SMNChai::WorkSpace::add_node(const SMNChai::Node &p_node) {
     }
     
     // Add the node to the list of nodes
-    m_nodes.emplace(nodeName, std::make_pair(p_node, 0));
+    m_nodes.emplace(nodeName, SMNChai::WorkSpace::NodeInfo(p_node));
 }
 
 void SMNChai::WorkSpace::connect(const SMNChai::PortInfo &t_from, const SMNChai::PortInfo &t_to) {
@@ -555,7 +557,7 @@ void SMNChai::WorkSpace::connect(const SMNChai::PortInfo &t_from, const SMNChai:
     }
     
     // Both ports must use the same communication protocol
-    if (t_from.comm != t_to.comm) {
+    if (t_from.comm != SMNChai::COMM_DEFAULT && t_to.comm != SMNChai::COMM_DEFAULT && t_from.comm != t_to.comm) {
         throw smnchai_exception("Ports " + t_from.node_name + '/' + t_from.port_name + " and " + t_to.node_name + '/' + t_to.port_name + " must use the same communication protocol to be connected.");
     }
     
@@ -583,7 +585,7 @@ void SMNChai::WorkSpace::connect(const std::string &from_node, const std::string
     }
     
     // Connect them
-    connect(itsrc->second.first.port(from_port), ittgt->second.first.port(to_port));
+    connect(itsrc->second.node.port(from_port), ittgt->second.node.port(to_port));
 }
 
 
@@ -591,7 +593,7 @@ void SMNChai::WorkSpace::print() const {
     std::cout << "Workspace '" << m_name << "'" << std::endl;
     std::cout << "List of nodes:" << std::endl;
     for (auto n: m_nodes) {
-        std::cout << n.second.first.get_name() << ' ';
+        std::cout << n.second.node.get_name() << ' ';
     }
     std::cout << "\nList of connections:" << std::endl;
     for (auto c: m_connections) {
@@ -643,11 +645,12 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
         
         // Create the node and associate the port with it
         // Note that the node object will own the port object, while the GC object will own the node object.
-        auto *p_node = mynode->second.first.create_yarp_node(p_port, *this);
+        auto *p_node = mynode->second.node.create_yarp_node(p_port, *this);
         auto result = gc.insertNode(p_node);
         if (result.first) {
             // Record the ID of this node in GC
-            mynode->second.second = result.second;
+            mynode->second.index = result.second;
+            //mynode->second.pnodeobj = p_node;
         } else {
             // Delete the node object
             delete p_node;
@@ -696,30 +699,38 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
     
     for (auto myconn = m_connections.begin(); myconn != m_connections.end(); ++myconn) {
         // YARP requires / at the beginning
-        std::string from_port = '/' + get_full_path(myconn->first), to_port = '/' + get_full_path(myconn->second);
+//        std::string from_port = get_full_path(myconn->first), to_port = get_full_path(myconn->second);
+//        if (!yarp::os::Network::connect(from_port, to_port, "", false)) {
+//            // Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
+//            throw smnchai_exception("Could not connect " + from_port + " to " + to_port);
+//        }
         
-        if (!yarp::os::Network::connect(from_port, to_port, "", false)) {
-            // Try a second time
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            
-            if (!yarp::os::Network::connect(from_port, to_port, "", false)) {
-                // Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
-                throw smnchai_exception("Could not connect " + from_port + " to " + to_port);
-            }
+        auto& target = m_nodes.at(myconn->second.node_name);    // The target node must exist
+        auto result = gc.request_port_connect(target.index, myconn->second.port_name, get_full_path(myconn->first));
+        // If result.first >= 0 then it's successful (even though the connection may have already existed)
+        if (result.first < 0) {
+            // Error
+            throw smnchai_exception("Could not connect " + get_full_path(myconn->first) + " to " + get_full_path(myconn->second) +
+                                    " with Error code " + std::to_string(result.first) +
+                                    (result.second.empty()?".":(" (" + result.second + ").")));
         }
+        //else {
+        //    std::cout << "Successfully connected " + get_full_path(myconn->first) + " to " + get_full_path(myconn->second) << std::endl;
+        //}
+        
         
         // Add a dependency link for this connection iff:
         // (a) source is an output port and target is an input port; and
         // (b) the update masks for both of them are non-zero
         auto src_node = m_nodes.at(myconn->first.node_name), tgt_node = m_nodes.at(myconn->second.node_name);
-        OBNsim::updatemask_t src_mask = src_node.first.output_updatemask(myconn->first.port_name);
-        OBNsim::updatemask_t tgt_mask = tgt_node.first.input_updatemask(myconn->second.port_name);
+        OBNsim::updatemask_t src_mask = src_node.node.output_updatemask(myconn->first.port_name);
+        OBNsim::updatemask_t tgt_mask = tgt_node.node.input_updatemask(myconn->second.port_name);
         
         if (myconn->first.port_type == PortInfo::OUTPUT && myconn->second.port_type == PortInfo::INPUT &&
             src_mask != 0 && tgt_mask != 0)
         {
             //std::cout << "Dependency from " << src_node.second << " with mask " << src_mask << " to " << tgt_node.second << " with mask " << tgt_mask << std::endl;
-            nodeGraph->addDependency(src_node.second, tgt_node.second, src_mask, tgt_mask);
+            nodeGraph->addDependency(src_node.index, tgt_node.index, src_mask, tgt_mask);
         }
     }
 

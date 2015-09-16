@@ -29,23 +29,48 @@ set(OBNNODE_COMM_SRC "")
 set(OBNNODE_COMM_HDR "")
 
 ## To use YARP (optionally)
-find_package(YARP)
-if(YARP_FOUND)
-  include_directories(${YARP_INCLUDE_DIRS})
-  link_libraries(${YARP_LIBRARIES})
-  set(OBNNODE_COMM_SRC ${OBN_COMM_SRC}
-	${OBN_NODECPP_SOURCE_DIR}/obnnode_yarpnode.cpp
-	${OBN_NODECPP_SOURCE_DIR}/obnnode_yarpport.cpp
-  )
-  set(OBNNODE_COMM_HDR ${OBN_COMM_HDR}
-	${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpnode.h
-	${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpportbase.h
-	${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpport.h
-	${OBN_NODECPP_INCLUDE_DIR}/sharedqueue_yarp.h
-  )
-  add_definitions(-DOBNSIM_COMM_YARP)
-  message("Found YARP library; will build with YARP support.")
-endif()
+option(WITH_YARP "Build with YARP support for communication." ON)
+if(WITH_YARP)
+  find_package(YARP REQUIRED)
+  if(YARP_FOUND)
+    include_directories(${YARP_INCLUDE_DIRS})
+    link_libraries(${YARP_LIBRARIES})
+    set(OBNNODE_COMM_SRC ${OBNNODE_COMM_SRC}
+      ${OBN_NODECPP_SOURCE_DIR}/obnnode_yarpnode.cpp
+      ${OBN_NODECPP_SOURCE_DIR}/obnnode_yarpport.cpp
+    )
+    set(OBNNODE_COMM_HDR ${OBNNODE_COMM_HDR}
+      ${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpnode.h
+      ${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpportbase.h
+      ${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpport.h
+      ${OBN_NODECPP_INCLUDE_DIR}/sharedqueue_yarp.h
+    )
+    add_definitions(-DOBNNODE_COMM_YARP)
+    message("Found YARP library; will build node with YARP support.")
+  endif()
+endif(WITH_YARP)
+
+
+## To use MQTT (optionally)
+option(WITH_PAHOMQTT3 "Build with Paho MQTT3 support for communication." OFF)
+if(WITH_PAHOMQTT3)
+  find_library(PAHOMQTT3A NAMES paho-mqtt3a)
+  if(PAHOMQTT3A_NOTFOUND)
+    # Use the local source files (submodule)
+    message("Did not find Paho MQTT3 library in the system; will use the local source files. This may bloat your program, so it's best to install Paho into your system before building SMNChai.")
+
+    find_package(OpenSSL REQUIRED)
+    AUX_SOURCE_DIRECTORY(${OBN_MAIN_DIR}/thirdparties/paho/src PAHOMQTT3A_SRC)
+    INCLUDE_DIRECTORIES(${OBN_MAIN_DIR}/thirdparties/paho/src)
+    set(OBNNODE_COMM_SRC ${OBNNODE_COMM_SRC} ${PAHOMQTT3A_SRC})
+  else()
+    message("Found Paho MQTT3 library in the system; will use this library.")
+    link_libraries(${PAHOMQTT3A})
+  endif()
+  add_definitions(-DOBNNODE_COMM_MQTT)
+  #set(OBNNODE_COMM_SRC ${OBNNODE_COMM_SRC} ${OBN_NODECPP_SOURCE_DIR}/.cpp)
+  #set(OBNNODE_COMM_HDR ${OBNNODE_COMM_HDR} ${OBN_NODECPP_INCLUDE_DIR}/.h)  
+endif(WITH_PAHOMQTT3)
 
 
 ## These are the include directories used by the compiler.

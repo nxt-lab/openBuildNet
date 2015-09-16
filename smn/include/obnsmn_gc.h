@@ -264,6 +264,40 @@ namespace OBNsmn {
          */
         volatile bool simple_thread_terminate = false;
         
+        
+        
+        // ============ MISC =============
+        
+        /** \brief Connect a port to a port on a node.
+         
+         This method requests a given node (specified by its ID) to connect a given port (specified by its full path)
+         to a given port on the node (specified by its name).
+         This method uses the system message SMN2N:SYS_PORT_CONNECT, so the node must be already online and connected
+         to the SMN/GC-port.
+         The requested node must send an ACK message to return the result of the request.
+         A timeout will be used to exit the function if the requested node does not answer after the timeout duration.
+         This function can only be called when the simulation is not running.
+         
+         \param idx The index of the node.
+         \param target The name of the target/input port on the node; this is the port's name, not its full path.
+         \param source The full path of the source/output port; this is a full path, not its short name.
+         \param timeout The timeout value in milliseconds (default: 1000 = 1s).
+         \return A pair of the result of the request (int) and an error message (if available).
+         
+         Result code:
+           0 if successful;
+           1 if the connection already existed;
+           -1 if the input port does not exist on this node or if it does not accept inputs (i.e. it's an output port);
+           -2 if the connection failed for other reasons (e.g. the other port does not exist, or a communication failure);
+           -3 if the request message is invalid;
+           -10 if the given node's index is invalid;
+           -11 if communication error while sending the request;
+           -12 if timeout;
+           -13 if the desired ACK message was not received but a different message;
+           -15 if other error.
+         */
+        std::pair<int, std::string> request_port_connect(std::size_t idx, const std::string& target, const std::string& source, unsigned int timeout = 1000);
+        
     private:
         // =========== Event queue ============
 
@@ -336,10 +370,11 @@ namespace OBNsmn {
         enum GCExecStateType {
             GCSTATE_RUNNING,    //< the simulation is running in normal mode
             GCSTATE_PAUSED,     //< the simulation is paused, can be resumed to normal mode
-            GCSTATE_TERMINATING //< the simulation is being terminated, can be resumed to normal mode
+            GCSTATE_TERMINATING,//< the simulation is being terminated, can be resumed to normal mode
+            GCSTATE_STOPPED    //< the simulation is not running
         };
         
-        GCExecStateType gc_exec_state;
+        GCExecStateType gc_exec_state = GCSTATE_STOPPED;
         
         // ============ Helper functions to process events ============
         
@@ -347,10 +382,7 @@ namespace OBNsmn {
         bool gc_wait_for_next_event(OBNEventQueueType::item_type& ev, OBNSysRequestType& req);
         
         /** \brief Block until wait-for event done, while processing all events. */
-        template <class F>
-        bool gc_wait_for_ack(F f);
-        
-        bool gc_wait_for_ack() { return gc_wait_for_ack([](const OBNsmn::SMNNodeEvent* ev) {return true;});}
+        bool gc_wait_for_ack(std::function<bool (const OBNsmn::SMNNodeEvent*)> f = [](const OBNsmn::SMNNodeEvent* ev) {return true;});
         
         /** \brief Default node event processing function. */
         bool gc_process_node_events(OBNsmn::SMNNodeEvent* pEv);

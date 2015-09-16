@@ -18,26 +18,27 @@
 #define OBNSIM_SHAREDQUEUE_H_
 
 #include <thread>
-#include <queue>
+#include <deque>
 #include <mutex>
 #include <condition_variable>
 #include <memory>
+#include <iostream>
 
 /** \brief Template of thread-safe shared queue.
  
  This shared queue contains smart pointers to objects of type T.
- When pushing new objects, remember to dynamically create the objects, not a local scope object, e.g. using make_shared.
+ When pushing new objects, remember to dynamically create the objects, not a local scope object. The queue will take ownership of the object pointer.
  Because this uses smart pointers, after popping out an object (actually a pointer to an object), there is no need to delete the object.
- \tparam T Type of the objects (the queue contains smart pointers to these objects, not the objects themselves).
+ \param T Type of the objects (the queue contains smart pointers to these objects, not the objects themselves).
  */
 template <typename T>
 class shared_queue
 {
 public:
-    typedef typename std::shared_ptr <T> item_type; ///< Smart pointer type to the objects.
+    typedef typename std::unique_ptr<T> item_type; ///< Smart pointer type to the objects.
 
 private :
-    std::queue<item_type> mData;
+    std::deque<item_type> mData;
     mutable std::mutex mMut;
     std::condition_variable &mEmptyCondition;   // condition variable to notify after pushing to queue
     
@@ -45,7 +46,7 @@ public:
     /**
      A condition_variable object must be given. After an item is pushed to the queue successfully, this condition variable will be notified. It is used by other threads to wait until the item is pushed.
      
-     \param pc Points to a valid condition_variable, that will be used to wait for item being pushed into the queue.
+     \param pc Reference to a valid condition_variable, that will be used to wait for item being pushed into the queue.
      */
     shared_queue(std::condition_variable& pc): mEmptyCondition(pc) { }
     
@@ -54,6 +55,7 @@ public:
      
      \param pValue The object to be pushed, of type T and must be dynamically allocated.
      */
+    /*
     void push(T& pValue) // The object of type T must be dynamically allocated
     {
         // block execution here, if other thread already locked mMute!
@@ -64,55 +66,41 @@ public:
         mData.emplace(&pValue);
         mlock.unlock();  // unlock before notifying to reduce contention
         mEmptyCondition.notify_all();
-    }
+    }*/
     
     void push(T* pValue) // The object of type T must be dynamically allocated
     {
         // block execution here, if other thread already locked mMute!
         std::unique_lock<std::mutex> mlock(mMut);
         // if we are here no other thread is owned/locked mMute. so we can modify the internal data
-        //item_type v(pValue);
-        //mData.push(v);
-        mData.emplace(pValue);
+        mData.emplace_back(pValue);     // Take ownership of the pointer
         mlock.unlock();  // unlock before notifying to reduce contention
         mEmptyCondition.notify_all();
     }
 
-    void push(item_type v) // The object of type T must be dynamically allocated
+    void push(item_type&& v) // The object of type T must be dynamically allocated
     {
         // block execution here, if other thread already locked mMute!
         std::unique_lock<std::mutex> mlock(mMut);
         // if we are here no other thread is owned/locked mMute. so we can modify the internal data
-        mData.push(v);
+        mData.push_back(v);     // Move the pointer to the queue
         mlock.unlock();  // unlock before notifying to reduce contention
         mEmptyCondition.notify_all();
     }
     ///@}
     
-    /* Old code when the events are stored in a deque, not queue
-    void push_front(T& pValue)
-    {
-        // block execution here, if other thread already locked mMute!
-        std::unique_lock<std::mutex> mlock(mMut);
-        // if we are here no other thread is owned/locked mMute. so we can modify the internal data
-        item_type v(&pValue);
-        mData.push_front(v);
-        mlock.unlock();  // unlock before notifying to reduce contention
-        mEmptyCondition.notify_all();
-    }
-
+    /*
     void push_front(T* pValue)
     {
         // block execution here, if other thread already locked mMute!
         std::unique_lock<std::mutex> mlock(mMut);
         // if we are here no other thread is owned/locked mMute. so we can modify the internal data
-        item_type v(pValue);
-        mData.push_front(v);
+        mData.emplace_front(pValue);
         mlock.unlock();  // unlock before notifying to reduce contention
         mEmptyCondition.notify_all();
     }
     
-    void push_front(item_type v)
+    void push_front(item_type&& v)
     {
         // block execution here, if other thread already locked mMute!
         std::unique_lock<std::mutex> mlock(mMut);
@@ -143,8 +131,8 @@ public:
         }
         
         // if we are are here, mData is not empty and mMut is locked !
-        item_type val = mData.front();  // copy the shared_ptr to val, which is still valid even when the element is popped
-        mData.pop();
+        item_type val(std::move(mData.front()));  // move the pointer (and its ownership) to val; the front element in the queue lost the ownership
+        mData.pop_front();
         return val;
     }
     
@@ -171,8 +159,8 @@ public:
     {
         if (mData.empty())
             return item_type();  // nil
-        item_type val = mData.front();
-        mData.pop();
+        item_type val(std::move(mData.front()));    // move the pointer (and its ownership) to val; the front element in the queue lost the ownership
+        mData.pop_front();
         return val;
     }
     
