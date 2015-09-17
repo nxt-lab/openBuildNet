@@ -151,6 +151,7 @@ set(SMNCHAI_SRCFILES
 	src/smnchai_export.cpp
 	src/csvparser.c
 	src/smnchai_utils.cpp
+	src/smnchai_loadscript.cpp	
 	src/main.cpp
 )
 
@@ -159,6 +160,7 @@ set(SMNCHAI_HDRFILES
 	include/smnchai_api.h
 	include/csvparser.h
 	include/smnchai_utils.h
+	include/smnchai.h
 )
 
 

@@ -697,14 +697,7 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
     // ASSUME that all ports have already been created, i.e. nodes are already started.
     OBNsmn::NodeDepGraph* nodeGraph = new OBNsmn::NodeDepGraph_BGL(m_nodes.size());
     
-    for (auto myconn = m_connections.begin(); myconn != m_connections.end(); ++myconn) {
-        // YARP requires / at the beginning
-//        std::string from_port = get_full_path(myconn->first), to_port = get_full_path(myconn->second);
-//        if (!yarp::os::Network::connect(from_port, to_port, "", false)) {
-//            // Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
-//            throw smnchai_exception("Could not connect " + from_port + " to " + to_port);
-//        }
-        
+    for (auto myconn = m_connections.begin(); myconn != m_connections.end(); ++myconn) {        
         auto& target = m_nodes.at(myconn->second.node_name);    // The target node must exist
         auto result = gc.request_port_connect(target.index, myconn->second.port_name, get_full_path(myconn->first));
         // If result.first >= 0 then it's successful (even though the connection may have already existed)

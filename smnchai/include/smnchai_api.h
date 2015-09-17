@@ -22,11 +22,13 @@
 #include <obnsim_basic.h>
 #include <obnsmn_gc.h>   // The GC thread
 
-#ifndef OBNSIM_COMM_YARP
-#error SMNChai currently requires YARP
+#ifdef OBNSIM_COMM_YARP
+#include <obnsmn_comm_yarp.h>
 #endif
 
-#include <obnsmn_comm_yarp.h>
+#ifdef OBNSIM_COMM_MQTT
+//#include <obnsmn_comm_yarp.h>
+#endif
 
 #include <chaiscript/chaiscript.hpp>
 

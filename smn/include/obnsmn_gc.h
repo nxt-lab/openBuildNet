@@ -20,6 +20,8 @@
 #ifndef OBNSIM_GC_H_
 #define OBNSIM_GC_H_
 
+#include <mutex>
+#include <functional>
 #include <vector>
 #include <memory>
 #include <chrono>
@@ -281,7 +283,7 @@ namespace OBNsmn {
          \param idx The index of the node.
          \param target The name of the target/input port on the node; this is the port's name, not its full path.
          \param source The full path of the source/output port; this is a full path, not its short name.
-         \param timeout The timeout value in milliseconds (default: 1000 = 1s).
+         \param timeout The timeout value in milliseconds (default: 5000 = 5s).
          \return A pair of the result of the request (int) and an error message (if available).
          
          Result code:
@@ -296,7 +298,7 @@ namespace OBNsmn {
            -13 if the desired ACK message was not received but a different message;
            -15 if other error.
          */
-        std::pair<int, std::string> request_port_connect(std::size_t idx, const std::string& target, const std::string& source, unsigned int timeout = 1000);
+        std::pair<int, std::string> request_port_connect(std::size_t idx, const std::string& target, const std::string& source, unsigned int timeout = 5000);
         
     private:
         // =========== Event queue ============
@@ -382,7 +384,8 @@ namespace OBNsmn {
         bool gc_wait_for_next_event(OBNEventQueueType::item_type& ev, OBNSysRequestType& req);
         
         /** \brief Block until wait-for event done, while processing all events. */
-        bool gc_wait_for_ack(std::function<bool (const OBNsmn::SMNNodeEvent*)> f = [](const OBNsmn::SMNNodeEvent* ev) {return true;});
+        //bool gc_wait_for_ack(std::function<bool (const OBNsmn::SMNNodeEvent*)> f = [](const OBNsmn::SMNNodeEvent* ev) {return true;});
+        bool gc_wait_for_ack();
         
         /** \brief Default node event processing function. */
         bool gc_process_node_events(OBNsmn::SMNNodeEvent* pEv);
@@ -395,6 +398,92 @@ namespace OBNsmn {
         
         /** \brief Method to process SYS_REQUEST_STOP request. */
         inline bool gc_process_msg_sys_request_stop(OBNsmn::SMNNodeEvent* pEv);
+        
+        
+        // ============ Wait-for event for the GC algorithm =============
+        
+        /** The mutex to access the wait-for part of GC. */
+        mutable std::mutex gc_waitfor_mutex;
+        
+        /** Indicate if a wait-for event is active */
+        //bool gc_waitfor_active;
+        
+        /** Bit vector to store the status of nodes' ACK for wait-for event. */
+        std::vector<bool> gc_waitfor_bits;
+        
+        /** Number of nodes from which we are waiting for ACK = number of 0 bits in gc_waitfor_bits. */
+        int gc_waitfor_num;
+        
+        /** Type of the ACK expected for the wait-for event. */
+        OBNSimMsg::N2SMN::MSGTYPE gc_waitfor_type;
+        
+        /** Validater of ACK messages, should return true if the ACK message is good. */
+        typedef std::function<bool (const OBNSimMsg::N2SMN&)> GC_WaitFor_Predicate;
+        
+        /** The function to validate the ACK message, if provided. */
+        GC_WaitFor_Predicate gc_waitfor_predicate;
+        
+        enum {
+            GC_WAITFOR_RESULT_NONE,     // Inactive
+            GC_WAITFOR_RESULT_ACTIVE,   // Going on
+            GC_WAITFOR_RESULT_ERROR,    // Error
+            GC_WAITFOR_RESULT_DONE      // All checked
+        } gc_waitfor_status = GC_WAITFOR_RESULT_NONE;    // Result of the most recent wait-for
+        
+        /** Start a new wait-for event.
+         \param nodes List of indices of nodes expected to send ACKs. It's ASSUMED WITHOUT CHECKING that these indices are unique.
+         \param type Type of the expected ACK message.
+         \param f The predicate to check for/validate the ACK message.
+         \return true if successful, false if not (a wait-for is going on, simulation is not going on).
+         */
+        template <class L>
+        bool gc_waitfor_start(const L & nodes, OBNSimMsg::N2SMN::MSGTYPE type, GC_WaitFor_Predicate f = GC_WaitFor_Predicate()) {
+            std::lock_guard<std::mutex> lock(gc_waitfor_mutex);
+            if (gc_waitfor_status == GC_WAITFOR_RESULT_ACTIVE) {
+                return false;
+            }
+            
+            //gc_waitfor_active = true;
+            gc_waitfor_type = type;
+            for (const auto & it: nodes) {
+                gc_waitfor_bits[it.first] = false;
+            }
+            gc_waitfor_num = nodes.size();
+            gc_waitfor_status = GC_WAITFOR_RESULT_ACTIVE;
+            gc_waitfor_predicate = f;
+            return true;
+        }
+        
+        /** Start a new wait-for event for all nodes. */
+        bool gc_waitfor_start_all(OBNSimMsg::N2SMN::MSGTYPE type, GC_WaitFor_Predicate f = GC_WaitFor_Predicate()) {
+            std::lock_guard<std::mutex> lock(gc_waitfor_mutex);
+            if (gc_waitfor_status == GC_WAITFOR_RESULT_ACTIVE) {
+                return false;
+            }
+            std::fill(gc_waitfor_bits.begin(), gc_waitfor_bits.end(), false);    // Reset all bits
+            gc_waitfor_type = type;
+            gc_waitfor_num = gc_waitfor_bits.size();
+            gc_waitfor_status = GC_WAITFOR_RESULT_ACTIVE;
+            gc_waitfor_predicate = f;
+            return true;
+        }
+        
+        /** Process ACK messages for waitfor. */
+        bool gc_waitfor_process_ACK(const OBNSimMsg::N2SMN& msg, int ID);
+        
+        /** Mark bit n as done. */
+        //        void gc_waitfor_mark(int n) {
+        //            if (gc_waitfor_active && !gc_waitfor_bits[n]) {
+        //                gc_waitfor_bits[n] = true;
+        //                gc_waitfor_num--;
+        //            }
+        //        }
+        
+        /** Check if the waitfor is done. */
+        //        bool gc_waitfor_alldone() const {
+        //            return gc_waitfor_active && (gc_waitfor_num == 0);
+        //            // std::all_of(gc_waitfor_bits.begin(), gc_waitfor_bits.end(), [](bool b) { return b; });
+        //        }
         
         
         // ============ Data and methods related to one simulation iteration ===========
@@ -439,55 +528,8 @@ namespace OBNsmn {
         bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, int64_t *pI = nullptr, OBNSimMsg::MSGDATA *pData = nullptr);
         
         /** \brief Send a given simple message to all nodes and start wait-for event. */
-        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype, int64_t *pI = nullptr, OBNSimMsg::MSGDATA *pData = nullptr);
+        bool gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype, int64_t *pI = nullptr, OBNSimMsg::MSGDATA *pData = nullptr, GC_WaitFor_Predicate pred = GC_WaitFor_Predicate());
         
-        
-        // ============ Wait-for event for the GC algorithm =============
-        /** Indicate if a wait-for event is active */
-        bool gc_waitfor_active;
-        
-        /** Bit vector to store the status of nodes' ACK for wait-for event. */
-        std::vector<bool> gc_waitfor_bits;
-        
-        /** Number of nodes from which we are waiting for ACK = number of 0 bits in gc_waitfor_bits. */
-        int gc_waitfor_num;
-        
-        /** Type of the ACK expected for the wait-for event. */
-        OBNSimMsg::N2SMN::MSGTYPE gc_waitfor_type;
-        
-        /** Start a new wait-for event.
-         \param nodes List of indices of nodes expected to send ACKs. It's ASSUMED WITHOUT CHECKING that these indices are unique.
-         \param type Type of the expected ACK message.
-         \return true if successful, false if not (a wait-for is going on, simulation is not going on).
-         */
-        template <class L>
-        bool gc_waitfor_start(const L & nodes, OBNSimMsg::N2SMN::MSGTYPE type) {
-            if (gc_waitfor_active) {
-                return false;
-            }
-            
-            gc_waitfor_active = true;
-            gc_waitfor_type = type;
-            for (const auto & it: nodes) {
-                gc_waitfor_bits[it.first] = false;
-            }
-            gc_waitfor_num = nodes.size();
-            return true;
-        }
-        
-        /** Mark bit n as done. */
-        void gc_waitfor_mark(int n) {
-            if (gc_waitfor_active && !gc_waitfor_bits[n]) {
-                gc_waitfor_bits[n] = true;
-                gc_waitfor_num--;
-            }
-        }
-        
-        /** Check if the waitfor is done. */
-        bool gc_waitfor_alldone() const {
-            return gc_waitfor_active && (gc_waitfor_num == 0);
-            // std::all_of(gc_waitfor_bits.begin(), gc_waitfor_bits.end(), [](bool b) { return b; });
-        }
        
         // ============ Timer event for the GC algorithm =============
         /** Indicate if a timer event is active. */

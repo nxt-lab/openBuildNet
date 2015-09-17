@@ -22,7 +22,6 @@
 #include <mutex>
 #include <condition_variable>
 #include <memory>
-#include <iostream>
 
 /** \brief Template of thread-safe shared queue.
  

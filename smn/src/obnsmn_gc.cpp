@@ -94,17 +94,21 @@ void GCThread::GCThreadMain() {
         
         int64_t time_unit = sim_time_unit;  // simulation time unit, in microseconds
         
-        noCriticalError = gc_send_to_all(0, OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT, OBNSimMsg::N2SMN_MSGTYPE_SIM_INIT_ACK, &time_unit, pMsgData);
+        noCriticalError = gc_send_to_all(0, OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT, OBNSimMsg::N2SMN_MSGTYPE_SIM_INIT_ACK, &time_unit, pMsgData,
+                                         [this](const OBNSimMsg::N2SMN& msg) {
+                                             if (!msg.has_id()) {
+                                                 return false;
+                                             }
+                                             if (msg.has_data() && msg.data().has_i() && msg.data().i() != 0) {
+                                                 report_error(0, "Node \"" + _nodes[msg.id()]->name + "\" had initialization error #" + std::to_string(msg.data().i()));
+                                                 return false;
+                                             }
+                                             return true;
+                                         });
     }
     
     // Wait for ACKs from all nodes, checking for initialization errors
-    noCriticalError = noCriticalError && gc_wait_for_ack([this](const SMNNodeEvent* ev) {
-        if (ev->has_i && (ev->i != 0)) {
-            report_error(0, "Node \"" + _nodes[ev->nodeID]->name + "\" had initialization error #" + std::to_string(ev->i));
-            return false;
-        }
-        return true;
-    });
+    noCriticalError = noCriticalError && gc_wait_for_ack();
     
     // Running while the current state is not STOPPED
     while (noCriticalError && gc_exec_state != GCSTATE_TERMINATING) {
@@ -261,10 +265,12 @@ bool GCThread::initialize() {
     current_sim_time = -1;
     
     // Reset the wait-for mechanism
-    gc_waitfor_active = false;  // Turn off wait-for event
-    gc_waitfor_bits.resize(_nodes.size());  // One bit for each node
-    std::fill(gc_waitfor_bits.begin(), gc_waitfor_bits.end(), true);    // Set all bits
-
+    {
+        std::lock_guard<std::mutex> mlock(gc_waitfor_mutex);
+        gc_waitfor_status = GC_WAITFOR_RESULT_NONE;
+        gc_waitfor_bits.resize(_nodes.size());  // One bit for each node
+        std::fill(gc_waitfor_bits.begin(), gc_waitfor_bits.end(), true);    // Set all bits
+    }
     
     // Turn off timer event
     gc_timer_reset();
@@ -356,10 +362,11 @@ bool GCThread::gc_wait_for_next_event(OBNEventQueueType::item_type& ev, OBNSysRe
     
     std::unique_lock<std::mutex> slock(mSysReq);  // Lock on the system request
     std::unique_lock<std::mutex> qlock(OBNEventQueue.getMutex());  // Lock on the queue access
+    std::unique_lock<std::mutex> wlock(gc_waitfor_mutex);  // Lock on wait-for
     
     // Because we have locks on both SysRequest and the event queue, we can access them directly
     // PRE-CONDITION: both slock and qlock are locked.
-    while (SYSREQ_NONE == _SysRequest && OBNEventQueue.empty_with_lock()) {
+    while ((gc_waitfor_status == GC_WAITFOR_RESULT_ACTIVE || gc_waitfor_status == GC_WAITFOR_RESULT_NONE) && SYSREQ_NONE == _SysRequest && OBNEventQueue.empty_with_lock()) {
         // If a timer event is active and the end time has passed, break the loop
         gc_timer_fired = gc_timer_active && gc_timer_endtime <= std::chrono::steady_clock::now();
         if (gc_timer_fired) {
@@ -369,6 +376,7 @@ bool GCThread::gc_wait_for_next_event(OBNEventQueueType::item_type& ev, OBNSysRe
         }
         
         // Unlock queue immediately to allow communication threads to push to it, which happens more frequently than system request being set.
+        wlock.unlock();
         qlock.unlock();
         
         // If a timer event is active, use wait_until(), otherwise use normal wait()
@@ -378,10 +386,11 @@ bool GCThread::gc_wait_for_next_event(OBNEventQueueType::item_type& ev, OBNSysRe
             mWakeupCondition.wait(slock);
         }
         
-        // At this point, slock is locked, but qlock is not, so we need to lock qlock
+        // At this point, slock is locked, but qlock and wlock are not, so we need to lock them
         qlock.lock();
+        wlock.lock();
     }
-    // POST-CONDITION: both slock and qlock are locked.
+    // POST-CONDITION: slock and qlock and wlock are locked.
     
     // Copy the next event, if available, and unlock qlock for others to push to
     ev = OBNEventQueue.try_pop_with_lock();
@@ -403,25 +412,44 @@ bool GCThread::gc_wait_for_next_event(OBNEventQueueType::item_type& ev, OBNSysRe
  
  \return false if the simulation must stop unexpectedly (e.g. error); true if the wait-for has finished and the simulation can continue normally.
  */
-bool GCThread::gc_wait_for_ack(std::function<bool (const OBNsmn::SMNNodeEvent*)> f) {
-    if (!gc_waitfor_active) {
-        // Clearly if no wait-for is active, we don't need to block
-        return true;
-    }
-    
+bool GCThread::gc_wait_for_ack() {
     OBNEventQueueType::item_type ev;    // To receive the node event
     OBNSysRequestType sysreq;  // To receive the system request
-    bool timed_out;
+    bool timed_out = false;
 
     // Loop until the wait-for is done, or until an unexpected termination
     // The loop is broken out by conditions inside the loop
+    std::unique_lock<std::mutex> mlock(gc_waitfor_mutex, std::defer_lock);
+    
     while (true) {
         if (gc_exec_state == GCSTATE_TERMINATING) {
             return false;
         }
         
-        // Obtain the next event
+        // Check the result of wait-for
+        mlock.lock();
+        if (gc_waitfor_status == GC_WAITFOR_RESULT_DONE || gc_waitfor_status == GC_WAITFOR_RESULT_NONE) {
+            mlock.unlock();
+            return true;
+        } else if (gc_waitfor_status == GC_WAITFOR_RESULT_ERROR) {
+            std::fill(gc_waitfor_bits.begin(), gc_waitfor_bits.end(), true);   // Clear the bits: note that true -> cleared, not waiting
+            mlock.unlock();
+            return false;
+        }
+        mlock.unlock();
+        
+        // Process timeout
+        // For now, we will terminate the simulation immediately.
+        // In the future, we may have different options here, e.g. termination vs. raising a warning but continuing.
+        if (timed_out) {
+            report_error(0, "Timeout while waiting for ACKs at simulation time " + std::to_string(current_sim_time));
+            return false;
+        }
+        
+        // Processing other events
         timed_out = !gc_wait_for_next_event(ev, sysreq);
+        
+        // Outcomes: either there is an event, or there is system request, or the wait-for is finished, or timeout
         
         // Process some urgent system request
         if (sysreq == SYSREQ_TERMINATE) {
@@ -431,27 +459,7 @@ bool GCThread::gc_wait_for_ack(std::function<bool (const OBNsmn::SMNNodeEvent*)>
 
         // Process the node event
         if (ev) {
-            // Process ACK event for wait-for
-            if (ev->category == SMNNodeEvent::EVT_ACK) {
-                if (gc_waitfor_type == ev->type) {
-                    // Call f(): if true then  mark the ACK event; if false then it's an error -> quit
-                    if (!f(ev.get())) {
-                        return false;
-                    }
-                    gc_waitfor_mark(ev->nodeID);
-                    if (gc_waitfor_alldone()) {
-                        gc_waitfor_active = false;  // Turn off waitfor
-                        return true;
-                    }
-                }
-                else {
-                    report_warning(0, "Unexpected ACK received from node " + std::to_string(ev->nodeID) + " with type " + std::to_string(ev->type));
-                    if (!gc_process_node_events(ev.get())) {
-                        return false;
-                    }
-                }
-            }
-            else if (!gc_process_node_events(ev.get())) {
+            if (!gc_process_node_events(ev.get())) {
                 return false;
             }
         }
@@ -468,14 +476,6 @@ bool GCThread::gc_wait_for_ack(std::function<bool (const OBNsmn::SMNNodeEvent*)>
             if (sysreq != SYSREQ_STEP) {
                 resetSysRequest();
             }
-        }
-        
-        // Process time out
-        // For now, we will terminate the simulation immediately.
-        // In the future, we may have different options here, e.g. termination vs. raising a warning but continuing.
-        if (timed_out) {
-            report_error(0, "Timeout while waiting for ACKs at simulation time " + std::to_string(current_sim_time));
-            return false;
         }
     }
     
@@ -555,10 +555,13 @@ void GCThread::gc_process_sysreq(OBNSysRequestType req) {
 bool GCThread::gc_send_update_y() {
     assert(rtNodeGraph);  // rt_node_graph must be non-empty
 
-    if (gc_waitfor_active) {
-        // It's an error that wait-for is still active
-        report_error(0, "Internal error: wait-for event is active before sending regular Y updates.");
-        return false;
+    {
+        std::lock_guard<std::mutex> lock(gc_waitfor_mutex);
+        if (gc_waitfor_status == GC_WAITFOR_RESULT_ACTIVE) {
+            // It's an error that wait-for is still active
+            report_error(0, "Internal error: wait-for event is active before sending regular Y updates.");
+            return false;
+        }
     }
     
     const auto & updateList = rtNodeGraph->getAndRemoveIndependentNodes();  // Get the list of updating nodes
@@ -687,12 +690,14 @@ bool GCThread::gc_send_update_y_irregular() {
 bool GCThread::gc_send_update_x() {
     assert(gc_update_size > 0);
     
-    if (gc_waitfor_active) {
-        // It's an error that wait-for is still active
-        report_error(0, "Internal error: wait-for event is active before sending regular X updates.");
-        return false;
+    {
+        std::lock_guard<std::mutex> lock(gc_waitfor_mutex);
+        if (gc_waitfor_status == GC_WAITFOR_RESULT_ACTIVE) {
+            // It's an error that wait-for is still active
+            report_error(0, "Internal error: wait-for event is active before sending regular X updates.");
+            return false;
+        }
     }
-    
     
     // Send the UPDATE_X messages to all nodes in gc_update_list
     int numUpdateX = 0;    // Number of nodes receiving UPDATE_X
@@ -709,22 +714,13 @@ bool GCThread::gc_send_update_x() {
             // msg.set_id(ID);
 
             msg.set_i(gc_update_list[k].updateMask);    // Set the update mask specified in the update list
-
             _nodes[ID]->sendMessage(ID, msg);
-            
-            // Mark the corresponding bit for wait-for event
-            gc_waitfor_bits[ID] = false;
             
             ++numUpdateX;
         }
     }
 
     if (numUpdateX > 0) {
-        // Set up wait-for
-        gc_waitfor_num = numUpdateX;
-        gc_waitfor_active = true;
-        gc_waitfor_type = OBNSimMsg::N2SMN::SIM_X_ACK;
-        
         // Set up timeout if necessary
         if (ack_timeout > 0) {
             gc_timer_start(ack_timeout);
@@ -732,6 +728,23 @@ bool GCThread::gc_send_update_x() {
         else {
             gc_timer_reset();
         }
+        
+        // Set up wait-for
+        std::lock_guard<std::mutex> lock(gc_waitfor_mutex);
+        
+        for (size_t k = 0; k < gc_update_size; ++k) {
+            auto ID = gc_update_list[k].nodeID;
+            
+            if (_nodes[ID]->needUPDATEX) {
+                // Mark the corresponding bit for wait-for event
+                gc_waitfor_bits[ID] = false;
+            }
+        }
+        
+        gc_waitfor_type = OBNSimMsg::N2SMN::SIM_X_ACK;
+        gc_waitfor_num = numUpdateX;
+        gc_waitfor_status = GC_WAITFOR_RESULT_ACTIVE;
+        gc_waitfor_predicate = nullptr;
     }
     
     return true;
@@ -780,29 +793,26 @@ bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, in
  It also resets the timer.
  \param t The time value sent with the message.
  \param msgtype The type of the message sent to nodes.
- \param acktype The type of the ACK message sent from nodes.
  \param pI Pointer to an optional int64 integer field for SMN2N.I field; if null, the field is not set.
  \param pData Pointer to an optional message data block; null pointer (default) if no data. The function will take ownership of this data, therefore the data block should be created dynamically and not released by the caller.
+ \param acktype The type of the ACK message sent from nodes.
+ \param pred The optional predicate to validate the ACK messages.
  \return true if successful; false if not (error)
  */
-bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype, int64_t *pI, OBNSimMsg::MSGDATA *pData) {
-    if (gc_waitfor_active) {
-        // It's an error that wait-for is still active
-        report_error(0, "Internal error: wait-for event is active before sending message #");
-        return false;
+bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OBNSimMsg::N2SMN::MSGTYPE acktype, int64_t *pI, OBNSimMsg::MSGDATA *pData, GC_WaitFor_Predicate pred) {
+    {
+        std::lock_guard<std::mutex> mlock(gc_waitfor_mutex);
+        if (gc_waitfor_status == GC_WAITFOR_RESULT_ACTIVE) {
+            // It's an error that wait-for is still active
+            report_error(0, "Internal error: wait-for event is active before sending message #");
+            return false;
+        }
     }
-    
     
     // Send the message to all nodes
     if (!gc_send_to_all(t, msgtype, pI, pData)) {
         return false;
     }
-    
-    // Set up the wait-for event
-    std::fill(gc_waitfor_bits.begin(), gc_waitfor_bits.end(), false);    // Reset all bits
-    gc_waitfor_num = _nodes.size();
-    gc_waitfor_type = acktype;
-    gc_waitfor_active = true;
     
     // Set up timeout if necessary
     gc_timer_reset();
@@ -810,7 +820,8 @@ bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OB
         gc_timer_start(ack_timeout);
     }
     
-    return true;
+    // Set up the wait-for event
+    return gc_waitfor_start_all(acktype, pred);
 }
 
 
@@ -852,6 +863,8 @@ std::pair<int, std::string> GCThread::request_port_connect(std::size_t idx, cons
 
     //bool timed_out = !
     gc_wait_for_next_event(ev, sysreq);
+    
+    gc_timer_reset();
     
     // Process some urgent system request
     if (sysreq == SYSREQ_TERMINATE || sysreq == SYSREQ_STOP) {
