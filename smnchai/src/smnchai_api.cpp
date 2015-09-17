@@ -149,41 +149,8 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     // *********************************************
     // Functions to configure the GC/simulation
     // *********************************************
-    
-    /** Set timeout for ACK, in milliseconds. */
-    //chai.add(fun<void (int)>([&ws](int t) { ws.settings.ack_timeout = t; }), "ack_timeout");
-    chai.add(fun([&ws](int t) { ws.settings.ack_timeout = t; }), "ack_timeout");
-    
-    /** Set final simulation time, in microseconds. */
-    //chai.add(fun<void (double)>([&ws](double t) {
-    chai.add(fun([&ws](double t) {
-        if (t <= 0.0) { throw smnchai_exception("Final simulation time must be positive, but " + std::to_string(t) + " is given."); }
-        ws.settings.final_time = t;
-    }), "final_time");
-    
-    /** Set the atomic time unit, in microseconds. */
-    // chai.add(fun<void (unsigned int)>([&ws](unsigned int t) {
-    chai.add(fun([&ws](unsigned int t) {
-        if (t < 1) { throw smnchai_exception("Time unit must be positive, but " + std::to_string(t) + " is given."); }
-        ws.settings.time_unit = t;
-    }), "time_unit");
-    
-    /** Set the initial wallclock time by a string "YYYY-MM-DD HH:MM:SS". */
-    chai.add(fun([&ws](const std::string &t) {
-        std::tm tm = {0};
-        std::stringstream ss(t);
-        ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-        tm.tm_isdst = -1;
-        ws.settings.wallclock = std::mktime(&tm);
-    }), "wallclock");
-    
-    /** Choose not to run the simulation.
-     By default, the simulation will automatically run; however if we set this to false, the simulation will not run.
-     This can be useful to just load, print, and check the system configuration without actually running it.
-     Note that certain commands are affected by where this command is placed, e.g. commands to start remote nodes will still run if at the time it is called the setting is still "true", however if this setting was switched off before a command to start a remote node, the latter will be disabled.  Similarly for commands to wait for nodes to come online.
-     */
-    //chai.add(fun<void (bool)>([&ws](bool b) { ws.settings.run_simulation = b; }), "run_simulation");
-    chai.add(fun([&ws](bool b) { ws.settings.run_simulation = b; }), "run_simulation");
+    ws.register_settings_with_Chaiscript(chai);
+
     
     /** Defines constants for typical time values (in microseconds). */
     chai.add(const_var(double(1.0)), "microsecond");
@@ -262,7 +229,7 @@ void SMNChai::run_remote_command(const std::string &t_node, const std::string &t
 
 void SMNChai::WorkSpace::start_remote_node(const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag) const {
     // Only start if node is not online
-    if (settings.run_simulation && !is_node_online(t_node)) {
+    if (m_settings.m_run_simulation && !is_node_online(t_node)) {
         if (t_tag.empty()) {
             SMNChai::run_remote_command(t_computer, t_node, t_prog, t_args);
         } else {
@@ -286,7 +253,7 @@ bool SMNChai::WorkSpace::is_node_online(const std::string &t_node) const {
 }
 
 void SMNChai::WorkSpace::waitfor_node_online(const std::string &t_node, double timeout) const {
-    if (!settings.run_simulation) {
+    if (!m_settings.m_run_simulation) {
         // If not going to run simulation then we should not wait
         return;
     }
@@ -317,7 +284,7 @@ void SMNChai::WorkSpace::waitfor_node_online(const SMNChai::Node &t_node, double
 }
 
 void SMNChai::WorkSpace::waitfor_all_nodes_online(double timeout) const {
-    if (!settings.run_simulation) {
+    if (!m_settings.m_run_simulation) {
         // If not going to run simulation then we should not wait
         return;
     }
@@ -535,6 +502,73 @@ SMNChai::PortInfo SMNChai::Node::port(const std::string &t_port) const {
 }
 
 
+////////////////////////////////////////////////////
+// Implementation of Workspace::Settings class
+////////////////////////////////////////////////////
+
+void SMNChai::WorkSpace::register_settings_with_Chaiscript(ChaiScript &chai) {
+    // Register the Settings class and the settings object
+    chai.add(user_type<SMNChai::WorkSpace::Settings>(), "WorkspaceSettings");
+    chai.add(var(&m_settings), "settings");
+    
+    /* Set/get timeout for ACK, in milliseconds. */
+    chai.add(fun(static_cast<void (SMNChai::WorkSpace::Settings::*)(int)>(&SMNChai::WorkSpace::Settings::ack_timeout)), "ack_timeout");
+    chai.add(fun(static_cast<int (SMNChai::WorkSpace::Settings::*)() const>(&SMNChai::WorkSpace::Settings::ack_timeout)), "ack_timeout");
+    
+    /* Set/get final simulation time. */
+    chai.add(fun(static_cast<void (SMNChai::WorkSpace::Settings::*)(double)>(&SMNChai::WorkSpace::Settings::final_time)), "final_time");
+    chai.add(fun(static_cast<double (SMNChai::WorkSpace::Settings::*)() const>(&SMNChai::WorkSpace::Settings::final_time)), "final_time");
+
+    /* Atomic time unit, in microseconds. */
+    chai.add(fun(static_cast<void (SMNChai::WorkSpace::Settings::*)(unsigned int)>(&SMNChai::WorkSpace::Settings::time_unit)), "time_unit");
+    chai.add(fun(static_cast<unsigned int (SMNChai::WorkSpace::Settings::*)() const>(&SMNChai::WorkSpace::Settings::time_unit)), "time_unit");
+    
+
+    /* Set the initial wallclock time by a string "YYYY-MM-DD HH:MM:SS". */
+    chai.add(fun(&SMNChai::WorkSpace::Settings::wallclock), "wallclock");
+    
+    /** Choose not to run the simulation.
+     By default, the simulation will automatically run; however if we set this to false, the simulation will not run.
+     This can be useful to just load, print, and check the system configuration without actually running it.
+     Note that certain commands are affected by where this command is placed, e.g. commands to start remote nodes will still run if at the time it is called the setting is still "true", however if this setting was switched off before a command to start a remote node, the latter will be disabled.  Similarly for commands to wait for nodes to come online.
+     */
+    chai.add(fun([this](bool b) { this->m_settings.m_run_simulation = b; }), "run_simulation");
+    
+    /* Set the default communication. */
+    chai.add(fun(&SMNChai::WorkSpace::Settings::default_comm), "default_comm");
+}
+
+void SMNChai::WorkSpace::Settings::default_comm(const std::string& t_comm) {
+    m_comm = comm_protocol_from_string(t_comm);
+    if (m_comm == SMNChai::COMM_DEFAULT) {
+        throw smnchai_exception("Default communication protocol must be specific.");
+    }
+#ifndef OBNSIM_COMM_YARP
+    if (m_comm == SMNChai::COMM_YARP) {
+        throw smnchai_exception("YARP is not supported on this SMN server.");
+    }
+#endif
+#ifndef OBNSIM_COMM_MQTT
+    if (m_comm == SMNChai::COMM_MQTT) {
+        throw smnchai_exception("MQTT is not supported on this SMN server.");
+    }
+#endif
+}
+
+
+void SMNChai::WorkSpace::Settings::wallclock(const std::string &t) {
+    std::tm tm = {0};
+    std::stringstream ss(t);
+    ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+    tm.tm_isdst = -1;
+    m_wallclock = std::mktime(&tm);
+}
+
+
+////////////////////////////////////////////////////
+// Implementation of Workspace class
+////////////////////////////////////////////////////
+
 void SMNChai::WorkSpace::add_node(const SMNChai::Node &p_node) {
     auto nodeName = p_node.get_name();
     if (m_nodes.count(nodeName) != 0) {
@@ -614,8 +648,8 @@ std::string SMNChai::WorkSpace::get_full_path(const SMNChai::PortInfo &t_port) c
 
 
 OBNsim::simtime_t SMNChai::WorkSpace::get_time_value(double t) const {
-    assert(settings.time_unit > 0);
-    auto ti = std::llround(t / double(settings.time_unit));
+    assert(m_settings.m_time_unit > 0);
+    auto ti = std::llround(t / double(m_settings.m_time_unit));
     OBNsim::simtime_t result = (ti < 0)?0:ti;   // Convert to simtime_t, saturated below at 0
     
     // Check if a sampling time is nonzero but it's converted to 0
@@ -730,18 +764,18 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
     gc.setDependencyGraph(nodeGraph);   // Set the dependency graph for the GC
     
     // Copy the settings to GC
-    gc.ack_timeout = settings.ack_timeout;
+    gc.ack_timeout = m_settings.m_ack_timeout;
     
-    if (!gc.setSimulationTimeUnit(settings.time_unit)) {
+    if (!gc.setSimulationTimeUnit(m_settings.m_time_unit)) {
         throw smnchai_exception("Error while setting simulation time unit.");
     }
     
-    if (!gc.setInitialWallclock(settings.wallclock)) {
+    if (!gc.setInitialWallclock(m_settings.m_wallclock)) {
         throw smnchai_exception("Error while setting the initial wallclock time.");
     }
     
     // Note that time values are mostly real numbers in microseconds, so we need to convert them to integer numbers in the time unit.
-    if (!gc.setFinalSimulationTime(get_time_value(settings.final_time))) {
+    if (!gc.setFinalSimulationTime(get_time_value(m_settings.m_final_time))) {
         throw smnchai_exception("Error while setting final simulation time.");
     }
 }

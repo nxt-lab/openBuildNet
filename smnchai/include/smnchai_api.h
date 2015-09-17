@@ -323,8 +323,8 @@ namespace SMNChai {
             return SubSystem(*this, t_name);
         }
     };
-
-
+    
+    
     /** Class that represents a workspace, which contains nodes and their connections. */
     class WorkSpace {
         std::string m_name;     ///< Name of the workspace: all nodes will be under this name
@@ -342,14 +342,56 @@ namespace SMNChai {
         std::forward_list< std::pair<PortInfo, PortInfo> > m_connections;
         
     public:
+        /** Class that contains the settings of a workspace/simulation. */
+        struct Settings {
+            int m_ack_timeout = 0;        ///< Timeout for ACK, in milliseconds.
+            double m_final_time = std::numeric_limits<OBNsim::simtime_t>::max();      ///< The final time of simulation, real number in microseconds.
+            unsigned int m_time_unit = 1;     ///< The atomic time unit, positive integer number in microseconds [default = 1 microseconds]
+            bool m_run_simulation = true;     ///< Whether automatically run the simulation after loading it
+            std::time_t m_wallclock = 0;      ///< The initial wall clock time, in Epoch/UNIX time
+            CommProtocol m_comm = COMM_YARP;
+            
+            /* Set the default communication protocol. */
+            void default_comm(const std::string& t_comm);
+            
+            /* ACK timeout. */
+            void ack_timeout(int t) {
+                m_ack_timeout = t;
+            }
+            
+            int ack_timeout() const {
+                return m_ack_timeout;
+            }
+            
+            /* Final simulation time, in microseconds. */
+            void final_time(double t) {
+                if (t <= 0.0) { throw smnchai_exception("Final simulation time must be positive, but " + std::to_string(t) + " is given."); }
+                m_final_time = t;
+            }
+            
+            double final_time() const {
+                return m_final_time;
+            }
+            
+            /* Atomic time unit, in microseconds. */
+            void time_unit(unsigned int t) {
+                if (t < 1) { throw smnchai_exception("Time unit must be positive, but " + std::to_string(t) + " is given."); }
+                m_time_unit = t;
+            }
+            
+            unsigned int time_unit() const {
+                return m_time_unit;
+            }
+            
+            /* initial wallclock time by a string "YYYY-MM-DD HH:MM:SS". */
+            void wallclock(const std::string &t);
+        };
+        
         /** Settings for the GC / simulation. */
-        struct {
-            int ack_timeout = 0;        ///< Timeout for ACK, in milliseconds.
-            double final_time = std::numeric_limits<OBNsim::simtime_t>::max();      ///< The final time of simulation, real number in microseconds.
-            unsigned int time_unit = 1;       ///< The atomic time unit, positive integer number in microseconds [default = 1 microseconds]
-            bool run_simulation = true;     ///< Whether automatically run the simulation after loading it
-            std::time_t wallclock = 0;      ///< The initial wall clock time, in Epoch/UNIX time
-        } settings;
+        Settings m_settings;
+        
+        /** Register this settings object with Chaiscript engine. */
+        void register_settings_with_Chaiscript(chaiscript::ChaiScript &chai);
 
     public:
         /** Construct a workspace object with a given name. */

@@ -101,7 +101,7 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
     
     
     // If it's set not to run the simulation, we can exit now
-    if (!ws.settings.run_simulation) {
+    if (!ws.m_settings.m_run_simulation) {
         std::cout << "THE SIMULATION IS SET NOT TO BE RUN AUTOMATICALLY (DRY-RUN)." << std::endl;
         return std::make_pair(false, 0);
     }
