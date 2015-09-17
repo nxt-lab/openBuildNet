@@ -208,11 +208,16 @@ namespace OBNsmn {
         /** Return number of nodes in the node list. */
         int numberOfNodes() const { return _nodes.size(); }
         
-        typedef std::function<bool(OBNSimMsg::SMN2N&)> TSendMsgToSysPortFunc;   ///< A function type to send a SMN2N message to the system port (instead of a node's port)
+        typedef std::function<bool(const OBNSimMsg::SMN2N&)> TSendMsgToSysPortFunc;   ///< A function type to send a SMN2N message to the system port (instead of a node's port)
         
         /** Set the function to send an SMN2N message to the system port (_gc_) */
         void setSendMsgToSysPortFunc(TSendMsgToSysPortFunc f) {
             m_send_msg_to_sys_port = f;
+        }
+        
+        /** Get the function to send an SMN2N message to the system port (_gc_) */
+        TSendMsgToSysPortFunc getSendMsgToSysPortFunc() const {
+            return m_send_msg_to_sys_port;
         }
         
         
@@ -266,7 +271,12 @@ namespace OBNsmn {
          */
         volatile bool simple_thread_terminate = false;
         
-        
+        /** \brief Call to signal a critical error and the GC/SMN should exit. */
+        void criticalErrorExit() {
+            setSysRequest(SYSREQ_TERMINATE);
+            // TODO: should set some error signal/variable here, and the main SMN program should periodically check on this error variable to force exit after some delay
+            // Another option is to have a condition variable that the main SMN program will wait on, and everytime it wakes up it will check the error variable
+        }
         
         // ============ MISC =============
         

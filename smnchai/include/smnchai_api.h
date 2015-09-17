@@ -350,6 +350,7 @@ namespace SMNChai {
             bool m_run_simulation = true;     ///< Whether automatically run the simulation after loading it
             std::time_t m_wallclock = 0;      ///< The initial wall clock time, in Epoch/UNIX time
             CommProtocol m_comm = COMM_YARP;
+            std::string m_mqtt_server{"tcp://localhost:1883"};  ///< The MQTT server address
             
             /* Set the default communication protocol. */
             void default_comm(const std::string& t_comm);
@@ -385,6 +386,16 @@ namespace SMNChai {
             
             /* initial wallclock time by a string "YYYY-MM-DD HH:MM:SS". */
             void wallclock(const std::string &t);
+            
+            /* MQTT server address. */
+            void MQTT_server(const std::string& addr) {
+                if (addr.empty()) { throw smnchai_exception("MQTT server address must be non-empty."); }
+                m_mqtt_server = addr;
+            }
+            
+            std::string MQTT_server() const {
+                return m_mqtt_server;
+            }
         };
         
         /** Settings for the GC / simulation. */

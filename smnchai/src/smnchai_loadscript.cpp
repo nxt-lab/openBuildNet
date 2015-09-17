@@ -125,6 +125,11 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
     // Open MQTT port
     // If fail, remember to also shut down Yarp if necessary (yarpThread->closePort())
 #ifdef OBNSIM_COMM_MQTT
+    if (comm.mqttClient) {
+        comm.mqttClient->setClientID(ws.get_name());
+        comm.mqttClient->setPortName(ws.get_full_path("_smn_", "_gc_"));
+        comm.mqttClient->setServerAddress(ws.m_settings.m_mqtt_server);
+    }
 #ifdef OBNSIM_COMM_YARP
 #endif
 #endif
@@ -144,8 +149,18 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
     // Start MQTT communication
     // If fail, remember to also shut down Yarp if necessary (shutdown_communication_threads)
 #ifdef OBNSIM_COMM_MQTT
+    if (comm.mqttClient) {
+        if (!comm.mqttClient->start()) {
+            std::cerr << "ERROR: could not start MQTT communication thread." << std::endl;
 #ifdef OBNSIM_COMM_YARP
+            // Shut down Yarp
+            if (comm.yarpThread) {
+                shutdown_communication_threads(gc);
+            }
 #endif
+            return std::make_pair(false, 5);
+        }
+    }
 #endif
     
     try {

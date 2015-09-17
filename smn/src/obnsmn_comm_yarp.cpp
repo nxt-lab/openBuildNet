@@ -115,7 +115,7 @@ The ID field (which indicates the ID of the node) is not set by the caller (GC),
 //}
 
 
-bool YARPPollingThread::sendMessage(OBNSimMsg::SMN2N &msg) {
+bool YARPPollingThread::sendMessage(const OBNSimMsg::SMN2N &msg) {
     if (port.isClosed()) {
         return false;
     }
@@ -128,6 +128,11 @@ bool YARPPollingThread::sendMessage(OBNSimMsg::SMN2N &msg) {
     
     // Send and strictly make sure that the message will not be dropped
     port.writeStrict();
+    
+    // Call the previous function if available
+    if (m_prev_gc_sendmsg_to_sys_port) {
+        return m_prev_gc_sendmsg_to_sys_port(msg);
+    }
     
     return true;
 }

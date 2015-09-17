@@ -143,8 +143,8 @@ namespace OBNsmn {
          See the comments at the top of this file for more details.
          */
         class YARPPollingThread {
+            OBNsmn::GCThread::TSendMsgToSysPortFunc m_prev_gc_sendmsg_to_sys_port;
         public:
-            
             /**
              Construct the YARP polling thread object, associated with a given GC and with a given port name.
              This object will create and manage the YARP port.
@@ -154,8 +154,9 @@ namespace OBNsmn {
              \param _gc Pointer to a valid GC thread, with which this thread is associated.
              \param _port Name of the incoming YARP port.
              */
-            YARPPollingThread(GCThread* _gc, std::string _port): done_execution(true), pGC(_gc), portName(_port) {
+            YARPPollingThread(GCThread* _gc, const std::string& _port): done_execution(true), pGC(_gc), portName(_port) {
                 // Set the function to send a message to the system port
+                m_prev_gc_sendmsg_to_sys_port = pGC->getSendMsgToSysPortFunc();     // Save the current function to call it -> form a chain of function calls
                 pGC->setSendMsgToSysPortFunc(std::bind(&YARPPollingThread::sendMessage, this, std::placeholders::_1));
             }
             
@@ -175,7 +176,7 @@ namespace OBNsmn {
             const YARPPort& getPort() const { return port; }
             
             /** \brief Send an SMN2N message to the system port. */
-            bool sendMessage(OBNSimMsg::SMN2N &msg);
+            bool sendMessage(const OBNSimMsg::SMN2N &msg);
             
             /** Set the port's name. */
             void setPortName(const std::string &t_port) {

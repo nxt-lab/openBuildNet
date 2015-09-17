@@ -32,7 +32,7 @@
 #endif
 
 #ifdef OBNSIM_COMM_MQTT
-//#include <obnsmn_comm_yarp.h>
+#include <obnsmn_comm_mqtt.h>
 #endif
 
 // The usage of this program
@@ -51,6 +51,7 @@ namespace SMNChai {
         OBNsmn::YARP::YARPPollingThread* yarpThread = nullptr;
 #endif
 #ifdef OBNSIM_COMM_MQTT
+        OBNsmn::MQTT::MQTTClient* mqttClient = nullptr;
 #endif
         // Check whether all communication threads have finished their execution
         bool allFinished() const {
@@ -60,6 +61,9 @@ namespace SMNChai {
             }
 #endif
 #ifdef OBNSIM_COMM_MQTT
+            if (mqttClient && mqttClient->isRunning()) {
+                return false;
+            }
 #endif
             return true;
         }

@@ -111,6 +111,8 @@ int main(int argc, const char* argv[]) {
 #endif
 
 #ifdef OBNSIM_COMM_MQTT
+    OBNsmn::MQTT::MQTTClient mqttClient(&gc);
+    comm_objects.mqttClient = &mqttClient;
 #endif
     
     // Run Chaiscript to load the network

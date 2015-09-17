@@ -48,20 +48,21 @@ set(OBNSMN_COMM_HDR "")
 
 
 ## To use YARP (optionally)
-find_package(YARP)
-if(YARP_FOUND)
+option(WITH_YARP "Build SMNChai with YARP support for communication." ON)
+if(WITH_YARP)
+  find_package(YARP REQUIRED)
   include_directories(${YARP_INCLUDE_DIRS})
   link_libraries(${YARP_LIBRARIES})
   set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${OBNSMN_SRC_DIR}/obnsmn_comm_yarp.cpp)
   set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${OBNSMN_INCLUDE_DIR}/obnsmn_comm_yarp.h)
   add_definitions(-DOBNSIM_COMM_YARP)
   message("Found YARP library; will build SMN with YARP support.")
-endif()
+endif(WITH_YARP)
 
 
 ## To use MQTT (optionally)
-option(WITH_PAHOMQTT3 "Build SMNChai with Paho MQTT3 support for communication." OFF)
-if(WITH_PAHOMQTT3)
+option(WITH_PAHOMQTT "Build SMNChai with Paho MQTT support for communication." OFF)
+if(WITH_PAHOMQTT)
   find_library(PAHOMQTT3A NAMES paho-mqtt3a)
   if(PAHOMQTT3A_NOTFOUND)
     # Use the local source files (submodule)
@@ -75,10 +76,11 @@ if(WITH_PAHOMQTT3)
     message("Found Paho MQTT3 library in the system; will use this library.")
     link_libraries(${PAHOMQTT3A})
   endif()
+
   add_definitions(-DOBNSIM_COMM_MQTT)
-  #set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${OBNSMN_SRC_DIR}/.cpp)
-  #set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${OBNSMN_INCLUDE_DIR}/.h)  
-endif(WITH_PAHOMQTT3)
+  set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${OBNSMN_SRC_DIR}/obnsmn_comm_mqtt.cpp)
+  set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${OBNSMN_INCLUDE_DIR}/obnsmn_comm_mqtt.h)
+endif(WITH_PAHOMQTT)
 
 ## These are the include directories used by the compiler.
 
@@ -125,7 +127,7 @@ set(OBNSMN_CORE_SRCFILES
 	${OBNSMN_SRC_DIR}/obnsmn_node.cpp
 	${OBNSMN_SRC_DIR}/obnsmn_nodegraph.cpp
     	${OBNSMN_SRC_DIR}/obnsmn_gc.cpp
-	${OBNSIM_INCLUDE_DIR}/obnsim_basic.cpp	
+	${OBNSIM_INCLUDE_DIR}/obnsim_basic.cpp
 	${OBNSMN_COMM_SRC}
 	${PROTO_SRCS}
 )
@@ -186,8 +188,8 @@ ADD_EXECUTABLE(smnchai
 if(APPLE)
   list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
 else()
-  set_property(TARGET smntest2 nodemotor nodectrl nodesetpoint PROPERTY CXX_STANDARD 11)
-  set_property(TARGET smntest2 nodemotor nodectrl nodesetpoint PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_property(TARGET smnchai PROPERTY CXX_STANDARD 11)
+  set_property(TARGET smnchai PROPERTY CXX_STANDARD_REQUIRED ON)
 endif()
 
 

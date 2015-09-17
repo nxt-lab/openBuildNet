@@ -536,6 +536,10 @@ void SMNChai::WorkSpace::register_settings_with_Chaiscript(ChaiScript &chai) {
     
     /* Set the default communication. */
     chai.add(fun(&SMNChai::WorkSpace::Settings::default_comm), "default_comm");
+    
+    /* Set/get MQTT server. */
+    chai.add(fun(static_cast<void (SMNChai::WorkSpace::Settings::*)(const std::string&)>(&SMNChai::WorkSpace::Settings::MQTT_server)), "MQTT_server");
+    chai.add(fun(static_cast<std::string (SMNChai::WorkSpace::Settings::*)() const>(&SMNChai::WorkSpace::Settings::MQTT_server)), "MQTT_server");
 }
 
 void SMNChai::WorkSpace::Settings::default_comm(const std::string& t_comm) {
