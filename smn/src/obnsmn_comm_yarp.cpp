@@ -9,6 +9,7 @@
  */
 
 #include <obnsmn_comm_yarp.h>
+#include <obnsmn_report.h>
 
 using namespace OBNsmn::YARP;
 
@@ -147,12 +148,12 @@ void YARPPollingThread::ThreadMain() {
         YARPMsg *b = port.read(false);
         if (b) {
             // data received in *b
-            if (!b->getMessage(msg)) {
+            if (b->getMessage(msg)) {
+                pGC->pushNodeEvent(msg, 0);
+            } else {
                 // We should report an error here
-                std::cout << "Critical error: error while parsing input message from a node." << std::endl;
+                OBNsmn::report_error(0, "Critical error: error while parsing input message to Yarp.");
             }
-            
-            pGC->pushNodeEvent(msg, 0);
         }
     }
     

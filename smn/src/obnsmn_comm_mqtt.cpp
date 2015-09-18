@@ -48,21 +48,20 @@ void MQTTClient::on_connection_lost(void *context, char *cause)
 
 int MQTTClient::on_message_arrived(void *context, char *topicName, int topicLen, MQTTAsync_message *message)
 {
-//    int i;
-//    char* payloadptr;
-//    
-//    printf("Message arrived\n");
-//    printf("     topic: %s\n", topicName);
-//    printf("   message: ");
-//    
-//    payloadptr = message->payload;
-//    for(i=0; i<message->payloadlen; i++)
-//    {
-//        putchar(*payloadptr++);
-//    }
-//    putchar('\n');
-//    MQTTAsync_freeMessage(&message);
-//    MQTTAsync_free(topicName);
+    MQTTClient* client = static_cast<MQTTClient*>(context);
+    
+    // Check main GC topic
+    bool isTopic = topicLen>0?(client->m_portName.compare(0, std::string::npos, topicName, topicLen) == 0):(client->m_portName == topicName);
+    if (isTopic) {
+        // Get message and Push to queue
+        if (client->m_n2smn_msg.ParseFromArray(message->payload, message->payloadlen)) {
+            client->pGC->pushNodeEvent(client->m_n2smn_msg, 0);
+        } else {
+            OBNsmn::report_error(0, "Critical error: error while parsing input message to MQTT.");
+        }
+    }
+    MQTTAsync_freeMessage(&message);
+    MQTTAsync_free(topicName);
     return 1;
 }
 

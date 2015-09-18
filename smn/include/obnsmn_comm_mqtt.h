@@ -112,6 +112,9 @@ namespace OBNsmn {
             /** MQTT server address. */
             std::string m_server_address;
             
+            /** The N2SMN message used for receiving data from GC port. */
+            OBNSimMsg::N2SMN m_n2smn_msg;
+            
         public:
             /**
              Construct the MQTT client object, associated with a given GC.
