@@ -341,6 +341,20 @@ OBNsmn::YARP::OBNNodeYARP* SMNChai::Node::create_yarp_node(OBNsmn::YARP::YARPPor
     return p_node;
 }
 
+OBNsmn::MQTT::OBNNodeMQTT* SMNChai::Node::create_mqtt_node(OBNsmn::MQTT::MQTTClient* t_mqttclient, const WorkSpace &ws) const {
+    auto *p_node = new OBNsmn::MQTT::OBNNodeMQTT(m_name, m_updates.size(), ws.get_full_path(m_name, NODE_GC_PORT_NAME), t_mqttclient);
+    
+    p_node->needUPDATEX = m_updateX;
+    
+    // Configure all update types in this node
+    // Note that time values are stored as real numbers of microseconds, which must be converted to integer values in time unit
+    for (auto myupdate = m_updates.begin(); myupdate != m_updates.end(); ++myupdate) {
+        p_node->setUpdateType(myupdate->first, ws.get_time_value(myupdate->second));
+    }
+    
+    return p_node;
+}
+
 
 SMNChai::CommProtocol SMNChai::comm_protocol_from_string(const std::string& t_comm) {
     std::string comm = OBNsim::Utils::toLower(t_comm);
@@ -547,16 +561,6 @@ void SMNChai::WorkSpace::Settings::default_comm(const std::string& t_comm) {
     if (m_comm == SMNChai::COMM_DEFAULT) {
         throw smnchai_exception("Default communication protocol must be specific.");
     }
-#ifndef OBNSIM_COMM_YARP
-    if (m_comm == SMNChai::COMM_YARP) {
-        throw smnchai_exception("YARP is not supported on this SMN server.");
-    }
-#endif
-#ifndef OBNSIM_COMM_MQTT
-    if (m_comm == SMNChai::COMM_MQTT) {
-        throw smnchai_exception("MQTT is not supported on this SMN server.");
-    }
-#endif
 }
 
 
@@ -664,7 +668,96 @@ OBNsim::simtime_t SMNChai::WorkSpace::get_time_value(double t) const {
 }
 
 
-void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
+void SMNChai::WorkSpace::generate_obn_system_yarp(decltype(SMNChai::WorkSpace::m_nodes)::iterator &mynode, OBNsmn::GCThread &gc) {
+    // Create a GC port for it and try to open it
+    OBNsmn::YARP::YARPPort *p_port = new OBNsmn::YARP::YARPPort();
+    std::string sys_port_name = '/' + get_full_path("_smn_", mynode->first);  // YARP requires / at the beginning
+    if (!p_port->open(sys_port_name)) {
+        delete p_port;
+        throw smnchai_exception("Could not open system port " + sys_port_name);
+    }
+    
+    // Create the node and associate the port with it
+    // Note that the node object will own the port object, while the GC object will own the node object.
+    auto *p_node = mynode->second.node.create_yarp_node(p_port, *this);
+    auto result = gc.insertNode(p_node);
+    if (result.first) {
+        // Record the ID of this node in GC
+        mynode->second.index = result.second;
+        //mynode->second.pnodeobj = p_node;
+    } else {
+        // Delete the node object
+        delete p_node;
+        delete p_port;
+        throw smnchai_exception("Could not insert node '" + mynode->first + "' into the system.");
+    }
+    
+    // Connect the SMN and the ports (via their system ports)
+    // Remote ports must already exist, i.e. remote nodes have already started and are waiting
+    std::string remote_gc_port = '/' + get_full_path(mynode->first, NODE_GC_PORT_NAME);  // YARP requires / at the beginning
+    
+    // Check that the remote port exists
+    if (!yarp::os::Network::exists(remote_gc_port)) {
+        // Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
+        throw smnchai_exception("System port on remote node " + mynode->first + " is unavailable.");
+    }
+    
+    // The GC has a dedicated output port for each node
+    if (!p_port->addOutput(remote_gc_port)) {
+        // Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
+        throw smnchai_exception("Could not connect to remote node " + mynode->first);
+    }
+    
+    // However, all nodes send to the same GC input port
+    // YARP requires / at the beginning
+    if (!yarp::os::Network::connect(remote_gc_port, '/'+get_full_path("_smn_", NODE_GC_PORT_NAME), "", false))
+    {
+        // Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
+        throw smnchai_exception("Could not connect from remote node " + mynode->first + " to the SMN.");
+    }
+}
+
+
+void SMNChai::WorkSpace::generate_obn_system_mqtt(decltype(SMNChai::WorkSpace::m_nodes)::iterator &mynode, OBNsmn::GCThread &gc, OBNsmn::MQTT::MQTTClient *mqttclient) {
+    // Create the node
+    auto *p_node = mynode->second.node.create_mqtt_node(mqttclient, *this);
+    auto result = gc.insertNode(p_node);
+    if (result.first) {
+        // Record the ID of this node in GC
+        mynode->second.index = result.second;
+        //mynode->second.pnodeobj = p_node;
+    } else {
+        // Delete the node object
+        delete p_node;
+        throw smnchai_exception("Could not insert node '" + mynode->first + "' into the system.");
+    }
+    
+    // All nodes should send to the SMN's GC topic (e.g. workspace/_smn_/_gc_),
+    // while the SMN/GC will send to the node's GC topic (e.g. workspace/node/_gc_),
+    // to which the node should subscribe.
+    // So there is no need to "connect" the ports here.
+}
+
+
+bool SMNChai::WorkSpace::is_comm_protocol_used(SMNChai::CommProtocol comm) const {
+    assert(comm != SMNChai::COMM_DEFAULT);
+    
+    if (m_settings.m_comm == comm) {
+        // If the default comm protocol is the given one
+        return std::any_of(m_nodes.cbegin(), m_nodes.cend(),
+                           [comm](decltype(m_nodes)::const_reference p) {
+                               return p.second.node.m_comm_protocol == SMNChai::COMM_DEFAULT || p.second.node.m_comm_protocol == comm;
+                           });
+    } else {
+        return std::any_of(m_nodes.cbegin(), m_nodes.cend(),
+                           [comm](decltype(m_nodes)::const_reference p) {
+                               return p.second.node.m_comm_protocol == comm;
+                           });
+    }
+}
+
+
+void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc, SMNChai::SMNChaiComm comm) {
     // Sanity check
     if (m_nodes.size() == 0) {
         // Error if there is no node
@@ -673,63 +766,29 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc) {
     
     // Create GC ports and node objects, add them to the GC object and save their IDs
     for (auto mynode = m_nodes.begin(); mynode != m_nodes.end(); ++mynode) {
-        // Create a GC port for it and try to open it
-        OBNsmn::YARP::YARPPort *p_port = new OBNsmn::YARP::YARPPort;
-        std::string sys_port_name = '/' + get_full_path("_smn_", mynode->first);  // YARP requires / at the beginning
-        if (!p_port->open(sys_port_name)) {
-            delete p_port;
-            throw smnchai_exception("Could not open system port " + sys_port_name);
-        }
-        
-        // Create the node and associate the port with it
-        // Note that the node object will own the port object, while the GC object will own the node object.
-        auto *p_node = mynode->second.node.create_yarp_node(p_port, *this);
-        auto result = gc.insertNode(p_node);
-        if (result.first) {
-            // Record the ID of this node in GC
-            mynode->second.index = result.second;
-            //mynode->second.pnodeobj = p_node;
-        } else {
-            // Delete the node object
-            delete p_node;
-            throw smnchai_exception("Could not insert node '" + mynode->first + "' into the system.");
-        }
-        
-        // Connect the SMN and the ports (via their system ports)
-        // Remote ports must already exist, i.e. remote nodes have already started and are waiting
-        std::string remote_gc_port = '/' + get_full_path(mynode->first, NODE_GC_PORT_NAME);  // YARP requires / at the beginning
-        
-        // Check that the remote port exists
-        if (!yarp::os::Network::exists(remote_gc_port)) {
-            // Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
-            throw smnchai_exception("System port on remote node " + mynode->first + " is unavailable.");
-        }
-        
-        // The GC has a dedicated output port for each node
-        if (!p_port->addOutput(remote_gc_port)) {
-            // Try a second time
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            
-            if (!p_port->addOutput(remote_gc_port)) {
-                // Still Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
-                throw smnchai_exception("Could not connect to remote node " + mynode->first);
+        if (mynode->second.node.m_comm_protocol == SMNChai::COMM_YARP ||
+            (mynode->second.node.m_comm_protocol == SMNChai::COMM_DEFAULT && m_settings.m_comm == SMNChai::COMM_YARP)) {
+#ifdef OBNSIM_COMM_YARP
+            if (comm.yarpThread == nullptr) {
+                throw smnchai_exception("Error: The YARP communication thread has not yet been created.");
             }
+            generate_obn_system_yarp(mynode, gc);
+#else
+            throw smnchai_exception("Error: YARP communication is not supported in this SMN.");
+#endif
         }
-        
-        // However, all nodes send to the same GC input port
-        // YARP requires / at the beginning
-        if (!yarp::os::Network::connect(remote_gc_port, '/'+get_full_path("_smn_", NODE_GC_PORT_NAME), "", false)) {
-            // Try a second time
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            
-            if (!yarp::os::Network::connect(remote_gc_port, '/' + get_full_path("_smn_", NODE_GC_PORT_NAME), "", false)) {
-                // Still Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
-                throw smnchai_exception("Could not connect from remote node " + mynode->first + " to the SMN.");
+        else if (mynode->second.node.m_comm_protocol == SMNChai::COMM_MQTT ||
+                 (mynode->second.node.m_comm_protocol == SMNChai::COMM_DEFAULT && m_settings.m_comm == SMNChai::COMM_MQTT)) {
+#ifdef OBNSIM_COMM_MQTT
+            if (comm.mqttClient == nullptr) {
+                throw smnchai_exception("Error: The MQTT communication client has not yet been created.");
             }
+            generate_obn_system_mqtt(mynode, gc, comm.mqttClient);
+#else
+            throw smnchai_exception("Error: MQTT communication is not supported in this SMN.");
+#endif
         }
     }
-    
-    
     
     // Now connect the ports and create the dependency graph.
     // ASSUME that all ports have already been created, i.e. nodes are already started.

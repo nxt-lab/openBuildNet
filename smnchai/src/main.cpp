@@ -44,6 +44,10 @@ This program is part of the openBuildNet framework developed at EPFL.
 
 const char *SMNChai_program_name;
 
+// This structure will contain the pointers to the communication client objects (or threads)
+SMNChai::SMNChaiComm comm_objects;
+
+
 // The usage of this program
 void show_usage() {
     std::cout << "Usage:\n" <<
@@ -55,9 +59,25 @@ void show_usage() {
 
 // Function to shut down the SMN, should be called before exiting
 void shutdown_SMN() {
+    // Delete the communication objects (which are created dynamically in loadscript())
+#ifdef OBNSIM_COMM_YARP
+    if (comm_objects.yarpThread) {
+        delete comm_objects.yarpThread;
+        comm_objects.yarpThread = nullptr;
+    }
+#endif
+#ifdef OBNSIM_COMM_MQTT
+    if (comm_objects.mqttClient) {
+        delete comm_objects.mqttClient;
+        comm_objects.mqttClient = nullptr;
+    }
+#endif
+    
+    // Shutdown ProtoBuf
     google::protobuf::ShutdownProtobufLibrary();
+    
     // Wait a bit before shutting down so that we won't overload the nameserver (hopefully)
-    std::this_thread::sleep_for(std::chrono::seconds(4));
+    std::this_thread::sleep_for(std::chrono::seconds(3));
 }
 
 void shutdown_communication_threads(OBNsmn::GCThread& gc) {
@@ -102,19 +122,6 @@ int main(int argc, const char* argv[]) {
     // The Global clock thread
     OBNsmn::GCThread gc;
     
-    SMNChai::SMNChaiComm comm_objects;
-    
-#ifdef OBNSIM_COMM_YARP
-    // The YARP communication thread for GC's incoming port
-    OBNsmn::YARP::YARPPollingThread yarpThread(&gc, "");
-    comm_objects.yarpThread = &yarpThread;
-#endif
-
-#ifdef OBNSIM_COMM_MQTT
-    OBNsmn::MQTT::MQTTClient mqttClient(&gc);
-    comm_objects.mqttClient = &mqttClient;
-#endif
-    
     // Run Chaiscript to load the network
     auto load_script_result = SMNChai::smnchai_loadscript(script_file.string(), script_args, script_file.stem().string(), gc, comm_objects);
 
@@ -138,6 +145,7 @@ int main(int argc, const char* argv[]) {
             return 1;
         } else {
             // Crap, we have to terminate
+            shutdown_SMN();
             std::terminate();
         }
     }

@@ -27,8 +27,10 @@
 #endif
 
 #ifdef OBNSIM_COMM_MQTT
-//#include <obnsmn_comm_yarp.h>
+#include <obnsmn_comm_mqtt.h>
 #endif
+
+#include <smnchai.h>
 
 #include <chaiscript/chaiscript.hpp>
 
@@ -88,7 +90,7 @@ namespace SMNChai {
          */
         static std::string m_global_prefix;
 
-    protected:
+    public:
         // DATA MEMBERS
         std::string m_name;     ///< Name of the node
         
@@ -200,6 +202,13 @@ namespace SMNChai {
          \return Pointer to the new node object; nullptr if there is any error.
          */
         OBNsmn::YARP::OBNNodeYARP* create_yarp_node(OBNsmn::YARP::YARPPort *sys_port, const WorkSpace &ws) const;
+        
+        /** \brief Create an MQTT node object for this node.
+         \param client Pointer to the MQTTClient object to which this node is associated (for sending messages)
+         \param ws The WorkSpace object to whom this node belongs (to access system settings).
+         \return Pointer to the new node object; nullptr if there is any error.
+         */
+        OBNsmn::MQTT::OBNNodeMQTT* create_mqtt_node(OBNsmn::MQTT::MQTTClient* client, const WorkSpace &ws) const;
         
         /** Returns the update mask of a given input port, exception if port does not exist. */
         OBNsim::updatemask_t input_updatemask(const std::string &port_name) const {
@@ -403,7 +412,16 @@ namespace SMNChai {
         
         /** Register this settings object with Chaiscript engine. */
         void register_settings_with_Chaiscript(chaiscript::ChaiScript &chai);
+        
+    private:
+        // Configure the YARP node for the given mynode in the given GC. Used by generate_obn_system().
+        void generate_obn_system_yarp(decltype(SMNChai::WorkSpace::m_nodes)::iterator &mynode,
+                                      OBNsmn::GCThread &gc);
 
+        // Configure the MQTT node for the given mynode in the given GC. Used by generate_obn_system().
+        void generate_obn_system_mqtt(decltype(SMNChai::WorkSpace::m_nodes)::iterator &mynode,
+                                      OBNsmn::GCThread &gc, OBNsmn::MQTT::MQTTClient *mqttclient);
+        
     public:
         /** Construct a workspace object with a given name. */
         WorkSpace(const std::string &t_name = "") {
@@ -471,7 +489,13 @@ namespace SMNChai {
          
          \exception smnchai_exception An error occurred; check its what() for details.
          */
-        void generate_obn_system(OBNsmn::GCThread &gc);
+        void generate_obn_system(OBNsmn::GCThread &gc, SMNChai::SMNChaiComm comm);
+        
+        /** \brief Check if a given communication protocol is needed/used by the system.
+         \param comm The communication protocol we want to check; must be specific (not the default one).
+         \return true if the given protocol is used/needed by the system.
+         */
+        bool is_comm_protocol_used(SMNChai::CommProtocol comm) const;
         
         /** Returns the integer time value in terms of the time unit from the real time value t in microseconds.
          Returns 0 if the integer value is negative.

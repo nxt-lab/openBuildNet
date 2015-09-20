@@ -27,7 +27,7 @@ const char *SMNCHAI_STDLIB_NAME = "stdlib.chai";    // name of the standard libr
 
 // Return true if simulation should continue, false if should exit with given return code in the second value
 std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file, const std::vector<std::string>& script_args, const std::string& default_workspace,
-                        OBNsmn::GCThread& gc, SMNChai::SMNChaiComm comm)
+                        OBNsmn::GCThread& gc, SMNChai::SMNChaiComm& comm)
 {
     // Get the main directory of SMNChai
     boost::filesystem::path smnchai_main_dir;
@@ -108,68 +108,112 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
     
     std::cout << "Done loading the script file. Now constructing the simulation network...\n";
     
-    // Open Yarp port
+    // Need to create and start the communication threads here to get certain messages from the nodes
+    bool create_yarp = (comm.yarpThread == nullptr);
+    bool create_mqtt = (comm.mqttClient == nullptr);
+    
+    if (ws.is_comm_protocol_used(SMNChai::COMM_YARP)) {
+        // Create and Open Yarp port
 #ifdef OBNSIM_COMM_YARP
-    if (comm.yarpThread) {
+        if (create_yarp) {
+            comm.yarpThread = new OBNsmn::YARP::YARPPollingThread(&gc, "");
+        }
+        
         // Set the GC port name on this SMN
         comm.yarpThread->setPortName('/' + ws.get_full_path("_smn_", "_gc_"));  // YARP requires / at the beginning
         
         // Must open the GC port on this SMN because other nodes will be connected to it in generate_obn_system()
         if (!comm.yarpThread->openPort()) {
             std::cerr << "ERROR: Could not open the main GC port on the SMN." << std::endl;
+            if (create_yarp) {
+                // Delete the YARP thread here because we created it
+                delete comm.yarpThread;
+                comm.yarpThread = nullptr;
+            }
             return std::make_pair(false, 5);
         }
-    }
+        
+        // Start Yarp communication
+        if (!comm.yarpThread->startThread()) {
+            std::cerr << "ERROR: could not start Yarp communication thread." << std::endl;
+            if (create_yarp) {
+                // Delete the YARP thread here because we created it
+                delete comm.yarpThread;
+                comm.yarpThread = nullptr;
+            }
+            return std::make_pair(false, 5);
+        }
+#else
+        std::cerr << "ERROR: YARP communication is not supported in this SMN." << std::endl;
+        return std::make_pair(false, 5);
 #endif
+    }
     
-    // Open MQTT port
-    // If fail, remember to also shut down Yarp if necessary (yarpThread->closePort())
+    if (ws.is_comm_protocol_used(SMNChai::COMM_MQTT)) {
+        // Create and Open MQTT port
+        // If fail, remember to also shut down Yarp if necessary (shutdown_communication_threads)
 #ifdef OBNSIM_COMM_MQTT
-    if (comm.mqttClient) {
+        if (create_mqtt) {
+            comm.mqttClient = new OBNsmn::MQTT::MQTTClient(&gc);
+        }
         comm.mqttClient->setClientID(ws.get_name());
         comm.mqttClient->setPortName(ws.get_full_path("_smn_", "_gc_"));
         comm.mqttClient->setServerAddress(ws.m_settings.m_mqtt_server);
-    }
-#ifdef OBNSIM_COMM_YARP
-#endif
-#endif
-    
-    // Need to start the communication threads here to get certain messages from the nodes
-    
-    // Start Yarp communication
-#ifdef OBNSIM_COMM_YARP
-    if (comm.yarpThread) {
-        if (!comm.yarpThread->startThread()) {
-            std::cerr << "ERROR: could not start Yarp communication thread." << std::endl;
-            return std::make_pair(false, 5);
-        }
-    }
-#endif
-    
-    // Start MQTT communication
-    // If fail, remember to also shut down Yarp if necessary (shutdown_communication_threads)
-#ifdef OBNSIM_COMM_MQTT
-    if (comm.mqttClient) {
+        
+        // Start MQTT communication
         if (!comm.mqttClient->start()) {
             std::cerr << "ERROR: could not start MQTT communication thread." << std::endl;
 #ifdef OBNSIM_COMM_YARP
             // Shut down Yarp
             if (comm.yarpThread) {
                 shutdown_communication_threads(gc);
+                if (create_yarp) {
+                    delete comm.yarpThread;
+                    comm.yarpThread = nullptr;
+                }
             }
 #endif
+            // Delete the MQTT client
+            if (create_mqtt) {
+                delete comm.mqttClient;
+                comm.mqttClient = nullptr;
+            }
             return std::make_pair(false, 5);
         }
-    }
+#else
+        std::cerr << "Error: MQTT communication is not supported in this SMN." << std::endl;
+        if (comm.yarpThread) {
+            shutdown_communication_threads(gc);
+            if (create_yarp) {
+                delete comm.yarpThread;
+                comm.yarpThread = nullptr;
+            }
+        }
+        return std::make_pair(false, 5);
 #endif
-    
+    }
+
     try {
-        ws.generate_obn_system(gc);
+        ws.generate_obn_system(gc, comm);
     } catch (SMNChai::smnchai_exception const &e) {
         std::cerr << "ERROR: " << e.what() << std::endl;
         
         // As the communication thread(s) already started, we try to signal them to stop
         shutdown_communication_threads(gc);
+        
+        // Delete them if we created them before
+#ifdef OBNSIM_COMM_YARP
+        if (comm.yarpThread && create_yarp) {
+            delete comm.yarpThread;
+            comm.yarpThread = nullptr;
+        }
+#endif
+#ifdef OBNSIM_COMM_MQTT
+        if (comm.mqttClient && create_mqtt) {
+            delete comm.mqttClient;
+            comm.mqttClient = nullptr;
+        }
+#endif
         
         return std::make_pair(false, 6);
     }

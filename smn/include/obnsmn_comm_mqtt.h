@@ -32,51 +32,8 @@
 
 namespace OBNsmn {
     namespace MQTT {
-
-        /** Node implementation using MQTT for communication. */
-//        class OBNNodeMQTT: public OBNNode {
-//        public:
-//            
-//            /** \brief Construct an MQTT node with a given port.
-//             
-//             Construct a MQTT node with a given name, number of output groups, and a given MQTT port.
-//             The node object will use the port as-is: it will not create / delete / open / close / connect the port.
-//             Therefore, the port object must be initialized, and then deleted, properly somewhere else.
-//             
-//             The port is only used for sending messages out.
-//             */
-//            OBNNodeMQTT(const std::string& _name, int t_nUpdates, MQTTPort* _port): OBNNode(_name, t_nUpdates), port(_port) {
-//                assert(_port);
-//            }
-//            
-//            /** \brief Construct an MQTT node which owns a given port.
-//             
-//             This constructor is similar to the other constructor, however the MQTT node will own the given MQTT port object.
-//             The node object will not create / open / connect the port, but it will close and delete the port when itself is deleted.
-//             IOW, the node object owns the port object.
-//             
-//             The port is only used for sending messages out.
-//             */
-//            OBNNodeMQTT(const std::string& _name, int t_nUpdates, std::unique_ptr<MQTTPort> &&t_port): OBNNode(_name, t_nUpdates), port(t_port.get()) {
-//                assert(t_port);
-//                m_ownedport = std::move(t_port);
-//            }
-//            
-//            // virtual ~OBNNodeMQTT() { //std::cout << "OBNNodeMQTT deleted." << std::endl; }
-//            
-//            /** \brief Asynchronously send a message to a node. */
-//            virtual bool sendMessage(int nodeID, OBNSimMsg::SMN2N &msg) override;
-//            
-//            /* \brief Synchronously send a message to a node.  */
-//            // virtual bool sendMessageSync(int nodeID, OBNSimMsg::SMN2N &msg);
-//            
-//        private:
-//            /** \brief MQTT port object for sending messages to node. */
-//            MQTTPort *port;
-//            
-//            /** Port object that is owned by this node object, may be empty (none is owned). */
-//            std::unique_ptr<MQTTPort> m_ownedport;
-//        };
+        
+        class OBNNodeMQTT;
         
         /** \brief The object that manages all MQTT communications (i.e. the MQTT communication thread).
 
@@ -114,6 +71,8 @@ namespace OBNsmn {
             
             /** The N2SMN message used for receiving data from GC port. */
             OBNSimMsg::N2SMN m_n2smn_msg;
+            
+            friend class OBNNodeMQTT;
             
         public:
             /**
@@ -302,8 +261,57 @@ namespace OBNsmn {
             /** Called when the disconnection with the server is successful. */
             static void onDisconnect(void* context, MQTTAsync_successData* response);
         };
+        
+        
+        /** Node implementation using MQTT for communication. */
+        class OBNNodeMQTT: public OBNNode {
+        public:
+            
+            /** \brief Construct an MQTT node with a given port.
+             
+             Construct a MQTT node with a given name and number of output groups, associated with an MQTTClient object.
+             \param _name The name of the node.
+             \param t_nUpdates The number of computating tasks/update types.
+             \param t_topic The topic of the GC port of this node, typically of the form "workspace_name/node_name/_gc_".
+             \param t_client Pointer to the MQTTClient.
+             The port is only used for sending messages out.
+             */
+            OBNNodeMQTT(const std::string& _name, int t_nUpdates, const std::string &t_topic, MQTTClient* t_client):
+            OBNNode(_name, t_nUpdates), m_topic(t_topic), m_client(t_client)
+            {
+                assert(t_client);
+                assert(!t_topic.empty());
+            }
+            
+            virtual ~OBNNodeMQTT() {
+                if (m_buffer) {
+                    delete [] m_buffer;
+                }
+            }
+            
+            /** Make sure that the buffer (for sending messages) has at least newsize bytes. */
+            void allocateBuffer(size_t newsize);
+            
+            /** \brief Asynchronously send a message to a node. */
+            virtual bool sendMessage(int nodeID, OBNSimMsg::SMN2N &msg) override;
+            
+            /* \brief Synchronously send a message to a node.  */
+            // virtual bool sendMessageSync(int nodeID, OBNSimMsg::SMN2N &msg);
+            
+        private:
+            /** The MQTT topic that this node will send to. */
+            std::string m_topic;
+            
+            /** \brief MQTTClient object with which this node is associated, for sending messages to node. */
+            MQTTClient *m_client;
+            
+            // The buffer for sending messages
+            char* m_buffer = nullptr;
+            
+            // Allocated size of the buffer
+            size_t m_buffer_allocsize = 0;
+        };
     }
 }
-
 
 #endif // OBNSIM_COMM_MQTT_H
