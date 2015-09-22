@@ -392,17 +392,24 @@ namespace OBNnode {
         /** Get the current value of the port. If no message has been received, the value is undefined.
          The value is copied out, which may be inefficient for large data (e.g. a large vector or matrix).
          */
-        ValueType operator() () {
+        ValueType operator() () const {
             yarp::os::LockGuard mlock(_valueMutex);
             _pending_value = false; // the value has been read
             return _cur_value;
         }
 
-        /** Get direct read-only access the current value of the port. If no message has been received, the value is undefined.
+        /* IMPORTANT: the following method is disabled because it gets around the synchronization mechanism with the mutex _valueMutex. */
+        /* Get direct read-only access the current value of the port. If no message has been received, the value is undefined.
          A direct reference to the internal value is returned, so there is no copying, which is more efficient for large data.
          If the value is a fixed-size Eigen vector/matrix and is going to be accessed many times, it will be a good idea to copy it to a local variable because the internal value variable in the port is not aligned for vectorization.
             */
+        /*
         const ValueType& get() {
+            yarp::os::LockGuard mlock(_valueMutex);
+            _pending_value = false; // the value has been read
+            return _cur_value;
+        }*/
+        ValueType get() const {
             yarp::os::LockGuard mlock(_valueMutex);
             _pending_value = false; // the value has been read
             return _cur_value;
@@ -473,10 +480,17 @@ namespace OBNnode {
             
         }
         
-        /** Get direct read-only access the current message in the port. If no message has been received, the value is undefined.
-         A direct reference to the internal value is returned, so there is no copying, which is more efficient for large data.
+        /** Returns a copy of the current message.
+         To get direct access to the current message (without copying) see lock_and_get().
          */
-        const PBCLS& get() {
+        PBCLS get() const {
+            yarp::os::LockGuard mlock(_valueMutex);
+            _pending_value = false; // the value has been read
+            return _cur_message;
+        }
+        
+        create a class that wraps both the value& or value* and the mutex, which will lock the mutex in its constructor and unlock the mutex when deleted. It returns an r-value so it's moved to outside var.
+        PBCLS get() const {
             yarp::os::LockGuard mlock(_valueMutex);
             _pending_value = false; // the value has been read
             return _cur_message;
@@ -535,10 +549,9 @@ namespace OBNnode {
             
         }
         
-        /** Get direct read-only access the current binary data in the port, as a std::string. If no message has been received, the value is undefined.
-         A direct reference to the internal value is returned, so there is no copying, which is more efficient for large data.
+        /** Returns a copy of the current binary content, as a string.
          */
-        const std::string& get() {
+        std::string get() const {
             yarp::os::LockGuard mlock(_valueMutex);
             _pending_value = false; // the value has been read
             return _cur_message;
