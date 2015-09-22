@@ -215,7 +215,7 @@ public:
 
 bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta, OBNnode::simtime_t t) {
     int i = idx - 1;
-    const auto& values = (*m_input_users[i])();
+    auto values = (*m_input_users[i])();
     
     auto n = values.size();
     

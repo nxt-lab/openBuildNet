@@ -322,7 +322,10 @@ template <typename ETYPE>
 mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port) {
     YarpInput<OBN_PB,obn_vector<ETYPE>,false> *p = dynamic_cast<YarpInput<OBN_PB,obn_vector<ETYPE>,false>*>(port);
     if (p) {
-        auto &pv = p->get();
+        // Get direct access to value
+        auto value_access = p->lock_and_get();
+        const auto& pv = *value_access;
+
         MxArray ml(FUNC(pv.size(), 1));
         std::copy(pv.data(), pv.data()+pv.size(), ml.getData<ETYPE>());
         return ml.release();
@@ -337,7 +340,10 @@ template <typename ETYPE>
 mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port) {
     YarpInput<OBN_PB,obn_matrix<ETYPE>,false> *p = dynamic_cast<YarpInput<OBN_PB,obn_matrix<ETYPE>,false>*>(port);
     if (p) {
-        auto &pv = p->get();
+        // Get direct access to value
+        auto value_access = p->lock_and_get();
+        const auto& pv = *value_access;
+        
         auto nr = pv.rows(), nc = pv.cols();
         MxArray ml(FUNC(nr, nc));
         

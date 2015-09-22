@@ -150,6 +150,7 @@ private:
     bool processUserInput(int idx, double& t_curE, double& t_curTheta);
     
     void doMainUpdate() {
+        // std::cout << currentSimulationTime() << std::endl;
         double curE = NAN, curTheta = NAN;  // Current aggregate values of E and Theta
         
         // Reset variables used in computation
@@ -534,8 +535,7 @@ public:
 
 bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta) {
     int i = idx - 1;
-    const auto& values = (*m_input_users[i])();
-    
+    auto values = (*m_input_users[i])();
     auto n = values.size();
     
     // At least P is given

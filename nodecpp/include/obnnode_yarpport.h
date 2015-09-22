@@ -329,6 +329,38 @@ namespace OBNnode {
     template <typename D>
     using OBN_DATA_TYPE_CLASS = typename std::conditional<std::is_arithmetic<D>::value, obn_scalar<D>, D>::type;
     
+    
+    /** This class allows thread-safe access to the port's value by locking the mutex upon its creation, and unlock the mutex when it's deleted. */
+    template <typename V, typename M>
+    class LockedAccess {
+        M* m_mutex;
+        const V* m_value;
+        
+    public:
+        LockedAccess(V* t_value, M* t_mutex): m_mutex(t_mutex), m_value(t_value) {
+            m_mutex->lock();
+            //std::cout << "Locked\n";
+        }
+        
+        LockedAccess(const LockedAccess& other) = delete;   // no copy constructor, so we force it to move
+        LockedAccess() = delete;    // no default
+        LockedAccess(LockedAccess&& rvalue) = default;
+        
+        ~LockedAccess() {
+            m_mutex->unlock();
+            //std::cout << "Unlocked\n";
+        }
+        
+        const V& operator*() const {
+            return *m_value;
+        }
+        
+        const V* operator->() const {
+            return m_value;
+        }
+    };
+    
+    
     /** Implementation of YarpInput for fixed data type encoded with ProtoBuf (OBN_PB), non-strict reading. */
     template <typename D>
     class YarpInput<OBN_PB, D, false>: public YarpPortBase,
@@ -392,27 +424,24 @@ namespace OBNnode {
         /** Get the current value of the port. If no message has been received, the value is undefined.
          The value is copied out, which may be inefficient for large data (e.g. a large vector or matrix).
          */
-        ValueType operator() () const {
+        ValueType operator() () {
             yarp::os::LockGuard mlock(_valueMutex);
             _pending_value = false; // the value has been read
             return _cur_value;
         }
 
-        /* IMPORTANT: the following method is disabled because it gets around the synchronization mechanism with the mutex _valueMutex. */
-        /* Get direct read-only access the current value of the port. If no message has been received, the value is undefined.
-         A direct reference to the internal value is returned, so there is no copying, which is more efficient for large data.
-         If the value is a fixed-size Eigen vector/matrix and is going to be accessed many times, it will be a good idea to copy it to a local variable because the internal value variable in the port is not aligned for vectorization.
-            */
-        /*
-        const ValueType& get() {
+        ValueType get() {
             yarp::os::LockGuard mlock(_valueMutex);
             _pending_value = false; // the value has been read
             return _cur_value;
-        }*/
-        ValueType get() const {
-            yarp::os::LockGuard mlock(_valueMutex);
+        }
+        
+        typedef OBNnode::LockedAccess<ValueType, yarp::os::Mutex> LockedAccess;
+        
+        /** Returns a thread-safe direct access to the value of the port. */
+        LockedAccess lock_and_get() {
             _pending_value = false; // the value has been read
-            return _cur_value;
+            return LockedAccess(&_cur_value, &_valueMutex);
         }
         
         /** Check if there is a pending input value (that hasn't been read). */
@@ -483,17 +512,18 @@ namespace OBNnode {
         /** Returns a copy of the current message.
          To get direct access to the current message (without copying) see lock_and_get().
          */
-        PBCLS get() const {
+        PBCLS get() {
             yarp::os::LockGuard mlock(_valueMutex);
             _pending_value = false; // the value has been read
             return _cur_message;
         }
         
-        create a class that wraps both the value& or value* and the mutex, which will lock the mutex in its constructor and unlock the mutex when deleted. It returns an r-value so it's moved to outside var.
-        PBCLS get() const {
-            yarp::os::LockGuard mlock(_valueMutex);
-            _pending_value = false; // the value has been read
-            return _cur_message;
+        typedef OBNnode::LockedAccess<PBCLS, yarp::os::Mutex> LockedAccess;
+
+        /** Returns a thread-safe direct access to the value of the port. */
+        LockedAccess lock_and_get() {
+            _pending_value = false;  // the value has been read
+            return LockedAccess(&_cur_message, &_valueMutex);
         }
         
         /** Check if there is a pending input value (that hasn't been read). */
@@ -529,6 +559,8 @@ namespace OBNnode {
         std::string _cur_message;    ///< The current binary data message stored in this port
         bool _pending_value;    ///< If a new value is pending (hasn't been read)
         
+        int a;
+        
         mutable yarp::os::Mutex _valueMutex;    ///< Mutex for accessing the value
         
         virtual void onRead(_port_content_type& b) {
@@ -551,10 +583,18 @@ namespace OBNnode {
         
         /** Returns a copy of the current binary content, as a string.
          */
-        std::string get() const {
+        std::string get() {
             yarp::os::LockGuard mlock(_valueMutex);
             _pending_value = false; // the value has been read
             return _cur_message;
+        }
+        
+        typedef OBNnode::LockedAccess<std::string, yarp::os::Mutex> LockedAccess;
+        
+        /** Returns a thread-safe direct access to the value of the port. */
+        LockedAccess lock_and_get() {
+            _pending_value = false;  // the value has been read
+            return LockedAccess(&_cur_message, &_valueMutex);
         }
         
         /** Check if there is a pending input value (that hasn't been read). */
