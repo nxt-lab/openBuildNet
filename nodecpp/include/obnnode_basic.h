@@ -23,6 +23,9 @@
 #include <obnsim_basic.h>
 
 #include <obnsim_msg.pb.h>
+#include <obnsim_io.pb.h>
+
+#include <Eigen/Core>
 
 namespace OBNnode {
     typedef OBNsim::simtime_t simtime_t;  ///< Simulation time type, as number of nano-seconds from beginning.
@@ -539,8 +542,524 @@ namespace OBNnode {
             std::cout << msg << std::endl;
         }
     };
+    
+    /** Define all details of an update type. */
+    struct UpdateType {
+        bool enabled = false;   ///< If this update is enabled
+        double T_in_us = -1.0;  ///< Sampling time in microseconds, <=0 if non-periodic
+        std::string name;       ///< Name of this update (optional)
+        
+        typedef std::vector<std::string> OUTPUT_LIST;
+        OUTPUT_LIST outputs;   ///< List of outputs of this update
+        
+        typedef std::vector<std::pair<std::string, bool> > INPUT_LIST;
+        INPUT_LIST inputs;  ///< List of inputs of this update and their direct-feedthrough property
+        
+        // Callbacks
+        typedef std::function<void ()> UPDATE_CALLBACK;
+        UPDATE_CALLBACK y_callback; ///< Callback for UPDATE_Y, initially empty
+        UPDATE_CALLBACK x_callback; ///< Callback for UPDATE_X, initially empty
+    };
+    
+    
+    /** \brief Main OBN Node class, with support for specifying updates and __info__ port.
+     NB is the base class for a node, which must extend the NodeBase class.
+     */
+    template <typename NB>
+    class OBNNodeBase: public NB {
+        static_assert(std::is_base_of<NodeBase, NB>::value, "Template parameter NB must extend OBNnode::NodeBase");
+    protected:
+        /** Vector of all updates in this node. */
+        std::vector<UpdateType> m_updates;
+        
+        template<typename T>
+        bool does_port_exists(const T& t_list, const std::string& t_name) const {
+            for (const auto p: t_list) {
+                if (p.first->getPortName() == t_name) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+    public:
+        OBNNodeBase(const std::string& _name, const std::string& ws = ""): NB(_name, ws) { }
+        
+        /** Add a new update to the node. */
+        int addUpdate(UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), double t_T = -1.0, const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
+        
+        /** Add a new update to the node with given index. */
+        int addUpdate(int t_idx, UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), double t_T = -1.0, const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
+        
+        /** Add a new update to the node. */
+        int addUpdate(const UpdateType& t_update) {
+            return addUpdate(t_update.y_callback, t_update.x_callback,
+                             t_update.T_in_us, t_update.inputs, t_update.outputs, t_update.name);
+        }
+        
+        /** Add a new update to the node with given index. */
+        int addUpdate(int t_idx, const UpdateType& t_update) {
+            return addUpdate(t_idx, t_update.y_callback, t_update.x_callback,
+                             t_update.T_in_us, t_update.inputs, t_update.outputs, t_update.name);
+        }
+        
+        /** Remove an update. */
+        bool removeUpdate(int t_idx) {
+            if (0 <= t_idx && t_idx < m_updates.size()) {
+                if (m_updates[t_idx].enabled) {
+                    m_updates[t_idx].enabled = false;
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+        virtual void onUpdateY(updatemask_t m) override {
+            int idx = 0;
+            int n_updates = m_updates.size();
+            while (m && idx < n_updates) {
+                if ((m & (1 << idx)) && m_updates[idx].enabled) {
+                    // Call the y_callback
+                    if (m_updates[idx].y_callback) {
+                        m_updates[idx].y_callback();
+                    }
+                    // Update flag m
+                    m ^= (1 << idx);
+                }
+                idx++;
+            }
+        }
+        
+        virtual void onUpdateX(updatemask_t m) override {
+            int idx = 0;
+            int n_updates = m_updates.size();
+            while (m && idx < n_updates) {
+                if ((m & (1 << idx)) && m_updates[idx].enabled) {
+                    // Call the x_callback
+                    if (m_updates[idx].x_callback) {
+                        m_updates[idx].x_callback();
+                    }
+                    // Update flag m
+                    m ^= (1 << idx);
+                }
+                idx++;
+            }
+        }
+        
+        // Some constants for specifying the update's sampling time
+        static constexpr double MILLISECOND = 1e3;
+        static constexpr double SECOND = 1e6;
+        static constexpr double MINUTE = 60*SECOND;
+        static constexpr double HOUR = 60*MINUTE;
+        static constexpr double DAY = 24*HOUR;
+    };
+
+    
+    
+    ///////////////////////////////////////////////////////////////////////////////
+    // Auxiliary types used in defining template classes for input/output ports
+    ///////////////////////////////////////////////////////////////////////////////
+    
+    // Types of encoding format: predefined ProtoBuf, User-defined ProtoBuf, Binary
+    class OBN_PB {};
+    class OBN_PB_USER {};
+    class OBN_BIN {};
+    
+    /** Template class to define the ProtoBuf message class for a certain data type */
+    template <typename T> struct obn_scalar_PB_message_class;
+    template <typename T> struct obn_vector_PB_message_class;
+    template <typename T> struct obn_matrix_PB_message_class;
+    
+    template <> struct obn_scalar_PB_message_class<bool> { using theclass = OBNSimIOMsg::ScalarBool; };
+    template <> struct obn_scalar_PB_message_class<int32_t> { using theclass = OBNSimIOMsg::ScalarInt32; };
+    template <> struct obn_scalar_PB_message_class<uint32_t> { using theclass = OBNSimIOMsg::ScalarUInt32; };
+    template <> struct obn_scalar_PB_message_class<int64_t> { using theclass = OBNSimIOMsg::ScalarInt64; };
+    template <> struct obn_scalar_PB_message_class<uint64_t> { using theclass = OBNSimIOMsg::ScalarUInt64; };
+    template <> struct obn_scalar_PB_message_class<float> { using theclass = OBNSimIOMsg::ScalarFloat; };
+    template <> struct obn_scalar_PB_message_class<double> { using theclass = OBNSimIOMsg::ScalarDouble; };
+    
+    template <> struct obn_vector_PB_message_class<bool> { using theclass = OBNSimIOMsg::VectorBool; };
+    template <> struct obn_vector_PB_message_class<int32_t> { using theclass = OBNSimIOMsg::VectorInt32; };
+    template <> struct obn_vector_PB_message_class<uint32_t> { using theclass = OBNSimIOMsg::VectorUInt32; };
+    template <> struct obn_vector_PB_message_class<int64_t> { using theclass = OBNSimIOMsg::VectorInt64; };
+    template <> struct obn_vector_PB_message_class<uint64_t> { using theclass = OBNSimIOMsg::VectorUInt64; };
+    template <> struct obn_vector_PB_message_class<float> { using theclass = OBNSimIOMsg::VectorFloat; };
+    template <> struct obn_vector_PB_message_class<double> { using theclass = OBNSimIOMsg::VectorDouble; };
+    
+    template <> struct obn_matrix_PB_message_class<bool> { using theclass = OBNSimIOMsg::MatrixBool; };
+    template <> struct obn_matrix_PB_message_class<int32_t> { using theclass = OBNSimIOMsg::MatrixInt32; };
+    template <> struct obn_matrix_PB_message_class<uint32_t> { using theclass = OBNSimIOMsg::MatrixUInt32; };
+    template <> struct obn_matrix_PB_message_class<int64_t> { using theclass = OBNSimIOMsg::MatrixInt64; };
+    template <> struct obn_matrix_PB_message_class<uint64_t> { using theclass = OBNSimIOMsg::MatrixUInt64; };
+    template <> struct obn_matrix_PB_message_class<float> { using theclass = OBNSimIOMsg::MatrixFloat; };
+    template <> struct obn_matrix_PB_message_class<double> { using theclass = OBNSimIOMsg::MatrixDouble; };
+    
+    
+    /** \brief Template class for input data as a scalar of a given type. */
+    template <typename T>
+    class obn_scalar {
+    public:
+        /** The input data type, e.g. a vector or a scalar or a matrix. */
+        using input_data_type = T;
+        
+        /** Initializer for the input type. */
+        static const T init_input_data;
+        
+        /** The output data type, from variable to encoded message. */
+        using output_data_type = T;
+        
+        /** The class type of the ProtoBuf message. */
+        using PB_message_class = typename obn_scalar_PB_message_class<T>::theclass;
+        
+        /** Static function to write data to a ProtoBuf message. */
+        static void writePBMessage(const output_data_type& data, PB_message_class& msg) {
+            msg.set_value(data);
+        }
+        
+        /** Static function to read data from a ProtoBuf message. */
+        static bool readPBMessage(input_data_type& data, const PB_message_class& msg) {
+            data = msg.value();
+            return true;
+        }
+    };
+    template<typename T> const T obn_scalar<T>::init_input_data(0); // = static_cast<T>(0);
+    
+    
+    /** \brief Template class for input data as a vector of a given type, using Eigen library. */
+    template <typename T>
+    class obn_vector {
+    public:
+        /** The input data type for reading from an encoded format (e.g. ProtoBuf) into the given type.
+         We use Eigen::Map to avoid copying data, i.e. we directly access the internal data of the encoded message,
+         therefore the message must be permanent (it can't be a temporary variable that will be destroyed) and
+         anytime the message changes, the vector variable must be updated. */
+        using input_data_type = Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, 1> >; // const because this is read-only
+        
+        /** Initializer for the input type. */
+        static const input_data_type init_input_data;
+        
+        /** The output data type for writing from the given type to an encoded format (e.g. ProtoBuf).
+         We use an Eigen variable as a buffer, and will only write it to the message on demand. */
+        using output_data_type = Eigen::Matrix<T, Eigen::Dynamic, 1>;
+        
+        /** The class type of the ProtoBuf message. */
+        using PB_message_class = typename obn_vector_PB_message_class<T>::theclass;
+        
+        /** Static function to write data to a ProtoBuf message.
+         It works with raw arrays as much as possible because speed is important.
+         */
+        static void writePBMessage(const output_data_type& data, PB_message_class& msg) {
+            auto sz = data.size();
+            auto dest = msg.mutable_value();
+            dest->Resize(sz, T());    // resize the field in msg to hold the values
+            std::copy_n(data.data(), sz, dest->begin());
+        }
+        
+        /** Static function to read data from a ProtoBuf message.
+         It works with raw arrays as much as possible because speed is important.
+         */
+        static bool readPBMessage(input_data_type& data, const PB_message_class& msg) {
+            auto sz = msg.value_size();
+            new (&data) input_data_type(msg.value().data(), sz);
+            
+            //            data.resize(sz, 1);   // resize the vector to match the size of msg
+            //            if (sz != data.size()) return false;
+            //            if (sz > 0) {
+            //                auto itfrom = msg.value().begin();
+            //                auto itto = data.data();
+            //                for (int i = 0; i < sz; ++i) {
+            //                    *(itto++) = *(itfrom++);
+            //                }
+            //            }
+            return true;
+        }
+    };
+    template<typename T> const typename obn_vector<T>::input_data_type obn_vector<T>::init_input_data(nullptr, 0);
+    
+    /** \brief Template class for input data as a dynamic-sized matrix of a given type. */
+    template <typename T>
+    class obn_matrix {
+    public:
+        /** The input data type for reading from an encoded format (e.g. ProtoBuf) into the given type.
+         We use Eigen::Map to avoid copying data, i.e. we directly access the internal data of the encoded message,
+         therefore the message must be permanent (it can't be a temporary variable that will be destroyed) and
+         anytime the message changes, the matrix variable must be updated. */
+        using input_data_type = Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> >;  // const because this is read-only
+        
+        /** Initializer for the input type. */
+        static const input_data_type init_input_data;
+        
+        /** The output data type for writing from the given type to an encoded format (e.g. ProtoBuf).
+         We use an Eigen variable as a buffer, and will only write it to the message on demand. */
+        using output_data_type = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
+        
+        /** The class type of the ProtoBuf message. */
+        using PB_message_class = typename obn_matrix_PB_message_class<T>::theclass;
+        
+        /** Static function to write data to a ProtoBuf message. */
+        static void writePBMessage(const output_data_type& data, PB_message_class& msg) {
+            msg.set_nrows(data.rows());
+            msg.set_ncols(data.cols());
+            auto sz = data.size();
+            auto dest = msg.mutable_value();
+            dest->Resize(sz, T());    // resize the field in msg to hold the values
+            std::copy_n(data.data(), sz, dest->begin());
+        }
+        
+        /** Static function to read data from a ProtoBuf message. */
+        static bool readPBMessage(input_data_type& data, const PB_message_class& msg) {
+            auto nrows = msg.nrows();
+            auto ncols = msg.ncols();
+            auto sz = nrows * ncols;
+            if (msg.value_size() < sz) return false;
+            
+            new (&data) input_data_type(msg.value().data(), nrows, ncols);
+            
+            //            data.resize(nrows, ncols);   // resize the matrix to match the size of msg
+            //            if (data.rows() != nrows || data.cols() != ncols) return false;
+            //
+            //            if (sz > 0) {
+            //                auto itfrom = msg.value().begin();
+            //                auto itto = data.data();
+            //                for (int i = 0; i < sz; ++i) {
+            //                    *(itto++) = *(itfrom++);
+            //                }
+            //            }
+            return true;
+        }
+    };
+    template<typename T> const typename obn_matrix<T>::input_data_type obn_matrix<T>::init_input_data(nullptr, 0, 0);
+    
+    
+    /** \brief Template class for input data as a fixed-length vector of a given type. */
+    template <typename T, const std::size_t N>
+    class obn_vector_fixed {
+    public:
+        static_assert(N > 0, "Vector length must be positive.");
+        
+        /** The input data type: a vector. For fixed size types, to be safe, we use an actual vector, not a Map. This is because the user can access the input port when it hasn't been initialized (by an input message), potentially crashing the program. */
+        using input_data_type = Eigen::Matrix<T, N, 1, Eigen::DontAlign>; // Disable alignment to be safe
+        
+        /** Initializer for the input type. */
+        static const std::size_t init_input_data;
+        
+        /** The output data type for writing from the given type to an encoded format (e.g. ProtoBuf).
+         We use an Eigen variable as a buffer, and will only write it to the message on demand. */
+        using output_data_type = Eigen::Matrix<T, N, 1, Eigen::DontAlign>;
+        
+        /** The class type of the ProtoBuf message. */
+        using PB_message_class = typename obn_vector_PB_message_class<T>::theclass;
+        
+        /** Static function to write data to a ProtoBuf message. */
+        static void writePBMessage(const output_data_type& data, PB_message_class& msg) {
+            auto dest = msg.mutable_value();
+            dest->Resize(N, T());    // resize the field in msg to hold the values
+            std::copy_n(data.data(), N, dest->begin());
+        }
+        
+        /** Static function to read data from a ProtoBuf message. */
+        static bool readPBMessage(input_data_type& data, const PB_message_class& msg) {
+            if (msg.value_size() < N) return false;
+            std::copy_n(msg.value().begin(), N, data.data());
+            return true;
+        }
+    };
+    template<typename T, const std::size_t N> const std::size_t obn_vector_fixed<T, N>::init_input_data = N;
+    
+    
+    /** \brief Template class for input data as a fixed-size matrix of a given type. */
+    template <typename T, const std::size_t NR, const std::size_t NC>
+    class obn_matrix_fixed {
+    public:
+        static_assert((NR > 0) && (NC > 0), "Matrix dimensions must be positive.");
+        
+        /** The input data type: a matrix. For fixed size types, to be safe, we use an actual matrix, not a Map. This is because the user can access the input port when it hasn't been initialized (by an input message), potentially crashing the program. */
+        using input_data_type = Eigen::Matrix<T, NR, NC, Eigen::DontAlign>; // Disable alignment to be safe
+        
+        /** Initializer for the input type. */
+        static const input_data_type init_input_data;
+        
+        /** The output data type for writing from the given type to an encoded format (e.g. ProtoBuf).
+         We use an Eigen variable as a buffer, and will only write it to the message on demand. */
+        using output_data_type = Eigen::Matrix<T, NR, NC, Eigen::DontAlign>;
+        
+        /** The class type of the ProtoBuf message. */
+        using PB_message_class = typename obn_matrix_PB_message_class<T>::theclass;
+        
+        /** Static function to write data to a ProtoBuf message. */
+        static void writePBMessage(const output_data_type& data, PB_message_class& msg) {
+            msg.set_nrows(NR);
+            msg.set_ncols(NC);
+            auto sz = data.size();
+            auto dest = msg.mutable_value();
+            dest->Resize(sz, T());    // resize the field in msg to hold the values
+            std::copy_n(data.data(), sz, dest->begin());
+        }
+        
+        /** Static function to read data from a ProtoBuf message. */
+        static bool readPBMessage(input_data_type& data, const PB_message_class& msg) {
+            if (msg.nrows() != NR || msg.ncols() != NC) return false;
+            auto sz = data.size();
+            if (msg.value_size() < sz) return false;
+            std::copy_n(msg.value().begin(), sz, data.data());
+            return true;
+        }
+    };
+    template<typename T, const std::size_t NR, const std::size_t NC> const typename obn_matrix_fixed<T,NR,NC>::input_data_type obn_matrix_fixed<T,NR,NC>::init_input_data(NR, NC);
+    
+    
+    /** This templated type is the wrapper class for the data type, e.g. obn_scalar<D> or obn_vector<D>.
+     It defines input_data_type, PB_message_class, and read and write functions.
+     */
+    template <typename D>
+    using OBN_DATA_TYPE_CLASS = typename std::conditional<std::is_arithmetic<D>::value, obn_scalar<D>, D>::type;
+    
+    
+    /** This class allows thread-safe access to the port's value by locking the mutex upon its creation, and unlock the mutex when it's deleted. */
+    template <typename V, typename M>
+    class LockedAccess {
+        M* m_mutex;
+        const V* m_value;
+        
+    public:
+        LockedAccess(V* t_value, M* t_mutex): m_mutex(t_mutex), m_value(t_value) {
+            m_mutex->lock();
+            //std::cout << "Locked\n";
+        }
+        
+        LockedAccess(const LockedAccess& other) = delete;   // no copy constructor, so we force it to move
+        LockedAccess() = delete;    // no default
+        LockedAccess(LockedAccess&& rvalue) = default;
+        
+        ~LockedAccess() {
+            m_mutex->unlock();
+            //std::cout << "Unlocked\n";
+        }
+        
+        const V& operator*() const {
+            return *m_value;
+        }
+        
+        const V* operator->() const {
+            return m_value;
+        }
+    };
 }
 
+
+/**
+ \param t_idx The desired index of the new update.
+ \param t_T The sampling time in microseconds, <= 0 if non-periodic.
+ \param t_ycallback Output callback function for UPDATE_Y message of this update.
+ \param t_xcallback State callback function for UPDATE_X message of this update.
+ \param t_name Optional name of the update.
+ \return The index of this update, or an error code: -1 if the index is out of range, -2 if an update already exists at that index, -3 if an input port does not exist, -4 if an output port does not exist.
+ */
+template <typename NB>
+int OBNnode::OBNNodeBase<NB>::addUpdate(int t_idx,
+                                    OBNnode::UpdateType::UPDATE_CALLBACK t_ycallback,
+                                    OBNnode::UpdateType::UPDATE_CALLBACK t_xcallback,
+                                    double t_T,
+                                    const OBNnode::UpdateType::INPUT_LIST& t_inputs,
+                                    const OBNnode::UpdateType::OUTPUT_LIST& t_outputs,
+                                    const std::string& t_name)
+{
+    // Check index
+    if (t_idx < 0 || t_idx > OBNsim::MAX_UPDATE_INDEX) {
+        return -1;  // Index out of range
+    }
+    
+    // Check that we can insert a new update to the given index
+    if (m_updates.size() <= t_idx) {
+        // Create the new update at the position
+        m_updates.resize(t_idx+1);
+    } else if (m_updates[t_idx].enabled) {
+        return -2;  // Update already existed
+    }
+    
+    // Check that specified inputs and outputs actually exist
+    for (const auto &p: t_inputs) {
+        if (!does_port_exists(this->_input_ports, p.first)) {
+            return -3;
+        }
+    }
+    
+    for (const auto &p: t_outputs) {
+        if (!does_port_exists(this->_output_ports, p)) {
+            return -4;
+        }
+    }
+    
+    // Add the new update
+    m_updates[t_idx].enabled = true;
+    m_updates[t_idx].T_in_us = t_T;
+    m_updates[t_idx].y_callback = t_ycallback;
+    m_updates[t_idx].x_callback = t_xcallback;
+    m_updates[t_idx].name = t_name;
+    m_updates[t_idx].inputs = t_inputs;
+    m_updates[t_idx].outputs = t_outputs;
+    
+    return t_idx;
+}
+
+
+/**
+ \param t_T The sampling time in microseconds, <= 0 if non-periodic.
+ \param t_ycallback Output callback function for UPDATE_Y message of this update.
+ \param t_xcallback State callback function for UPDATE_X message of this update.
+ \param t_name Optional name of the update.
+ \return The index of this update, or an error code: -1 if no more updates could be added (the node runs out of allowed number of updates), -3 if an input port does not exist, -4 if an output port does not exist.
+ */
+template <typename NB>
+int OBNnode::OBNNodeBase<NB>::addUpdate(OBNnode::UpdateType::UPDATE_CALLBACK t_ycallback,
+                                        OBNnode::UpdateType::UPDATE_CALLBACK t_xcallback,
+                                        double t_T,
+                                        const OBNnode::UpdateType::INPUT_LIST& t_inputs,
+                                        const OBNnode::UpdateType::OUTPUT_LIST& t_outputs,
+                                        const std::string& t_name)
+{
+    
+    // Find a free spot
+    int idx = 0;
+    for (; idx < m_updates.size(); ++idx) {
+        if (!m_updates[idx].enabled) {
+            break;
+        }
+    }
+    
+    if (idx == m_updates.size()) {
+        // Could not find a free spot, check if we can add a new one
+        if (m_updates.size() > OBNsim::MAX_UPDATE_INDEX) {
+            return -1;
+        }
+        // Add one at the end
+        m_updates.push_back(UpdateType());
+    }
+    
+    // Check that specified inputs and outputs actually exist
+    for (const auto &p: t_inputs) {
+        if (!does_port_exists(this->_input_ports, p.first)) {
+            return -3;
+        }
+    }
+    
+    for (const auto &p: t_outputs) {
+        if (!does_port_exists(this->_output_ports, p)) {
+            return -4;
+        }
+    }
+    
+    // Assign the new update
+    m_updates[idx].enabled = true;
+    m_updates[idx].T_in_us = t_T;
+    m_updates[idx].y_callback = t_ycallback;
+    m_updates[idx].x_callback = t_xcallback;
+    m_updates[idx].name = t_name;
+    m_updates[idx].inputs = t_inputs;
+    m_updates[idx].outputs = t_outputs;
+    
+    return idx;
+}
 
 #endif // OBNNODE_BASIC_H
 

@@ -1,0 +1,126 @@
+## Common CMake code for building an openBuildNet node in C++.
+## The following must be defined before calling this file:
+##   OBN_MAIN_DIR = main OBN directory
+##
+## Options/macros:
+##   WITH_YARP to use Yarp (default: ON)
+##   WITH_MQTT to use MQTT (default: OFF)
+##
+## The following will be defined in this file:
+##   OBN_NODECPP_INCLUDE_DIR = include directory of node.C++
+##   OBN_NODECPP_SOURCE_DIR = source directory of node.C++
+##   OBNSIM_INCLUDE_DIR = include directory of main OBN (which is ${OBN_MAIN_DIR}/include)
+##   OBNNODE_COMM_SRC
+##   OBNNODE_COMM_HDR
+##   OBNNODE_CORE_SRCFILES = all the source files to compile
+##   OBNNODE_CORE_HDRFILES = all the header files to compile
+
+
+## This will set the header and source directories for the node.cpp framework
+set (OBN_NODECPP_INCLUDE_DIR ${OBN_MAIN_DIR}/nodecpp/include)
+set (OBN_NODECPP_SOURCE_DIR ${OBN_MAIN_DIR}/nodecpp/src)
+
+
+## You can set your include and source directories below
+set (PROJECT_INCLUDE_DIR ${PROJECT_SOURCE_DIR})
+set (PROJECT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+
+
+## Include directories for the general OBNSim project
+set (OBNSIM_INCLUDE_DIR ${OBN_MAIN_DIR}/include)
+
+
+## Generate code for the message formats using Google ProtoBuf, see http://www.cmake.org/cmake/help/v3.0/module/FindProtobuf.html
+## The source files and header files are listed in PROTO_SRCS and PROTO_HDRS respectively
+## The libraries and header files of the ProtoBuf framework (not the generated files) are in PROTOBUF_LITE_LIBRARIES and PROTOBUF_INCLUDE_DIRS respectively, because we will generate lite code instead of the full ProtoBuf code.
+
+find_package(Protobuf REQUIRED)
+PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS ${OBN_MAIN_DIR}/msg/obnsim_msg.proto ${OBN_MAIN_DIR}/msg/obnsim_io.proto)
+LINK_LIBRARIES(${PROTOBUF_LITE_LIBRARIES})
+
+
+## Find communication libraries and add appropriate source files
+set(OBNNODE_COMM_SRC "")
+set(OBNNODE_COMM_HDR "")
+
+## To use YARP (optionally)
+option(WITH_YARP "Build with YARP support for communication." ON)
+if(WITH_YARP)
+  find_package(YARP REQUIRED)
+  if(YARP_FOUND)
+    include_directories(${YARP_INCLUDE_DIRS})
+    link_libraries(${YARP_LIBRARIES})
+    set(OBNNODE_COMM_SRC ${OBNNODE_COMM_SRC}
+      ${OBN_NODECPP_SOURCE_DIR}/obnnode_yarpnode.cpp
+      ${OBN_NODECPP_SOURCE_DIR}/obnnode_yarpport.cpp
+    )
+    set(OBNNODE_COMM_HDR ${OBNNODE_COMM_HDR}
+      ${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpnode.h
+      ${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpportbase.h
+      ${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpport.h
+      ${OBN_NODECPP_INCLUDE_DIR}/sharedqueue_yarp.h
+    )
+    add_definitions(-DOBNNODE_COMM_YARP)
+    message("Found YARP library; will build node with YARP support.")
+  endif()
+endif(WITH_YARP)
+
+
+## To use MQTT (optionally)
+option(WITH_MQTT "Build with Paho MQTT3 support for communication." OFF)
+if(WITH_MQTT)
+  find_library(PAHOMQTT3A NAMES paho-mqtt3a)
+  if(PAHOMQTT3A_NOTFOUND)
+    # Use the local source files (submodule)
+    message("Did not find Paho MQTT3 library in the system; will use the local source files. This may bloat your program, so it's best to install Paho into your system before building SMNChai.")
+
+    find_package(OpenSSL REQUIRED)
+    AUX_SOURCE_DIRECTORY(${OBN_MAIN_DIR}/thirdparties/paho/src PAHOMQTT3A_SRC)
+    INCLUDE_DIRECTORIES(${OBN_MAIN_DIR}/thirdparties/paho/src)
+    set(OBNNODE_COMM_SRC ${OBNNODE_COMM_SRC} ${PAHOMQTT3A_SRC})
+  else()
+    message("Found Paho MQTT3 library in the system; will use this library.")
+    link_libraries(${PAHOMQTT3A})
+  endif()
+  add_definitions(-DOBNNODE_COMM_MQTT)
+  set(OBNNODE_COMM_SRC ${OBNNODE_COMM_SRC} ${OBN_NODECPP_SOURCE_DIR}/obnnode_mqttport.cpp)
+  set(OBNNODE_COMM_HDR ${OBNNODE_COMM_HDR} ${OBN_NODECPP_INCLUDE_DIR}/obnnode_mqttport.h)
+endif(WITH_MQTT)
+
+
+## These are the include directories used by the compiler.
+INCLUDE_DIRECTORIES(
+  ${OBN_NODECPP_INCLUDE_DIR}
+  ${PROJECT_INCLUDE_DIR}
+  ${PROJECT_SOURCE_DIR}
+  ${PROJECT_BINARY_DIR}
+  ${OBNSIM_INCLUDE_DIR}
+  ${CMAKE_SOURCE_DIR}
+  ${PROTOBUF_INCLUDE_DIRS}
+  ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+
+set(OBNNODE_CORE_SRCFILES
+	${OBNSIM_INCLUDE_DIR}/obnsim_basic.cpp
+	${OBN_NODECPP_SOURCE_DIR}/obnnode_basic.cpp
+	${PROTO_SRCS}
+	${OBNNODE_COMM_SRC}
+)
+
+set(OBNNODE_CORE_HDRFILES
+	${OBN_NODECPP_INCLUDE_DIR}/obnnode.h
+	${OBN_NODECPP_INCLUDE_DIR}/obnnode_basic.h
+	${OBN_NODECPP_INCLUDE_DIR}/obnnode_exceptions.h
+        ${OBN_NODECPP_INCLUDE_DIR}/sharedqueue.h
+	${OBNSIM_INCLUDE_DIR}/obnsim_basic.h
+	${PROTO_HDRS}
+	${OBNNODE_COMM_HDR}
+)
+
+## When we generate Xcode projects, we need to include both the C++ and H files so that they will all be included in the projects.
+## It's unnecessary for Makefile.
+
+if(CMAKE_GENERATOR STREQUAL Xcode)
+    set(OBNNODE_CORE_SRCFILES ${OBNNODE_CORE_SRCFILES} ${OBNNODE_CORE_HDRFILES})
+endif()

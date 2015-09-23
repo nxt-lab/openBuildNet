@@ -555,3 +555,4 @@ void NodeBase::NodeEvent_PORT_CONNECT::executeMain(NodeBase* pnode) {
     
     pnode->sendN2SMNMsg();
 }
+

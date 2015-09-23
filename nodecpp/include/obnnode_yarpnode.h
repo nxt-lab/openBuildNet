@@ -184,70 +184,9 @@ namespace OBNnode {
         }
     };
     
-    /** Define all details of an update type. */
-    struct UpdateType {
-        bool enabled = false;   ///< If this update is enabled
-        double T_in_us = -1.0;  ///< Sampling time in microseconds, <=0 if non-periodic
-        std::string name;       ///< Name of this update (optional)
-        
-        typedef std::vector<std::string> OUTPUT_LIST;
-        OUTPUT_LIST outputs;   ///< List of outputs of this update
-        
-        typedef std::vector<std::pair<std::string, bool> > INPUT_LIST;
-        INPUT_LIST inputs;  ///< List of inputs of this update and their direct-feedthrough property
-        
-        // Callbacks
-        typedef std::function<void ()> UPDATE_CALLBACK;
-        UPDATE_CALLBACK y_callback; ///< Callback for UPDATE_Y, initially empty
-        UPDATE_CALLBACK x_callback; ///< Callback for UPDATE_X, initially empty
-    };
     
-    
-    /** \brief Main YARP Node, with support for specifying updates and __info__ port. */
-    class YarpNode: public YarpNodeBase {
-    protected:
-        /** Vector of all updates in this node. */
-        std::vector<UpdateType> m_updates;
-        
-        template<typename T>
-        bool does_port_exists(const T& t_list, const std::string& t_name) const {
-            for (const auto p: t_list) {
-                if (p.first->getPortName() == t_name) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        
-    public:
-        YarpNode(const std::string& _name, const std::string& ws = ""): YarpNodeBase(_name, ws) { }
-        
-        /** Add a new update to the node. */
-        int addUpdate(UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), double t_T = -1.0, const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
-        
-        /** Add a new update to the node with given index. */
-        int addUpdate(int t_idx, UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), double t_T = -1.0, const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
-        
-        /** Add a new update to the node. */
-        int addUpdate(const UpdateType& t_update);
-        
-        /** Add a new update to the node with given index. */
-        int addUpdate(int t_idx, const UpdateType& t_update);
-        
-        /** Remove an update. */
-        bool removeUpdate(int t_idx);
-        
-        virtual void onUpdateY(updatemask_t m) override;
-        
-        virtual void onUpdateX(updatemask_t m) override;
-        
-        // Some constants for specifying the update's sampling time
-        static constexpr double MILLISECOND = 1e3;
-        static constexpr double SECOND = 1e6;
-        static constexpr double MINUTE = 60*SECOND;
-        static constexpr double HOUR = 60*MINUTE;
-        static constexpr double DAY = 24*HOUR;
-    };
+    /** The main YarpNode class, which supports defining updates, _info_ port, etc. */
+    typedef OBNNodeBase<YarpNodeBase> YarpNode;
     
 }
 
