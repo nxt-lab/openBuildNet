@@ -20,6 +20,12 @@
 
 #include <smnchai.h>
 
+
+// Currently we require YARP for running remote nodes
+#ifndef OBNSIM_COMM_YARP
+#error YARP is required for SMNChai as YarpRun is used to start remote nodes
+#endif
+
 // Implement reporting functions for the SMN
 void OBNsmn::report_error(int code, std::string msg) {
     std::cerr << "ERROR (" << code << "): " << msg << std::endl;

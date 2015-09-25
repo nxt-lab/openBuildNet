@@ -31,6 +31,11 @@ namespace OBNnode {
     typedef OBNsim::simtime_t simtime_t;  ///< Simulation time type, as number of nano-seconds from beginning.
     typedef OBNsim::updatemask_t updatemask_t;  ///< Output group mask type: each bit corresponds to one group, so the width of the type is the maximum number of groups.
     
+    /** Communication protocol/platform selection. */
+    enum CommProtocol {
+        COMM_YARP,
+        COMM_MQTT
+    };
     
     class NodeBase;
     
@@ -510,6 +515,12 @@ namespace OBNnode {
             
             stopSimulation();
         }
+        
+        /** Callback for permanent communication lost error (e.g. the communication server has shut down).
+         \param comm The communication protocol/platform that has lost.
+         The node should stop its simulation (if comm is not used by the GC) and exit as cleanly as possible.
+         */
+        virtual void onPermanentCommunicationLost(CommProtocol comm) = 0;
         
         /** Callback for timeout error when running the node's simulation.
          \sa run() with timeout.

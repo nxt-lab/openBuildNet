@@ -21,6 +21,8 @@
 #include <functional>
 #include <vector>
 #include <exception>
+#include <thread>               // sleep
+#include <chrono>               // timing values
 
 #include <obnnode_basic.h>
 #include <obnnode_yarpportbase.h>
@@ -52,6 +54,26 @@ namespace OBNnode {
          \return true if successful.
          */
         bool connectWithSMN(const char *carrier = nullptr);
+        
+        /** Callback for permanent communication lost error (e.g. the communication server has shut down).
+         \param comm The communication protocol/platform that has lost.
+         The node should stop its simulation (if comm is not used by the GC) and exit as cleanly as possible.
+         */
+        virtual void onPermanentCommunicationLost(CommProtocol comm) override {
+            auto error_message = std::string("Permanent connection lost for protocol ") + (comm==COMM_YARP?"YARP":"MQTT");
+            std::cerr << "ERROR: " << error_message << " => Terminate." << std::endl;
+            
+            if (comm != COMM_YARP) {
+                // We can still try to stop the simulation as the GC's communication is not affected
+                stopSimulation();
+                
+                // Wait a bit
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+            
+            // Push an error event to the main thread
+            postExceptionEvent(std::make_exception_ptr(std::runtime_error(error_message)));
+        }
 
     protected:
         /** A YARP message for communicating with the SMN. */

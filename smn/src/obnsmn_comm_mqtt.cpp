@@ -12,13 +12,121 @@
 
 using namespace OBNsmn::MQTT;
 
-bool MQTTClient::sendMessage(const OBNSimMsg::SMN2N &msg) {
+bool MQTTClient::start() {
+    if (m_running) return false;  // Already running
+    if (!pGC) return false;    // pGC must point to a valid GC object
+    
+    if (m_portName.empty() || m_client_id.empty() || m_server_address.empty()) {
+        OBNsmn::report_error(0, "MQTT error: the GC port name and the client ID and the MQTT server address must be set.");
+        return false;
+    }
+    
+    int rc;
+    
+    // Start the client and immediately subscribe to the main GC topic
+    if ((rc = MQTTAsync_create(&m_client, m_server_address.c_str(), m_client_id.c_str(), MQTTCLIENT_PERSISTENCE_NONE, NULL)) != MQTTASYNC_SUCCESS) {
+        OBNsmn::report_error(0, "MQTT error: could not create MQTT client with error code = " + std::to_string(rc));
+        return false;
+    }
+    
+    // Set the callback
+    if ((rc = MQTTAsync_setCallbacks(m_client, this, &MQTTClient::on_connection_lost, &MQTTClient::on_message_arrived, NULL)) != MQTTASYNC_SUCCESS) {
+        OBNsmn::report_error(0, "MQTT error: could not set callbacks with error code = " + std::to_string(rc));
+        return false;
+    }
+    
+    // Connect and subscribe
+    MQTTAsync_connectOptions conn_opts = MQTTAsync_connectOptions_initializer;
+    conn_opts.keepAliveInterval = 20;
+    conn_opts.cleansession = 1;
+    conn_opts.onSuccess = &MQTTClient::onConnect;
+    conn_opts.onFailure = &MQTTClient::onConnectFailure;
+    conn_opts.context = this;
+    if ((rc = MQTTAsync_connect(m_client, &conn_opts)) != MQTTASYNC_SUCCESS)
+    {
+        OBNsmn::report_error(0, "MQTT error: could not start connect with error code = " + std::to_string(rc));
+        return false;
+    }
+    
+    // Wait until subscribed successfully (or failed)
+    std::unique_lock<std::mutex> mylock(m_notify_mutex);
+    m_notify_done = false;
+    m_notify_var.wait(mylock, [this](){ return m_notify_done; });
+    
+    m_running = true;
+    
+    return true;
+}
+
+
+void MQTTClient::stop() {
+    if (!m_running) {
+        return;
+    }
+    
+    // Disconnect from the server
+    m_running = false;
+    
+    MQTTAsync_disconnectOptions disc_opts = MQTTAsync_disconnectOptions_initializer;
+    disc_opts.onSuccess = &MQTTClient::onDisconnect;
+    disc_opts.context = this;
+    int rc;
+    if ((rc = MQTTAsync_disconnect(m_client, &disc_opts)) != MQTTASYNC_SUCCESS)
+    {
+        OBNsmn::report_error(0, "MQTT error: Failed to start disconnect with error code = " + std::to_string(rc));
+        MQTTAsync_destroy(&m_client);
+        return;
+    }
+    
+    // Wait until finished
+    std::unique_lock<std::mutex> mylock(m_notify_mutex);
+    m_notify_done = false;
+    m_notify_var.wait(mylock, [this](){ return m_notify_done; });
+    
+    MQTTAsync_destroy(&m_client);
+}
+
+
+bool MQTTClient::sendMessage(const OBNSimMsg::SMN2N &msg, const std::string& topic) {
+    if (topic.empty()) {
+        return false;
+    }
+    
+    // Allocate buffer to store the bytes of the message
+    auto msgsize = msg.ByteSize();
+    char* buffer = new char[msgsize];
+    
+    if (!msg.SerializeToArray(buffer, msgsize)) {
+        delete [] buffer;
+        return false;
+    }
+    
+    MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
+    MQTTAsync_message pubmsg = MQTTAsync_message_initializer;
+    
+    // Set the callback opts.onSuccess if we want to make synchronous wait, also the next line
+    // opts.context = m_client->m_client;
+    
+    pubmsg.payload = buffer;
+    pubmsg.payloadlen = msgsize;
+    pubmsg.qos = MQTTClient::QOS;
+    pubmsg.retained = 0;
+    
+    // Request to send the message
+    int rc = MQTTAsync_sendMessage(m_client, topic.c_str(), &pubmsg, &opts);
+    
+    delete [] buffer;
+    return (rc == MQTTASYNC_SUCCESS);
+}
+
+
+bool MQTTClient::sendMessageToGC(const OBNSimMsg::SMN2N &msg) {
     // Call the previous function if available
     if (m_prev_gc_sendmsg_to_sys_port) {
         return m_prev_gc_sendmsg_to_sys_port(msg);
     }
     
-    return true;
+    return sendMessage(msg, m_portName);
 }
 
 

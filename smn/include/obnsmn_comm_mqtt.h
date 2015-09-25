@@ -82,7 +82,7 @@ namespace OBNsmn {
             MQTTClient(GCThread* _gc): pGC(_gc) {
                 // Set the function to send a message to the system port
                 m_prev_gc_sendmsg_to_sys_port = pGC->getSendMsgToSysPortFunc();     // Save the current function to call it -> form a chain of function calls
-                pGC->setSendMsgToSysPortFunc(std::bind(&MQTTClient::sendMessage, this, std::placeholders::_1));
+                pGC->setSendMsgToSysPortFunc(std::bind(&MQTTClient::sendMessageToGC, this, std::placeholders::_1));
             }
             
             //virtual
@@ -96,7 +96,10 @@ namespace OBNsmn {
             }
             
             /** \brief Send an SMN2N message to the system port. */
-            bool sendMessage(const OBNSimMsg::SMN2N &msg);
+            bool sendMessageToGC(const OBNSimMsg::SMN2N &msg);
+            
+            /** \brief Send an SMN2N message to a given topic. */
+            bool sendMessage(const OBNSimMsg::SMN2N &msg, const std::string& topic);
             
             /** Set the port's name. */
             void setPortName(const std::string &t_port) {
@@ -130,79 +133,10 @@ namespace OBNsmn {
              \return True if successful; false otherwise.
              */
             
-            bool start() {
-                if (m_running) return false;  // Already running
-                if (!pGC) return false;    // pGC must point to a valid GC object
-                
-                if (m_portName.empty() || m_client_id.empty() || m_server_address.empty()) {
-                    OBNsmn::report_error(0, "MQTT error: the GC port name and the client ID and the MQTT server address must be set.");
-                    return false;
-                }
-                
-                int rc;
-                
-                // Start the client and immediately subscribe to the main GC topic
-                if ((rc = MQTTAsync_create(&m_client, m_server_address.c_str(), m_client_id.c_str(), MQTTCLIENT_PERSISTENCE_DEFAULT, NULL)) != MQTTASYNC_SUCCESS) {
-                    OBNsmn::report_error(0, "MQTT error: could not create MQTT client with error code = " + std::to_string(rc));
-                    return false;
-                }
-                
-                // Set the callback
-                if ((rc = MQTTAsync_setCallbacks(m_client, this, &MQTTClient::on_connection_lost, &MQTTClient::on_message_arrived, NULL)) != MQTTASYNC_SUCCESS) {
-                    OBNsmn::report_error(0, "MQTT error: could not set callbacks with error code = " + std::to_string(rc));
-                    return false;
-                }
-                
-                // Connect and subscribe
-                MQTTAsync_connectOptions conn_opts = MQTTAsync_connectOptions_initializer;
-                conn_opts.keepAliveInterval = 20;
-                conn_opts.cleansession = 1;
-                conn_opts.onSuccess = &MQTTClient::onConnect;
-                conn_opts.onFailure = &MQTTClient::onConnectFailure;
-                conn_opts.context = this;
-                if ((rc = MQTTAsync_connect(m_client, &conn_opts)) != MQTTASYNC_SUCCESS)
-                {
-                    OBNsmn::report_error(0, "MQTT error: could not start connect with error code = " + std::to_string(rc));
-                    return false;
-                }
-                
-                // Wait until subscribed successfully (or failed)
-                std::unique_lock<std::mutex> mylock(m_notify_mutex);
-                m_notify_done = false;
-                m_notify_var.wait(mylock, [this](){ return m_notify_done; });
-                
-                m_running = true;
-                
-                return true;
-            }
+            bool start();
             
             /** Stop the MQTT client. */
-            void stop() {
-                if (!m_running) {
-                    return;
-                }
-                
-                // Disconnect from the server
-                m_running = false;
-                
-                MQTTAsync_disconnectOptions disc_opts = MQTTAsync_disconnectOptions_initializer;
-                disc_opts.onSuccess = &MQTTClient::onDisconnect;
-                disc_opts.context = this;
-                int rc;
-                if ((rc = MQTTAsync_disconnect(m_client, &disc_opts)) != MQTTASYNC_SUCCESS)
-                {
-                    OBNsmn::report_error(0, "MQTT error: Failed to start disconnect with error code = " + std::to_string(rc));
-                    MQTTAsync_destroy(&m_client);
-                    return;
-                }
-                
-                // Wait until finished
-                std::unique_lock<std::mutex> mylock(m_notify_mutex);
-                m_notify_done = false;
-                m_notify_var.wait(mylock, [this](){ return m_notify_done; });
-                
-                MQTTAsync_destroy(&m_client);
-            }
+            void stop();
             
 //            /** \brief Join the thread to current thread.
 //             
