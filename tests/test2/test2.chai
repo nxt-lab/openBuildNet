@@ -1,4 +1,6 @@
 //run_simulation(false);
+settings.time_unit(millisecond);
+settings.final_time(10*second);
 
 var motordef = ["name" : "motor",
 		"inputs" : ["vol"],
@@ -24,8 +26,5 @@ add_node(sp);
 connect(sp.port("sp"), ctrl.port("sp"));
 connect(motor.port("v"), ctrl.port("v"));
 connect(ctrl.port("u"), motor.port("vol"));
-
-settings.time_unit(millisecond);
-settings.final_time(10*second);
 
 print_system();

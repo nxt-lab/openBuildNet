@@ -146,7 +146,7 @@ public:
         // unlocks the mMut and waits for signal or until timeout.
         // because mMute is released other threads have a chance to Push new data into queue
         // ... in notify this condition variable!
-        if (mEmptyCondition.wait_for(lock, std::chrono::milliseconds(timeout*1000), [mData&](){ return !mData.empty(); })) {
+        if (mEmptyCondition.wait_for(lock, std::chrono::milliseconds(int(timeout*1000)), [this](){ return !this->mData.empty(); })) {
             // The queue is not empty -> pop
             item_type val(std::move(mData.front()));  // move the pointer (and its ownership) to val; the front element in the queue lost the ownership
             mData.pop_front();

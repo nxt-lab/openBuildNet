@@ -87,7 +87,7 @@ namespace OBNnode {
         typedef typename _obn_data_type_class::input_data_type ValueType;
 
     private:
-        ValueType _cur_value;    ///< The typed value stored in this port
+        typename _obn_data_type_class::input_data_container _cur_value;    ///< The typed value stored in this port
         bool _pending_value;    ///< If a new value is pending (hasn't been read)
         
         /** The ProtoBuf message object to receive the data.
@@ -131,7 +131,7 @@ namespace OBNnode {
         }
     
     public:
-        YarpInput(const std::string& _name): YarpPortBase(_name), _cur_value(_obn_data_type_class::init_input_data), _pending_value(false) {
+        YarpInput(const std::string& _name): YarpPortBase(_name), _pending_value(false) {
             
         }
         
@@ -141,21 +141,21 @@ namespace OBNnode {
         ValueType operator() () {
             yarp::os::LockGuard mlock(_valueMutex);
             _pending_value = false; // the value has been read
-            return _cur_value;
+            return _cur_value.v;
         }
 
         ValueType get() {
             yarp::os::LockGuard mlock(_valueMutex);
             _pending_value = false; // the value has been read
-            return _cur_value;
+            return _cur_value.v;
         }
         
-        typedef OBNnode::LockedAccess<ValueType, yarp::os::Mutex> LockedAccess;
+        typedef OBNnode::LockedAccess<typename _obn_data_type_class::input_data_container::data_type, yarp::os::Mutex> LockedAccess;
         
         /** Returns a thread-safe direct access to the value of the port. */
         LockedAccess lock_and_get() {
             _pending_value = false; // the value has been read
-            return LockedAccess(&_cur_value, &_valueMutex);
+            return LockedAccess(&_cur_value.v, &_valueMutex);
         }
         
         /** Check if there is a pending input value (that hasn't been read). */
@@ -272,9 +272,6 @@ namespace OBNnode {
         
         std::string _cur_message;    ///< The current binary data message stored in this port
         bool _pending_value;    ///< If a new value is pending (hasn't been read)
-        
-        int a;
-        
         mutable yarp::os::Mutex _valueMutex;    ///< Mutex for accessing the value
         
         virtual void onRead(_port_content_type& b) {
@@ -383,8 +380,8 @@ namespace OBNnode {
         }
         
         /** Assign new value to the port. */
-        ValueType& operator= (const ValueType && rhs) {
-            _cur_value = rhs;
+        ValueType& operator= (ValueType && rhs) {
+            _cur_value = std::move(rhs);
             m_isChanged = true;
             return _cur_value;
         }
@@ -398,7 +395,7 @@ namespace OBNnode {
         
         
         /** Send data synchronously */
-        virtual void sendSync() {
+        virtual void sendSync() override {
             try {
                 // Convert data to message
                 OBN_DATA_TYPE_CLASS<D>::writePBMessage(_cur_value, _PBMessage);
@@ -451,8 +448,19 @@ namespace OBNnode {
             return _cur_message;
         }
         
+        /** Set the message content. */
+        PBCLS& setMessage (const PBCLS& m) {
+            m_isChanged = true;
+            return (_cur_message = m);
+        }
+        
+        /** Assign a new message to the content of the port. */
+        PBCLS& operator= (const PBCLS& m) {
+            return setMessage(m);
+        }
+        
         /** Send data synchronously */
-        virtual void sendSync() {
+        virtual void sendSync() override {
             try {
                 // Prepare the Yarp message to send
                 _port_content_type & output = this->prepare();
@@ -514,7 +522,7 @@ namespace OBNnode {
         }
         
         /** Send data synchronously */
-        virtual void sendSync() {
+        virtual void sendSync() override {
             // Prepare the Yarp message to send
             _port_content_type & output = this->prepare();
             output.setBinaryData(_cur_message);

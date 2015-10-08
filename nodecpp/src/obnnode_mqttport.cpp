@@ -369,5 +369,31 @@ void MQTTClient::onDisconnect(void* context, MQTTAsync_successData* response)
 
 
 ///////////////////////////////////////////////
-// Implementation of OBNNodeMQTT
+// Implementation of MQTTGCPort
 ///////////////////////////////////////////////
+void MQTTGCPort::parse_message(void *msg, int msglen) {
+    // printf("MQTT GC Port callback\n");
+    
+    // Parse the ProtoBuf message
+    if (msg != nullptr && msglen > 0) {
+        if (m_smn_msg.ParseFromArray(msg, msglen)) {
+            // OK -> push the event
+            m_node->postEvent(m_smn_msg);
+        } else {
+            // Problem
+            m_node->onOBNError("Error while parsing a system message from the SMN.");
+        }
+    }
+}
+
+
+///////////////////////////////////////////////
+// Implementation of MQTT base port classes
+///////////////////////////////////////////////
+
+std::pair<int, std::string> MQTTInputPortBase::connect_from_port(const std::string& source) {
+    assert(!source.empty());
+    
+    // Add the subscription to the client
+    return std::make_pair(m_mqtt_client->addSubscription(this, source), "");
+}

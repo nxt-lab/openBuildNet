@@ -2,7 +2,7 @@
 /** \file
  * \brief Node that implements a simple setpoint.
  *
- * Requires YARP.
+ * Requires YARP for communication with SMN, but will use MQTT for ports if it's available.
  *
  * This file is part of the openBuildNet simulation framework
  * (OBN-Sim) developed at EPFL.
@@ -10,36 +10,47 @@
  * \author Truong X. Nghiem (xuan.nghiem@epfl.ch)
  */
 
-
-#include <fstream>
 #include <chrono>
 #include <random>
 #include <obnnode.h>
 
-#ifndef OBNSIM_COMM_YARP
+/** The following macros are defined by CMake to indicate which libraries this SMN build supports:
+- OBNNODE_COMM_YARP: if YARP is supported for communication.
+- OBNNODE_SMN_COMM_MQTT: if MQTT is supported for communication.
+*/
+
+#ifndef OBNNODE_COMM_YARP
 #error This test requires YARP to run
 #endif
 
-
-/** The following macros are defined by CMake to indicate which libraries this SMN build supports:
- - OBNSIM_COMM_YARP: if YARP is supported for communication.
- - OBNSIM_SMN_COMM_MQTT: if MQTT is supported for communication.
- */
-
 using namespace OBNnode;
+
+#ifdef OBNNODE_COMM_MQTT
+#define MQTT_SERVER_ADDRESS "tcp://localhost:1883"
+typedef MQTTInput<OBN_PB, double> INPUT_PORT_CLASS;
+typedef MQTTOutput<OBN_PB, double> OUTPUT_PORT_CLASS;
+MQTTClient mqtt_client;     // The MQTT client of this node (used for all communications)
+#else
+typedef YarpInput<OBN_PB, double> INPUT_PORT_CLASS;
+typedef YarpOutput<OBN_PB, double> OUTPUT_PORT_CLASS;
+#endif
 
 #define MAIN_UPDATE 0
 
 /* The controller node class */
 class SetPoint: public YarpNode {
     /* Output: setpoint */
-    YarpOutput<OBN_PB, double> setpoint;
+#ifdef OBNNODE_COMM_MQTT
+    OUTPUT_PORT_CLASS setpoint{"sp", &mqtt_client};
+#else
+        OUTPUT_PORT_CLASS setpoint{"sp");
+#endif
     
     std::default_random_engine generator;
     std::uniform_int_distribution<int> distribution;
     
 public:
-    SetPoint(const std::string& name, const std::string& ws = ""): YarpNode(name, ws), setpoint("sp"),
+    SetPoint(const std::string& name, const std::string& ws = ""): YarpNode(name, ws),
     generator(std::chrono::system_clock::now().time_since_epoch().count()), distribution(-100, 100)
     { }
     
@@ -91,6 +102,16 @@ public:
 int main() {
     std::cout << "This is setpoint node." << std::endl;
     
+    // Initialize the MQTT client
+#ifdef OBNNODE_COMM_MQTT
+    mqtt_client.setServerAddress(MQTT_SERVER_ADDRESS);
+    mqtt_client.setClientID("test2_setpoint");
+    if (!mqtt_client.start()) {
+        std::cerr << "Error while connecting to MQTT" << std::endl;
+        return 10;
+    }
+#endif
+    
     SetPoint node("sp", "test2");      // Node "sp" inside workspace "test2"
     if (!node.initialize()) {
         return 1;
@@ -107,6 +128,10 @@ int main() {
     //////////////////////
     // Clean up before exiting
     //////////////////////
+    if (mqtt_client.isRunning()) {
+        mqtt_client.stop();
+    }
+    
     google::protobuf::ShutdownProtobufLibrary();
     
     return node.hasError()?3:0;
