@@ -1,8 +1,8 @@
 /* -*- mode: C++; indent-tabs-mode: nil; -*- */
-/** \file obnsim_yarp.cc
- * \brief MEX interface for YarpNode of the openBuildNet simulation framework.
+/** \file obnsim_MQTT.cc
+ * \brief MEX interface for MQTTNode of the openBuildNet simulation framework.
  *
- * Requires YARP.
+ * Requires MQTT.
  *
  * This file is part of the openBuildNet simulation framework
  * (OBN-Sim) developed at EPFL.
@@ -19,7 +19,7 @@
 #include <mexplus.h>    // MEX interface for C++
 
 #include <obnnode.h>    // node.C++ framework
-#include <obnsim_yarp.h>
+#include <obnsim_mqtt.h>
 
 using namespace mexplus;
 using namespace OBNnode;
@@ -42,12 +42,12 @@ using std::string;
             TYPE=="uint64"?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<uint64_t>,STRICT >(__VA_ARGS__)):nullptr)))));
 
 #define YNM_PORT_ELEMENT_TYPE_BY_NAME(TYPE) \
-  TYPE=="double"?YarpNodeMatlab::PortInfo::DOUBLE:(\
-    TYPE=="logical"?YarpNodeMatlab::PortInfo::LOGICAL:(\
-      TYPE=="int32"?YarpNodeMatlab::PortInfo::INT32:(\
-        TYPE=="int64"?YarpNodeMatlab::PortInfo::INT64:(\
-          TYPE=="uint32"?YarpNodeMatlab::PortInfo::UINT32:(\
-            TYPE=="uint64"?YarpNodeMatlab::PortInfo::UINT64:YarpNodeMatlab::PortInfo::NONE)))));
+  TYPE=="double"?MQTTNodeMatlab::PortInfo::DOUBLE:(\
+    TYPE=="logical"?MQTTNodeMatlab::PortInfo::LOGICAL:(\
+      TYPE=="int32"?MQTTNodeMatlab::PortInfo::INT32:(\
+        TYPE=="int64"?MQTTNodeMatlab::PortInfo::INT64:(\
+          TYPE=="uint32"?MQTTNodeMatlab::PortInfo::UINT32:(\
+            TYPE=="uint64"?MQTTNodeMatlab::PortInfo::UINT64:MQTTNodeMatlab::PortInfo::NONE)))));
 
 
 /** This is a meta-function for creating all kinds of input ports supported by this class.
@@ -58,17 +58,17 @@ using std::string;
  \param strict Whether the input port uses strict reading.
  \return The unique ID of the port in this node (which must be non-negative), or a negative integer if there was an error.
  */
-int YarpNodeMatlab::createInputPort(char container, const std::string &element, const std::string &name, bool strict) {
-    YarpNodeMatlab::PortInfo portinfo;
-    portinfo.type = YarpNodeMatlab::PortInfo::INPUTPORT;
+int MQTTNodeMatlab::createInputPort(char container, const std::string &element, const std::string &name, bool strict) {
+    MQTTNodeMatlab::PortInfo portinfo;
+    portinfo.type = MQTTNodeMatlab::PortInfo::INPUTPORT;
     switch (container) {
         case 's':
         case 'S':
             if (strict) {
-                //portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(YarpPortBase,YarpInput,obn_scalar,element,true,name);
+                //portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(PortBase,MQTTInput,obn_scalar,element,true,name,&mqtt_client);
                 portinfo.port = nullptr;
             } else {
-                portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(YarpPortBase,YarpInput,obn_scalar,element,false,name);
+                portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(PortBase,MQTTInput,obn_scalar,element,false,name,&mqtt_client);
             }
             portinfo.container = 's';
             break;
@@ -76,10 +76,10 @@ int YarpNodeMatlab::createInputPort(char container, const std::string &element, 
         case 'v':
         case 'V':
             if (strict) {
-                //portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(YarpPortBase,YarpInput,obn_vector,element,true,name);
+                //portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(PortBase,MQTTInput,obn_vector,element,true,name,&mqtt_client);
                 portinfo.port = nullptr;
             } else {
-                portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(YarpPortBase,YarpInput,obn_vector,element,false,name);
+                portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(PortBase,MQTTInput,obn_vector,element,false,name,&mqtt_client);
             }
             portinfo.container = 'v';
             break;
@@ -87,10 +87,10 @@ int YarpNodeMatlab::createInputPort(char container, const std::string &element, 
         case 'm':
         case 'M':
             if (strict) {
-                //port = YNM_PORT_CLASS_BY_NAME_STRICT(YarpPortBase,YarpInput,obn_matrix,element,true,name);
+                //port = YNM_PORT_CLASS_BY_NAME_STRICT(PortBase,MQTTInput,obn_matrix,element,true,name,&mqtt_client);
                 portinfo.port = nullptr;
             } else {
-                portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(YarpPortBase,YarpInput,obn_matrix,element,false,name);
+                portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(PortBase,MQTTInput,obn_matrix,element,false,name,&mqtt_client);
             }
             portinfo.container = 'm';
             break;
@@ -98,22 +98,22 @@ int YarpNodeMatlab::createInputPort(char container, const std::string &element, 
         case 'b':
         case 'B':
             if (strict) {
-                //portinfo.port = new YarpInput<OBN_BIN,bool,true>(name);
+                //portinfo.port = new MQTTInput<OBN_BIN,bool,true>(name,&mqtt_client);
                 portinfo.port = nullptr;
             } else {
-                portinfo.port = new YarpInput<OBN_BIN,bool,false>(name);
+                portinfo.port = new MQTTInput<OBN_BIN,bool,false>(name,&mqtt_client);
             }
             portinfo.container = 'b';
             break;
             
         default:
-            reportError("YARPNODE:createInputPort", "Unknown container type.");
+            reportError("MQTTNODE:createInputPort", "Unknown container type.");
             return -1;
     }
     
     if (!portinfo.port) {
         // port is nullptr => error
-        reportError("YARPNODE:createInputPort", "Unknown element type.");
+        reportError("MQTTNODE:createInputPort", "Unknown element type.");
         return -2;
     }
     
@@ -122,7 +122,7 @@ int YarpNodeMatlab::createInputPort(char container, const std::string &element, 
     if (!result) {
         // failed to add to node
         delete portinfo.port;
-        reportError("YARPNODE:createInputPort", "Could not add new port to node.");
+        reportError("MQTTNODE:createInputPort", "Could not add new port to node.");
         return -3;
     }
     
@@ -134,43 +134,43 @@ int YarpNodeMatlab::createInputPort(char container, const std::string &element, 
 }
 
 /** \brief Meta-function for creating all kinds of output ports supported by this class. */
-int YarpNodeMatlab::createOutputPort(char container, const std::string &element, const std::string &name) {
-    YarpOutputPortBase *port;
-    YarpNodeMatlab::PortInfo portinfo;
-    portinfo.type = YarpNodeMatlab::PortInfo::OUTPUTPORT;
+int MQTTNodeMatlab::createOutputPort(char container, const std::string &element, const std::string &name) {
+    MQTTOutputPortBase *port;
+    MQTTNodeMatlab::PortInfo portinfo;
+    portinfo.type = MQTTNodeMatlab::PortInfo::OUTPUTPORT;
     switch (container) {
         case 's':
         case 'S':
-            port = YNM_PORT_CLASS_BY_NAME(YarpOutputPortBase,YarpOutput,obn_scalar,element,name);
+            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_scalar,element,name,&mqtt_client);
             portinfo.container = 's';
             break;
             
         case 'v':
         case 'V':
-            port = YNM_PORT_CLASS_BY_NAME(YarpOutputPortBase,YarpOutput,obn_vector,element,name);
+            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_vector,element,name,&mqtt_client);
             portinfo.container = 'v';
             break;
             
         case 'm':
         case 'M':
-            port = YNM_PORT_CLASS_BY_NAME(YarpOutputPortBase,YarpOutput,obn_matrix,element,name);
+            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_matrix,element,name,&mqtt_client);
             portinfo.container = 'm';
             break;
             
         case 'b':
         case 'B':
-            port = new YarpOutput<OBN_BIN,bool>(name);
+            port = new MQTTOutput<OBN_BIN,bool>(name,&mqtt_client);
             portinfo.container = 'b';
             break;
             
         default:
-            reportError("YARPNODE:createOutputPort", "Unknown container type.");
+            reportError("MQTTNODE:createOutputPort", "Unknown container type.");
             return -1;
     }
     
     if (!port) {
         // port is nullptr => error
-        reportError("YARPNODE:createOutputPort", "Unknown element type.");
+        reportError("MQTTNODE:createOutputPort", "Unknown element type.");
         return -2;
     }
     
@@ -179,7 +179,7 @@ int YarpNodeMatlab::createOutputPort(char container, const std::string &element,
     if (!result) {
         // failed to add to node
         delete port;
-        reportError("YARPNODE:createOutputPort", "Could not add new port to node.");
+        reportError("MQTTNODE:createOutputPort", "Could not add new port to node.");
         return -3;
     }
     
@@ -191,7 +191,7 @@ int YarpNodeMatlab::createOutputPort(char container, const std::string &element,
 }
 
 
-YarpNodeMatlab::~YarpNodeMatlab() {
+MQTTNodeMatlab::~MQTTNodeMatlab() {
     // If the node is still running, we need to stop it first
     stopSimulation();
     
@@ -207,10 +207,10 @@ YarpNodeMatlab::~YarpNodeMatlab() {
  \param timeout Timeout value in seconds; if there is no new message from the SMN after this timeout, the function will return immediately; if timeout <= 0.0, there is no timeout and the method can run indefinitely (maybe undesirable).
  \return 0 if everything is going well and there is an event pending, 1 if timeout (but the simulation won't stop automatically, it's still running), 2 if the simulation has stopped (properly, not because of an error), 3 if the simulation has stopped due to an error (the node's state becomes NODE_ERROR)
  */
-int YarpNodeMatlab::runStep(double timeout) {
+int MQTTNodeMatlab::runStep(double timeout) {
     if (_node_state == NODE_ERROR) {
         // We can't continue in error state
-        reportError("YARPNODE:runStep", "Node is in error state; can't continue simulation; please stop the node (restart it) to clear the error state before continuing.");
+        reportError("MQTTNODE:runStep", "Node is in error state; can't continue simulation; please stop the node (restart it) to clear the error state before continuing.");
         return 3;
     }
 
@@ -269,7 +269,7 @@ int YarpNodeMatlab::runStep(double timeout) {
                 if (!openSMNPort()) {
                     // Error
                     _node_state = NODE_ERROR;
-                    reportError("YARPNODE:runStep", "Could not open the SMN port. Check the network and the name server.");
+                    reportError("MQTTNODE:runStep", "Could not open the SMN port. Check the network and the name server.");
                     break;
                 }
                 
@@ -281,7 +281,7 @@ int YarpNodeMatlab::runStep(double timeout) {
                 break;
                 
             default:
-                reportError("YARPNODE:runStep", "Internal error: invalid node's state.");
+                reportError("MQTTNODE:runStep", "Internal error: invalid node's state.");
                 break;
         }
         
@@ -308,19 +308,19 @@ int YarpNodeMatlab::runStep(double timeout) {
 /* ============ MEX interface ===============*/
 
 // Instance manager
-template class mexplus::Session<YarpNodeMatlab>;
-template class mexplus::Session<YarpNode::WaitForCondition>;
+template class mexplus::Session<MQTTNodeMatlab>;
+template class mexplus::Session<MQTTNode::WaitForCondition>;
 
 #define READ_INPUT_SCALAR_HELPER(A,B,C) \
-  YarpInput<A,obn_scalar<B>,C> *p = dynamic_cast<YarpInput<A,obn_scalar<B>,C>*>(portinfo.port); \
+  MQTTInput<A,obn_scalar<B>,C> *p = dynamic_cast<MQTTInput<A,obn_scalar<B>,C>*>(portinfo.port); \
   if (p) { output.set(0, p->get()); } \
-  else { reportError("YARPNODE:readInput", "Internal error: port object type does not match its declared type."); }
+  else { reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type."); }
 
 
 // For vectors, regardless of how vectors are stored in Matlab's mxArray vs. in Eigen, we can simply copy the exact number of values from one to another.
 template <typename ETYPE>
 mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port) {
-    YarpInput<OBN_PB,obn_vector<ETYPE>,false> *p = dynamic_cast<YarpInput<OBN_PB,obn_vector<ETYPE>,false>*>(port);
+    MQTTInput<OBN_PB,obn_vector<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector<ETYPE>,false>*>(port);
     if (p) {
         // Get direct access to value
         auto value_access = p->lock_and_get();
@@ -330,7 +330,7 @@ mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnod
         std::copy(pv.data(), pv.data()+pv.size(), ml.getData<ETYPE>());
         return ml.release();
     } else {
-        reportError("YARPNODE:readInput", "Internal error: port object type does not match its declared type.");
+        reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
         return nullptr;
     }
 }
@@ -338,7 +338,7 @@ mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnod
 // For matrices, the order in which Matlab and Eigen store matrices (column-major or row-major) will affect how data can be copied.  Because both Eigen and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.  For completeness, there are commented code lines that safely transfer data by accessing element-by-element, but this would be slower.
 template <typename ETYPE>
 mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port) {
-    YarpInput<OBN_PB,obn_matrix<ETYPE>,false> *p = dynamic_cast<YarpInput<OBN_PB,obn_matrix<ETYPE>,false>*>(port);
+    MQTTInput<OBN_PB,obn_matrix<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix<ETYPE>,false>*>(port);
     if (p) {
         // Get direct access to value
         auto value_access = p->lock_and_get();
@@ -358,16 +358,16 @@ mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnod
 //            }
 //        }
     } else {
-        reportError("YARPNODE:readInput", "Internal error: port object type does not match its declared type.");
+        reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
         return nullptr;
     }
 }
 
 
 #define WRITE_OUTPUT_SCALAR_HELPER(A,B) \
-  YarpOutput<A,obn_scalar<B>> *p = dynamic_cast<YarpOutput<A,obn_scalar<B>>*>(portinfo.port); \
+  MQTTOutput<A,obn_scalar<B>> *p = dynamic_cast<MQTTOutput<A,obn_scalar<B>>*>(portinfo.port); \
   if (p) { *p = input.get<B>(2); } \
-  else { reportError("YARPNODE:writeOutput", "Internal error: port object type does not match its declared type."); }
+  else { reportError("MQTTNODE:writeOutput", "Internal error: port object type does not match its declared type."); }
 
 
 // To convert a vector from mxArray to Eigen, with possibility that their types are different
@@ -376,7 +376,7 @@ mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnod
 // - Assign the map object to the Eigen vector object (inside the port object).
 template <typename ETYPE>
 void write_output_vector_helper(const InputArguments &input, OBNnode::PortBase *port) {
-    YarpOutput<OBN_PB,obn_vector<ETYPE>> *p = dynamic_cast<YarpOutput<OBN_PB,obn_vector<ETYPE>>*>(port);
+    MQTTOutput<OBN_PB,obn_vector<ETYPE>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_vector<ETYPE>>*>(port);
     if (p) {
         auto from = MxArray(input.get(2)); // MxArray object
         auto &to = *(*p);
@@ -392,14 +392,14 @@ void write_output_vector_helper(const InputArguments &input, OBNnode::PortBase *
 //        std::vector<ETYPE> v(input.get<std::vector<ETYPE>>(2));
 //        *p = (*(*p)).Map(v.data(), v.size());
     } else {
-        reportError("YARPNODE:writeOutput", "Internal error: port object type does not match its declared type.");
+        reportError("MQTTNODE:writeOutput", "Internal error: port object type does not match its declared type.");
     }
 }
 
 // For matrices, the order in which Matlab and Eigen store matrices (column-major or row-major) will affect how data can be copied.  Because both Eigen and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.  For completeness, there are commented code lines that safely transfer data by accessing element-by-element, but this would be slower.
 template <typename ETYPE>
 void write_output_matrix_helper(const InputArguments &input, OBNnode::PortBase *port) {
-    YarpOutput<OBN_PB,obn_matrix<ETYPE>> *p = dynamic_cast<YarpOutput<OBN_PB,obn_matrix<ETYPE>>*>(port);
+    MQTTOutput<OBN_PB,obn_matrix<ETYPE>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_matrix<ETYPE>>*>(port);
     if (p) {
         auto from = MxArray(input.get(2)); // MxArray object
         auto nr = from.rows(), nc = from.cols();
@@ -421,7 +421,7 @@ void write_output_matrix_helper(const InputArguments &input, OBNnode::PortBase *
 //            }
 //        }
     } else {
-        reportError("YARPNODE:writeOutput", "Internal error: port object type does not match its declared type.");
+        reportError("MQTTNODE:writeOutput", "Internal error: port object type does not match its declared type.");
     }
 }
 
@@ -437,17 +437,17 @@ namespace {
         InputArguments input(nrhs, prhs, 2);
         OutputArguments output(nlhs, plhs, 1);
 
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
         unsigned int id = input.get<unsigned int>(1);
         if (id >= ynode->_all_ports.size()) {
-            reportError("YARPNODE:readInput", "Invalid port ID to read from.");
+            reportError("MQTTNODE:readInput", "Invalid port ID to read from.");
             return;
         }
 
         // Obtain the port
-        YarpNodeMatlab::PortInfo portinfo = ynode->_all_ports[id];
-        if (portinfo.type != YarpNodeMatlab::PortInfo::INPUTPORT || portinfo.strict) {
-            reportError("YARPNODE:readInput", "Given port is not a non-strict physical input.");
+        MQTTNodeMatlab::PortInfo portinfo = ynode->_all_ports[id];
+        if (portinfo.type != MQTTNodeMatlab::PortInfo::INPUTPORT || portinfo.strict) {
+            reportError("MQTTNODE:readInput", "Given port is not a non-strict physical input.");
             return;
         }
         
@@ -455,119 +455,119 @@ namespace {
         switch (portinfo.container) {
             case 's':
                 switch (portinfo.elementType) {
-                    case YarpNodeMatlab::PortInfo::DOUBLE: {
+                    case MQTTNodeMatlab::PortInfo::DOUBLE: {
                         READ_INPUT_SCALAR_HELPER(OBN_PB, double, false)
                         break;
                     }
                         
-                    case YarpNodeMatlab::PortInfo::LOGICAL: {
+                    case MQTTNodeMatlab::PortInfo::LOGICAL: {
                         READ_INPUT_SCALAR_HELPER(OBN_PB, bool, false)
                         break;
                     }
                         
-                    case YarpNodeMatlab::PortInfo::INT32: {
+                    case MQTTNodeMatlab::PortInfo::INT32: {
                         READ_INPUT_SCALAR_HELPER(OBN_PB, int32_t, false)
                         break;
                     }
                         
-                    case YarpNodeMatlab::PortInfo::INT64: {
+                    case MQTTNodeMatlab::PortInfo::INT64: {
                         READ_INPUT_SCALAR_HELPER(OBN_PB, int64_t, false)
                         break;
                     }
                         
-                    case YarpNodeMatlab::PortInfo::UINT32: {
+                    case MQTTNodeMatlab::PortInfo::UINT32: {
                         READ_INPUT_SCALAR_HELPER(OBN_PB, uint32_t, false)
                         break;
                     }
                         
-                    case YarpNodeMatlab::PortInfo::UINT64: {
+                    case MQTTNodeMatlab::PortInfo::UINT64: {
                         READ_INPUT_SCALAR_HELPER(OBN_PB, uint64_t, false)
                         break;
                     }
                         
                     default:
-                        reportError("YARPNODE:readInput", "Internal error: port's element type is invalid.");
+                        reportError("MQTTNODE:readInput", "Internal error: port's element type is invalid.");
                         break;
                 }
                 break;
                 
             case 'v':
                 switch (portinfo.elementType) {
-                    case YarpNodeMatlab::PortInfo::DOUBLE:
+                    case MQTTNodeMatlab::PortInfo::DOUBLE:
                         output.set(0, read_input_vector_helper<double>(MxArray::Numeric<double>, portinfo.port));
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::LOGICAL:
+                    case MQTTNodeMatlab::PortInfo::LOGICAL:
                         output.set(0, read_input_vector_helper<bool>(MxArray::Logical, portinfo.port));
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::INT32:
+                    case MQTTNodeMatlab::PortInfo::INT32:
                         output.set(0, read_input_vector_helper<int32_t>(MxArray::Numeric<int32_t>, portinfo.port));
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::INT64:
+                    case MQTTNodeMatlab::PortInfo::INT64:
                         output.set(0, read_input_vector_helper<int64_t>(MxArray::Numeric<int64_t>, portinfo.port));
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::UINT32:
+                    case MQTTNodeMatlab::PortInfo::UINT32:
                         output.set(0, read_input_vector_helper<uint32_t>(MxArray::Numeric<uint32_t>, portinfo.port));
                         break;
                 
-                    case YarpNodeMatlab::PortInfo::UINT64:
+                    case MQTTNodeMatlab::PortInfo::UINT64:
                         output.set(0, read_input_vector_helper<uint64_t>(MxArray::Numeric<uint64_t>, portinfo.port));
                         break;
                         
                     default:
-                        reportError("YARPNODE:readInput", "Internal error: port's element type is invalid.");
+                        reportError("MQTTNODE:readInput", "Internal error: port's element type is invalid.");
                         break;
                 }
                 break;
                 
             case 'm':
                 switch (portinfo.elementType) {
-                    case YarpNodeMatlab::PortInfo::DOUBLE:
+                    case MQTTNodeMatlab::PortInfo::DOUBLE:
                         output.set(0, read_input_matrix_helper<double>(MxArray::Numeric<double>, portinfo.port));
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::LOGICAL:
+                    case MQTTNodeMatlab::PortInfo::LOGICAL:
                         output.set(0, read_input_matrix_helper<bool>(MxArray::Logical, portinfo.port));
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::INT32:
+                    case MQTTNodeMatlab::PortInfo::INT32:
                         output.set(0, read_input_matrix_helper<int32_t>(MxArray::Numeric<int32_t>, portinfo.port));
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::INT64:
+                    case MQTTNodeMatlab::PortInfo::INT64:
                         output.set(0, read_input_matrix_helper<int64_t>(MxArray::Numeric<int64_t>, portinfo.port));
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::UINT32:
+                    case MQTTNodeMatlab::PortInfo::UINT32:
                         output.set(0, read_input_matrix_helper<uint32_t>(MxArray::Numeric<uint32_t>, portinfo.port));
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::UINT64:
+                    case MQTTNodeMatlab::PortInfo::UINT64:
                         output.set(0, read_input_matrix_helper<uint64_t>(MxArray::Numeric<uint64_t>, portinfo.port));
                         break;
                         
                     default:
-                        reportError("YARPNODE:readInput", "Internal error: port's element type is invalid.");
+                        reportError("MQTTNODE:readInput", "Internal error: port's element type is invalid.");
                         break;
                 }
                 break;
                 
             case 'b': {
                 // A binary string is read, the element type is ignored
-                YarpInput<OBN_BIN,bool,false> *p = dynamic_cast<YarpInput<OBN_BIN,bool,false>*>(portinfo.port);
+                MQTTInput<OBN_BIN,bool,false> *p = dynamic_cast<MQTTInput<OBN_BIN,bool,false>*>(portinfo.port);
                 if (p) {
                     output.set(0, p->get());
                 } else {
-                    reportError("YARPNODE:readInput", "Internal error: port object type does not match its declared type.");
+                    reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
                 }
                 break;
             }
                 
             default:    // This should never happen
-                reportError("YARPNODE:readInput", "Internal error: port's container type is invalid.");
+                reportError("MQTTNODE:readInput", "Internal error: port's container type is invalid.");
                 break;
         }
     }
@@ -582,17 +582,17 @@ namespace {
         InputArguments input(nrhs, prhs, 3);
         OutputArguments output(nlhs, plhs, 0);
         
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
         unsigned int id = input.get<unsigned int>(1);
         if (id >= ynode->_all_ports.size()) {
-            reportError("YARPNODE:writeOutput", "Invalid port ID to write to.");
+            reportError("MQTTNODE:writeOutput", "Invalid port ID to write to.");
             return;
         }
         
         // Obtain the port
-        YarpNodeMatlab::PortInfo portinfo = ynode->_all_ports[id];
-        if (portinfo.type != YarpNodeMatlab::PortInfo::OUTPUTPORT) {
-            reportError("YARPNODE:writeOutput", "Given port is not a physical output.");
+        MQTTNodeMatlab::PortInfo portinfo = ynode->_all_ports[id];
+        if (portinfo.type != MQTTNodeMatlab::PortInfo::OUTPUTPORT) {
+            reportError("MQTTNODE:writeOutput", "Given port is not a physical output.");
             return;
         }
         
@@ -602,51 +602,51 @@ namespace {
         switch (portinfo.container) {
             case 's':
                 switch (portinfo.elementType) {
-                    case YarpNodeMatlab::PortInfo::DOUBLE: {
+                    case MQTTNodeMatlab::PortInfo::DOUBLE: {
                         WRITE_OUTPUT_SCALAR_HELPER(OBN_PB, double)
                         break;
                     }
                         
-                    case YarpNodeMatlab::PortInfo::LOGICAL: {
+                    case MQTTNodeMatlab::PortInfo::LOGICAL: {
                         WRITE_OUTPUT_SCALAR_HELPER(OBN_PB, bool)
                         break;
                     }
                         
-                    case YarpNodeMatlab::PortInfo::INT32: {
+                    case MQTTNodeMatlab::PortInfo::INT32: {
                         WRITE_OUTPUT_SCALAR_HELPER(OBN_PB, int32_t)
                         break;
                     }
                         
-                    case YarpNodeMatlab::PortInfo::INT64: {
+                    case MQTTNodeMatlab::PortInfo::INT64: {
                         WRITE_OUTPUT_SCALAR_HELPER(OBN_PB, int64_t)
                         break;
                     }
                         
-                    case YarpNodeMatlab::PortInfo::UINT32: {
+                    case MQTTNodeMatlab::PortInfo::UINT32: {
                         WRITE_OUTPUT_SCALAR_HELPER(OBN_PB, uint32_t)
                         break;
                     }
                         
-                    case YarpNodeMatlab::PortInfo::UINT64: {
+                    case MQTTNodeMatlab::PortInfo::UINT64: {
                         WRITE_OUTPUT_SCALAR_HELPER(OBN_PB, uint64_t)
                         break;
                     }
                         
                     default:
-                        reportError("YARPNODE:writeOutput", "Internal error: port's element type is invalid.");
+                        reportError("MQTTNODE:writeOutput", "Internal error: port's element type is invalid.");
                         break;
                 }
                 break;
                 
             case 'v':
                 switch (portinfo.elementType) {
-                    case YarpNodeMatlab::PortInfo::DOUBLE:
+                    case MQTTNodeMatlab::PortInfo::DOUBLE:
                         write_output_vector_helper<double>(input, portinfo.port);
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::LOGICAL: {
+                    case MQTTNodeMatlab::PortInfo::LOGICAL: {
                         // This case is special because vector<bool> does not have data()
-                        YarpOutput<OBN_PB,obn_vector<bool>> *p = dynamic_cast<YarpOutput<OBN_PB,obn_vector<bool>>*>(portinfo.port);
+                        MQTTOutput<OBN_PB,obn_vector<bool>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_vector<bool>>*>(portinfo.port);
                         if (p) {
                             std::vector<bool> v(input.get<std::vector<bool>>(2));
                             (*(*p)).resize(v.size());
@@ -655,78 +655,78 @@ namespace {
                                 (*(*p))(i) = v[i];
                             }
                         } else {
-                            reportError("YARPNODE:writeOutput", "Internal error: port object type does not match its declared type.");
+                            reportError("MQTTNODE:writeOutput", "Internal error: port object type does not match its declared type.");
                         }
                         break;
                     }
                         
-                    case YarpNodeMatlab::PortInfo::INT32:
+                    case MQTTNodeMatlab::PortInfo::INT32:
                         write_output_vector_helper<int32_t>(input, portinfo.port);
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::INT64:
+                    case MQTTNodeMatlab::PortInfo::INT64:
                         write_output_vector_helper<int64_t>(input, portinfo.port);
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::UINT32:
+                    case MQTTNodeMatlab::PortInfo::UINT32:
                         write_output_vector_helper<uint32_t>(input, portinfo.port);
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::UINT64:
+                    case MQTTNodeMatlab::PortInfo::UINT64:
                         write_output_vector_helper<uint64_t>(input, portinfo.port);
                         break;
                         
                     default:
-                        reportError("YARPNODE:writeOutput", "Internal error: port's element type is invalid.");
+                        reportError("MQTTNODE:writeOutput", "Internal error: port's element type is invalid.");
                         break;
                 }
                 break;
                 
             case 'm':
                 switch (portinfo.elementType) {
-                    case YarpNodeMatlab::PortInfo::DOUBLE:
+                    case MQTTNodeMatlab::PortInfo::DOUBLE:
                         write_output_matrix_helper<double>(input, portinfo.port);
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::LOGICAL:
+                    case MQTTNodeMatlab::PortInfo::LOGICAL:
                         write_output_matrix_helper<bool>(input, portinfo.port);
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::INT32:
+                    case MQTTNodeMatlab::PortInfo::INT32:
                         write_output_matrix_helper<int32_t>(input, portinfo.port);
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::INT64:
+                    case MQTTNodeMatlab::PortInfo::INT64:
                         write_output_matrix_helper<int64_t>(input, portinfo.port);
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::UINT32:
+                    case MQTTNodeMatlab::PortInfo::UINT32:
                         write_output_matrix_helper<uint32_t>(input, portinfo.port);
                         break;
                         
-                    case YarpNodeMatlab::PortInfo::UINT64:
+                    case MQTTNodeMatlab::PortInfo::UINT64:
                         write_output_matrix_helper<uint64_t>(input, portinfo.port);
                         break;
                         
                     default:
-                        reportError("YARPNODE:writeOutput", "Internal error: port's element type is invalid.");
+                        reportError("MQTTNODE:writeOutput", "Internal error: port's element type is invalid.");
                         break;
                 }
                 break;
                 
             case 'b': {
                 // A binary string is written, the element type is ignored
-                YarpOutput<OBN_BIN,bool> *p = dynamic_cast<YarpOutput<OBN_BIN,bool>*>(portinfo.port);
+                MQTTOutput<OBN_BIN,bool> *p = dynamic_cast<MQTTOutput<OBN_BIN,bool>*>(portinfo.port);
                 if (p) {
                     p->message(input.get<std::string>(2));
                 } else {
-                    reportError("YARPNODE:writeOutput", "Internal error: binary port object type does not match its declared type.");
+                    reportError("MQTTNODE:writeOutput", "Internal error: binary port object type does not match its declared type.");
                 }
                 break;
             }
                 
             default:    // This should never happen
-                reportError("YARPNODE:writeOutput", "Internal error: port's container type is invalid.");
+                reportError("MQTTNODE:writeOutput", "Internal error: port's container type is invalid.");
                 break;
         }
     }
@@ -740,104 +740,44 @@ namespace {
         InputArguments input(nrhs, prhs, 2);
         OutputArguments output(nlhs, plhs, 0);
         
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
         unsigned int id = input.get<unsigned int>(1);
         if (id >= ynode->_all_ports.size()) {
-            reportError("YARPNODE:sendSync", "Invalid port ID.");
+            reportError("MQTTNODE:sendSync", "Invalid port ID.");
             return;
         }
         
         // Obtain the port
-        YarpNodeMatlab::PortInfo portinfo = ynode->_all_ports[id];
-        if (portinfo.type != YarpNodeMatlab::PortInfo::OUTPUTPORT) {
-            reportError("YARPNODE:sendSync", "Given port is not a physical output.");
+        MQTTNodeMatlab::PortInfo portinfo = ynode->_all_ports[id];
+        if (portinfo.type != MQTTNodeMatlab::PortInfo::OUTPUTPORT) {
+            reportError("MQTTNODE:sendSync", "Given port is not a physical output.");
             return;
         }
         
         // Cast the pointer to an output port object and send
-        YarpOutputPortBase *p = dynamic_cast<YarpOutputPortBase*>(portinfo.port);
+        MQTTOutputPortBase *p = dynamic_cast<MQTTOutputPortBase*>(portinfo.port);
         if (p) {
             p->sendSync();
         } else {
-            reportError("YARPNODE:sendSync", "Internal error: port object type does not match its declared type.");
+            reportError("MQTTNODE:sendSync", "Internal error: port object type does not match its declared type.");
         }
     }
     
 
-//    // Get full Yarp name of a port
-//    MEX_DEFINE(yarpName) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+//    // Get full MQTT name of a port
+//    MEX_DEFINE(MQTTName) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
 //        InputArguments input(nrhs, prhs, 2);
 //        OutputArguments output(nlhs, plhs, 1);
 //        
-//        YarpNode *ynode = Session<YarpNode>::get(input.get(0));
-//        YarpNode::portPtr yport = ynode->portObject(input.get<unsigned int>(1));
+//        MQTTNode *ynode = Session<MQTTNode>::get(input.get(0));
+//        MQTTNode::portPtr yport = ynode->portObject(input.get<unsigned int>(1));
 //        if (yport != nullptr) {
 //            output.set(0, std::string(yport->getName()));
 //        }
 //        else {
-//            mexErrMsgIdAndTxt("MATLAB:myarp:enableCallback", "Port doesn't exist.");
+//            mexErrMsgIdAndTxt("MATLAB:mMQTT:enableCallback", "Port doesn't exist.");
 //        }
 //    }
-//    
-//    
-//    // Set port to use callback
-//    MEX_DEFINE(enableCallback) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-//        InputArguments input(nrhs, prhs, 2);
-//        OutputArguments output(nlhs, plhs, 0);
-//        
-//        YarpNode *ynode = Session<YarpNode>::get(input.get(0));
-//        YarpNode::portPtr yport = ynode->portObject(input.get<unsigned int>(1));
-//        if (yport != nullptr) {
-//            yport->useCallback();
-//        }
-//        else {
-//            mexErrMsgIdAndTxt("MATLAB:myarp:enableCallback", "Port doesn't exist.");
-//        }
-//    }
-//    
-//    // Disable callback of a port
-//    MEX_DEFINE(disableCallback) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-//        InputArguments input(nrhs, prhs, 2);
-//        OutputArguments output(nlhs, plhs, 0);
-//        
-//        YarpNode *ynode = Session<YarpNode>::get(input.get(0));
-//        YarpNode::portPtr yport = ynode->portObject(input.get<unsigned int>(1));
-//        if (yport != nullptr) {
-//            yport->disableCallback();
-//        }
-//        else {
-//            mexErrMsgIdAndTxt("MATLAB:myarp:disableCallback", "Port doesn't exist.");
-//        }
-//    }
-//
-//    MEX_DEFINE(sendString) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-//        InputArguments input(nrhs, prhs, 3);
-//        OutputArguments output(nlhs, plhs, 0);
-//        
-//        YarpNode *ynode = Session<YarpNode>::get(input.get(0));
-//        YarpNode::portPtr yport = ynode->portObject(input.get<unsigned int>(1));
-//        if (yport != nullptr) {
-//            yport->sendString(input.get<string>(2));
-//        }
-//        else {
-//            mexErrMsgIdAndTxt("sendString", "Port doesn't exist.");
-//        }
-//    }
-//    
-//    MEX_DEFINE(readString) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-//        InputArguments input(nrhs, prhs, 3);
-//        OutputArguments output(nlhs, plhs, 1);
-//        
-//        YarpNode *ynode = Session<YarpNode>::get(input.get(0));
-//        YarpNode::portPtr yport = ynode->portObject(input.get<unsigned int>(1));
-//        if (yport != nullptr) {
-//            output.set(0, yport->readString(input.get<bool>(2)));;
-//        }
-//        else {
-//            mexErrMsgIdAndTxt("sendString", "Port doesn't exist.");
-//        }
-//    }
-//
 //    
 ////    // Is there a message pending at a port?
 ////    MEX_DEFINE(isPendingMessage) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
@@ -854,23 +794,23 @@ namespace {
 //        InputArguments input(nrhs, prhs, 2);
 //        OutputArguments output(nlhs, plhs, 1);
 //        
-//        YarpNode *ynode = Session<YarpNode>::get(input.get(0));
+//        MQTTNode *ynode = Session<MQTTNode>::get(input.get(0));
 //        output.set(0, ynode->portID(input.get<string>(1)));
 //    }
     
 
 
-    /* === YarpNode interface === */
+    /* === MQTTNode interface === */
     
     
     // Runs the node's simulation until the next event, or until the node stops or has errors
     // Args: node object pointer, timeout (double in seconds, can be <= 0.0 if no timeout)
-    // Returns: status (see YarpNodeMatlab::runStep()), event type (a string), event argument (of an appropriate data type depending on the event type)
+    // Returns: status (see MQTTNodeMatlab::runStep()), event type (a string), event argument (of an appropriate data type depending on the event type)
     MEX_DEFINE(runStep) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         InputArguments input(nrhs, prhs, 2);
         OutputArguments output(nlhs, plhs, 3);
         
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
 
         // Call node's runStep
         int result = ynode->runStep(input.get<double>(1));
@@ -880,28 +820,28 @@ namespace {
         output.set(0, result);
         if (ynode->_ml_pending_event) {
             switch (ynode->_ml_current_event.type) {
-                case OBNnode::YarpNodeMatlab::MLE_Y:
+                case OBNnode::MQTTNodeMatlab::MLE_Y:
                     output.set(1, "Y");
                     output.set(2, ynode->_ml_current_event.arg.mask);
                     break;
                     
-                case OBNnode::YarpNodeMatlab::MLE_X:
+                case OBNnode::MQTTNodeMatlab::MLE_X:
                     output.set(1, "X");
                     output.set(2, ynode->_ml_current_event.arg.mask);   // This mask is set to the current update mask
                     break;
                     
-                case OBNnode::YarpNodeMatlab::MLE_INIT:
+                case OBNnode::MQTTNodeMatlab::MLE_INIT:
                     output.set(1, "INIT");
                     output.set(2, 0);
                     break;
                     
-                case OBNnode::YarpNodeMatlab::MLE_TERM:
+                case OBNnode::MQTTNodeMatlab::MLE_TERM:
                     output.set(1, "TERM");
                     output.set(2, 0);
                     break;
                     
                 default:
-                    reportError("YARPNODE:runStep", "Internal error: unrecognized Matlab event type.");
+                    reportError("MQTTNODE:runStep", "Internal error: unrecognized Matlab event type.");
                     break;
             }
         } else {
@@ -918,7 +858,7 @@ namespace {
         InputArguments input(nrhs, prhs, 1);
         OutputArguments output(nlhs, plhs, 1);
         
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
         output.set(0, ynode->currentSimulationTime());
     }
     
@@ -929,7 +869,7 @@ namespace {
         InputArguments input(nrhs, prhs, 1);
         OutputArguments output(nlhs, plhs, 1);
         
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
         output.set(0, ynode->currentWallClockTime());
     }
     
@@ -942,7 +882,7 @@ namespace {
         InputArguments input(nrhs, prhs, 4);
         OutputArguments output(nlhs, plhs, 1);
         
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
         auto *pCond = ynode->requestFutureUpdate(input.get<simtime_t>(1), input.get<updatemask_t>(2), false);
         if (pCond) {
             output.set(0, ynode->resultFutureUpdate(pCond, input.get<double>(3)));
@@ -952,26 +892,26 @@ namespace {
     }
     
     
-    // Request/notify the SMN to stop, then terminate the node's simulation regardless of whether the request was accepted or not. See YarpNodeMatlab::stopSimulation for details.
+    // Request/notify the SMN to stop, then terminate the node's simulation regardless of whether the request was accepted or not. See MQTTNodeMatlab::stopSimulation for details.
     // Args: node object pointer
     // Return: none
     MEX_DEFINE(stopSim) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         InputArguments input(nrhs, prhs, 1);
         OutputArguments output(nlhs, plhs, 0);
         
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
         ynode->stopSimulation();
     }
     
     // This method requests the SMN/GC to stop the simulation (by sending a request message to the SMN).
-    // See YarpNodeMatlab::requestStopSimulation() for details.
+    // See MQTTNodeMatlab::requestStopSimulation() for details.
     // Args: node object pointer
     // Return: none
     MEX_DEFINE(requestStopSim) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         InputArguments input(nrhs, prhs, 1);
         OutputArguments output(nlhs, plhs, 0);
         
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
         ynode->requestStopSimulation();
     }
 
@@ -983,7 +923,7 @@ namespace {
         InputArguments input(nrhs, prhs, 1);
         OutputArguments output(nlhs, plhs, 1);
         
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
         output.set(0, ynode->hasError());
     }
     
@@ -994,8 +934,8 @@ namespace {
         InputArguments input(nrhs, prhs, 1);
         OutputArguments output(nlhs, plhs, 1);
         
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
-        output.set(0, ynode->nodeState() == OBNnode::YarpNode::NODE_RUNNING);
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
+        output.set(0, ynode->nodeState() == OBNnode::MQTTNode::NODE_RUNNING);
     }
     
     // Check if the current state of the node is STOPPED
@@ -1005,20 +945,36 @@ namespace {
         InputArguments input(nrhs, prhs, 1);
         OutputArguments output(nlhs, plhs, 1);
         
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
-        output.set(0, ynode->nodeState() == OBNnode::YarpNode::NODE_STOPPED);
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
+        output.set(0, ynode->nodeState() == OBNnode::MQTTNode::NODE_STOPPED);
     }
     
     
     // Create a new node object
     // Args: nodeName, workspace
     MEX_DEFINE(nodeNew) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-        InputArguments input(nrhs, prhs, 2);
+        InputArguments input(nrhs, prhs, 3);
         OutputArguments output(nlhs, plhs, 1);
         
+        // Get the address of the server (empty = default)
+        std::string addr = input.get<string>(2);
+        
         // Create a node
-        YarpNodeMatlab *y = new YarpNodeMatlab(input.get<string>(0), input.get<string>(1));
-        output.set(0, Session<YarpNodeMatlab>::create(y));
+        MQTTNodeMatlab *y = new MQTTNodeMatlab(input.get<string>(0), input.get<string>(1));
+        
+        // Set the server
+        if (!addr.empty()) {
+            y->setServerAddress(addr);
+        }
+        
+        // For MQTT, we start the client immediately
+        if (y->startMQTT()) {
+            output.set(0, Session<MQTTNodeMatlab>::create(y));
+        } else {
+            // Delete the node object and report error
+            delete y;
+            reportError("MQTTNODE:nodeNew", "Could not start MQTT client; check network and MQTT server.");
+        }
     }
     
     // Delete a node object
@@ -1027,7 +983,7 @@ namespace {
         InputArguments input(nrhs, prhs, 1);
         OutputArguments output(nlhs, plhs, 0);
         
-        Session<YarpNodeMatlab>::destroy(input.get(0));
+        Session<MQTTNodeMatlab>::destroy(input.get(0));
     }
 
     // Create a new physical input port managed by this node
@@ -1040,7 +996,7 @@ namespace {
         OutputArguments output(nlhs, plhs, 1);
         
         // Create port
-        int id = Session<YarpNodeMatlab>::get(input.get(0))->createInputPort(input.get<char>(1), input.get<string>(2), input.get<string>(3), input.get<bool>("strict", false));
+        int id = Session<MQTTNodeMatlab>::get(input.get(0))->createInputPort(input.get<char>(1), input.get<string>(2), input.get<string>(3), input.get<bool>("strict", false));
         
         output.set(0, id);
     }
@@ -1054,7 +1010,7 @@ namespace {
         OutputArguments output(nlhs, plhs, 1);
         
         // Create port
-        int id = Session<YarpNodeMatlab>::get(input.get(0))->createOutputPort(input.get<char>(1), input.get<string>(2), input.get<string>(3));
+        int id = Session<MQTTNodeMatlab>::get(input.get(0))->createOutputPort(input.get<char>(1), input.get<string>(2), input.get<string>(3));
         
         output.set(0, id);
     }
@@ -1066,38 +1022,38 @@ namespace {
         InputArguments input(nrhs, prhs, 2);
         OutputArguments output(nlhs, plhs, 4);
         
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
         unsigned int id = input.get<unsigned int>(1);
         if (id >= ynode->_all_ports.size()) {
-            reportError("YARPNODE:portInfo", "Invalid port ID.");
+            reportError("MQTTNODE:portInfo", "Invalid port ID.");
             return;
         }
         
         // Obtain the port
-        YarpNodeMatlab::PortInfo portinfo = ynode->_all_ports[id];
+        MQTTNodeMatlab::PortInfo portinfo = ynode->_all_ports[id];
         
         // Return the information
         output.set(0,
-                   portinfo.type==YarpNodeMatlab::PortInfo::INPUTPORT?'i':
-                   (portinfo.type==YarpNodeMatlab::PortInfo::OUTPUTPORT?'o':'d'));
+                   portinfo.type==MQTTNodeMatlab::PortInfo::INPUTPORT?'i':
+                   (portinfo.type==MQTTNodeMatlab::PortInfo::OUTPUTPORT?'o':'d'));
         output.set(1, portinfo.container);
         switch (portinfo.elementType) {
-            case YarpNodeMatlab::PortInfo::DOUBLE:
+            case MQTTNodeMatlab::PortInfo::DOUBLE:
                 output.set(2, "double");
                 break;
-            case YarpNodeMatlab::PortInfo::INT32:
+            case MQTTNodeMatlab::PortInfo::INT32:
                 output.set(2, "int32");
                 break;
-            case YarpNodeMatlab::PortInfo::INT64:
+            case MQTTNodeMatlab::PortInfo::INT64:
                 output.set(2, "int64");
                 break;
-            case YarpNodeMatlab::PortInfo::UINT32:
+            case MQTTNodeMatlab::PortInfo::UINT32:
                 output.set(2, "uint32");
                 break;
-            case YarpNodeMatlab::PortInfo::UINT64:
+            case MQTTNodeMatlab::PortInfo::UINT64:
                 output.set(2, "uint64");
                 break;
-            case YarpNodeMatlab::PortInfo::LOGICAL:
+            case MQTTNodeMatlab::PortInfo::LOGICAL:
                 output.set(2, "logical");
                 break;
             default:
@@ -1107,6 +1063,7 @@ namespace {
         output.set(3, portinfo.strict);
     }
     
+    
     // Request to connect a given port to a port on this node.
     // Arguments: node object pointer, port's ID, source port's name (string)
     // Returns: result (int), message (string)
@@ -1114,23 +1071,22 @@ namespace {
         InputArguments input(nrhs, prhs, 3);
         OutputArguments output(nlhs, plhs, 2);
         
-        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
         unsigned int id = input.get<unsigned int>(1);
         if (id >= ynode->_all_ports.size()) {
-            reportError("YARPNODE:connectPort", "Invalid port ID.");
+            reportError("MQTTNODE:connectPort", "Invalid port ID.");
             return;
         }
         
         // Obtain the port
-        YarpNodeMatlab::PortInfo portinfo = ynode->_all_ports[id];
+        MQTTNodeMatlab::PortInfo portinfo = ynode->_all_ports[id];
         
         // Request to connect
         auto result = portinfo.port->connect_from_port(input.get<string>(2));
-        
+
         output.set(0, result.first);
         output.set(1, result.second);
     }
-    
     
     // Returns the name of the node (without workspace name)
     // Args: node object pointer
@@ -1139,7 +1095,7 @@ namespace {
 //        InputArguments input(nrhs, prhs, 1);
 //        OutputArguments output(nlhs, plhs, 1);
 //        
-//        YarpNodeMatlab *ynode = Session<YarpNodeMatlab>::get(input.get(0));
+//        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
 //        output.set(0, ynode->name());
 //    }
     
@@ -1153,44 +1109,6 @@ namespace {
         output.set(0, OBNsim::MAX_UPDATE_INDEX);
     }
     
-
-    /* === General Yarp interface === */
-    /*
-    
-    // Connect one port to another port
-    MEX_DEFINE(connect) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-        InputArguments input(nrhs, prhs, 2);
-        OutputArguments output(nlhs, plhs, 1);
-        
-        output.set(0, yarp::os::Network::connect(input.get<string>(0), input.get<string>(1)));
-    }
-
-    // Extended version of connect, where we can specify carrier, quiet, and possibly other options
-    // Inputs: source port, dest port, carrier, quiet, and maybe other options (may add later)
-    MEX_DEFINE(connectExt) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-        InputArguments input(nrhs, prhs, 4);
-        OutputArguments output(nlhs, plhs, 1);
-        
-        output.set(0, yarp::os::Network::connect(input.get<string>(0), input.get<string>(1), input.get<string>(2), input.get<bool>(3)));
-    }
-
-    
-    // Disconnect a connection between two ports
-    MEX_DEFINE(disconnect) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-        InputArguments input(nrhs, prhs, 2);
-        OutputArguments output(nlhs, plhs, 1);
-        
-        output.set(0, yarp::os::Network::disconnect(input.get<string>(0), input.get<string>(1)));
-    }
-    
-    // Does a connection exist?
-    MEX_DEFINE(isConnected) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-        InputArguments input(nrhs, prhs, 2);
-        OutputArguments output(nlhs, plhs, 1);
-        
-        output.set(0, yarp::os::Network::isConnected(input.get<string>(0), input.get<string>(1)));
-    }
-     */
 
 } // namespace
 

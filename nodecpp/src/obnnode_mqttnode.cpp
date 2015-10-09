@@ -21,6 +21,13 @@ using namespace OBNSimMsg;
 
 
 bool MQTTNodeBase::startMQTT() {
+    if (!m_mqtt_client_initialized) {
+        m_mqtt_client_initialized = mqtt_client.initialize();
+        if (!m_mqtt_client_initialized) {
+            return false;
+        }
+    }
+    
     if (mqtt_client.isRunning()) {
         return true;
     } else {

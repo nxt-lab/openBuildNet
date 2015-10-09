@@ -1,4 +1,4 @@
-%% Build the MEX interface for YarpNode
+%% Build the MEX interface for MQTTNode
 
 % Create private directory
 if ~exist('private', 'dir')
@@ -13,14 +13,14 @@ if ~exist('private/obnsim_msg.pb.h', 'file') || ~exist('private/obnsim_io.pb.h',
 end
 
 mexargs = 'mex ';
-mexargs = [mexargs '-output private/obnsim_yarp_ CXXFLAGS=''$CXXFLAGS -std=c++11 -stdlib=libc++'' '];
-mexargs = [mexargs '-DOBNNODE_COMM_YARP '];
+mexargs = [mexargs '-output private/obnsim_mqtt_ CXXFLAGS=''$CXXFLAGS -std=c++11 -stdlib=libc++'' '];
+mexargs = [mexargs '-DOBNNODE_COMM_MQTT '];
 mexargs = [mexargs '-I/usr/local/include/ -I../../nodematlab/include ' ...
   '-I../../nodecpp/include -I../../include ' ...
   '-Iprivate -L/usr/local/lib/ '];
-mexargs = [mexargs '-lYARP_dev -lYARP_name -lYARP_init -lYARP_sig -lYARP_OS -lprotobuf '];
-mexargs = [mexargs '../../nodecpp/src/obnnode_yarpnode.cpp ../../nodecpp/src/obnnode_yarpport.cpp ../../nodecpp/src/obnnode_basic.cpp ../../include/obnsim_basic.cpp ' ...
-  '../../nodematlab/src/obnsim_yarp.cc private/obnsim_msg.pb.cc private/obnsim_io.pb.cc '];
+mexargs = [mexargs '-lpaho-mqtt3a -lprotobuf '];
+mexargs = [mexargs '../../nodecpp/src/obnnode_mqttnode.cpp ../../nodecpp/src/obnnode_mqttport.cpp ../../nodecpp/src/obnnode_basic.cpp ../../include/obnsim_basic.cpp ' ...
+  '../../nodematlab/src/obnsim_mqtt.cc private/obnsim_msg.pb.cc private/obnsim_io.pb.cc '];
 
 % Call mex to compile
 eval(mexargs);

@@ -15,16 +15,9 @@ using namespace OBNnode;
 
 const int MQTTClient::QOS = 2;
 
-bool MQTTClient::start() {
-    if (isRunning()) return false;  // Already running
-    
-    if (m_client_id.empty() || m_server_address.empty()) {
-        return false;
-    }
-    
+bool MQTTClient::initialize() {
     int rc;
     
-    // Start the client and immediately subscribe to the main GC topic
     if ((rc = MQTTAsync_create(&m_client, m_server_address.c_str(), m_client_id.c_str(), MQTTCLIENT_PERSISTENCE_NONE, NULL)) != MQTTASYNC_SUCCESS)
     {
         return false;
@@ -35,6 +28,18 @@ bool MQTTClient::start() {
     {
         return false;
     }
+    
+    return true;
+}
+
+bool MQTTClient::start() {
+    if (isRunning()) return false;  // Already running
+    
+    if (m_client_id.empty() || m_server_address.empty()) {
+        return false;
+    }
+    
+    int rc;
     
     // Connect
     MQTTAsync_connectOptions conn_opts = MQTTAsync_connectOptions_initializer;

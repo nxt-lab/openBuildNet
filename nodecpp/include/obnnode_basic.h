@@ -77,15 +77,6 @@ namespace OBNnode {
          */
         bool open();
         
-        
-        /** \brief Request to establish a connection from a given port to this port.
-         
-         \param source The full path of the source port.
-         \return A pair of the connection result and an optional error message.
-         See the message N2SMN:SYS_PORT_CONNECT_ACK for details.
-         */
-        virtual std::pair<int, std::string> connect_from_port(const std::string& source) = 0;
-        
         friend class NodeBase;
         
     public:
@@ -105,6 +96,15 @@ namespace OBNnode {
         
         /** \brief Returns the full port name in the communication network (not the name inside the ndoe). */
         virtual std::string fullPortName() const = 0;
+        
+        
+        /** \brief Request to establish a connection from a given port to this port.
+         
+         \param source The full path of the source port.
+         \return A pair of the connection result and an optional error message.
+         See the message N2SMN:SYS_PORT_CONNECT_ACK for details.
+         */
+        virtual std::pair<int, std::string> connect_from_port(const std::string& source) = 0;
     };
     
     /** \brief Base class for an openBuildNet output port.
@@ -116,11 +116,12 @@ namespace OBNnode {
          */
         bool m_isChanged;
         
+    public:
         virtual std::pair<int, std::string> connect_from_port(const std::string& source) override {
             // Connection to an output port is forbidden
             return std::make_pair(-1, "An output port can't accept an incoming connection.");
         }
-    public:
+
         OutputPortBase(const std::string& t_name): PortBase(t_name), m_isChanged(false) { }
         virtual ~OutputPortBase();  // This destructor is important to detach the output port from the node. DO NOT REMOVE IT.
         

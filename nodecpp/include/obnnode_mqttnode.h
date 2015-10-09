@@ -36,6 +36,7 @@ namespace OBNnode {
     /* ============ MQTT Node Interface ===============*/
     /** \brief Basic MQTT Node. */
     class MQTTNodeBase: public NodeBase {
+        bool m_mqtt_client_initialized{false};  ///< If the Client object has been initialized
     public:
         OBNnode::MQTTClient mqtt_client;      ///< The MQTT client object for all MQTT communications of this node
         

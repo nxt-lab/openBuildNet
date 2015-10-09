@@ -1,8 +1,8 @@
 /* -*- mode: C++; indent-tabs-mode: nil; -*- */
-/** \file obnsim_yarp.h
- * \brief MEX interface for YarpNode of the openBuildNet simulation framework.
+/** \file obnsim_MQTT.h
+ * \brief MEX interface for MQTTNode of the openBuildNet simulation framework.
  *
- * Requires YARP.
+ * Requires MQTT.
  *
  * This file is part of the openBuildNet simulation framework
  * (OBN-Sim) developed at EPFL.
@@ -10,11 +10,11 @@
  * \author Truong X. Nghiem (xuan.nghiem@epfl.ch)
  */
 
-#ifndef OBNSIM_YARP_H_
-#define OBNSIM_YARP_H_
+#ifndef OBNSIM_MQTT_H_
+#define OBNSIM_MQTT_H_
 
-#ifndef OBNNODE_COMM_YARP
-#error This file must be compiled with YARP enabled
+#ifndef OBNNODE_COMM_MQTT
+#error This file must be compiled with MQTT enabled
 #endif
 
 #include <cstdio>       // printf
@@ -43,7 +43,7 @@ void reportWarning(const char* msgID, const char* msg) {
 
 namespace OBNnode {
     /** The main node class for Matlab. */
-    class YarpNodeMatlab: public OBNnode::YarpNodeBase {
+    class MQTTNodeMatlab: public OBNnode::MQTTNodeBase {
     public:
         
         /** Structure containing info about a port in this node. */
@@ -64,12 +64,10 @@ namespace OBNnode {
         /** \brief Meta-function for creating all kinds of output ports supported by this class. */
         int createOutputPort(char container, const std::string &element, const std::string &name);
         
-        YarpNodeMatlab(const std::string& name, const std::string& ws = ""): YarpNodeBase(name, ws) {
-            // Turn off feedback messages from Yarp
-            yarp::os::Network::setVerbosity(-1);
+        MQTTNodeMatlab(const std::string& name, const std::string& ws = ""): MQTTNodeBase(name, ws) {
         }
         
-        virtual ~YarpNodeMatlab();
+        virtual ~MQTTNodeMatlab();
         
         
         // === Events between the C++ node and Matlab ===
@@ -104,7 +102,7 @@ namespace OBNnode {
         
         /** Override stopSimulation. */
         void stopSimulation() {
-            YarpNodeBase::stopSimulation();
+            MQTTNodeBase::stopSimulation();
             _ml_pending_event = false;
             _current_node_event.reset();
         }
@@ -153,21 +151,21 @@ namespace OBNnode {
         virtual void onRawMessageError(const PortBase * port, const std::string& info) override {
             _node_state = NODE_ERROR;
             auto msg = "Error while parsing the raw message from port: " + port->fullPortName() + " (" + info + ")";
-            reportError("YARPNODE:communication", msg.c_str());
+            reportError("MQTTNODE:communication", msg.c_str());
         }
         
         /** Callback for error when reading the values from a structured message (e.g. ProtoBuf or JSON), e.g. if the type or dimension is invalid. */
         virtual void onReadValueError(const PortBase * port, const std::string& info) override {
             _node_state = NODE_ERROR;
             auto msg = "Error while extracting value from message for port: " + port->fullPortName() + " (" + info + ")";
-            reportError("YARPNODE:communication", msg.c_str());
+            reportError("MQTTNODE:communication", msg.c_str());
         }
         
         /** Callback for error when sending the values (typically happens when serializing the message to be sent). */
         virtual void onSendMessageError(const PortBase * port, const std::string& info) override {
             _node_state = NODE_ERROR;
             auto msg = "Error while sending a value from port: " + port->fullPortName() + " (" + info + ")";
-            reportError("YARPNODE:communication", msg.c_str());
+            reportError("MQTTNODE:communication", msg.c_str());
         }
         
         /** Callback for error interacting with the SMN and openBuildNet system.  Used for serious errors.
@@ -175,17 +173,17 @@ namespace OBNnode {
          */
         virtual void onOBNError(const std::string& msg) override {
             _node_state = NODE_ERROR;
-            reportError("YARPNODE:openBuildNet", msg.c_str());
+            reportError("MQTTNODE:openBuildNet", msg.c_str());
         }
         
         /** Callback for warning issues interacting with the SMN and openBuildNet system, e.g. an unrecognized system message from the SMN.  Usually the simulation may continue without any serious consequence.
          \param msg A string containing the warning message.
          */
         virtual void onOBNWarning(const std::string& msg) override {
-            reportWarning("YARPNODE:openBuildNet", msg.c_str());
+            reportWarning("MQTTNODE:openBuildNet", msg.c_str());
         }
     };
 }
 
 
-#endif /* OBNSIM_YARP_H_ */
+#endif /* OBNSIM_MQTT_H_ */

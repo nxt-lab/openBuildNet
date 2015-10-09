@@ -116,6 +116,11 @@ namespace OBNnode {
             stop();
         }
         
+        /** Initialize the Client object.
+         MUST BE CALLED BEFORE DOING ANYTHING WITH THE CLIENT (even checking if it's running).
+         */
+        bool initialize();
+        
         bool isRunning() const {
             return MQTTAsync_isConnected(m_client);
         }
@@ -263,7 +268,6 @@ namespace OBNnode {
             return true;
         }
         
-        virtual std::pair<int, std::string> connect_from_port(const std::string& source) override;
     public:
         MQTTInputPortBase(const std::string& t_name, MQTTClient* t_client): PortBase(t_name), m_mqtt_client(t_client) {
             assert(t_client);
@@ -273,6 +277,8 @@ namespace OBNnode {
         virtual std::string fullPortName() const override {
             return isValid()?m_node->fullPortName(m_name):"";
         }
+        
+        virtual std::pair<int, std::string> connect_from_port(const std::string& source) override;
     };
     
     /** \brief Base class for an openBuildNet (strictly) output port in MQTT.
@@ -681,27 +687,28 @@ namespace OBNnode {
      */
     template <typename D>
     class MQTTOutput<OBN_BIN, D>: public MQTTOutputPortBase {
-        std::string m_cur_message;    ///< The binary data message stored in this port
+        OBNsim::ResizableBuffer m_cur_message;  ///< The binary data message stored in this port
         
     public:
         MQTTOutput(const std::string& _name, MQTTClient* t_client): MQTTOutputPortBase(_name, t_client) { }
         
-        /** Directly access the ProtoBuf message stored in this port; can change it (so it'll be marked as changed). */
-        std::string& message() {
-            m_isChanged = true;
-            return m_cur_message;
+        /** Access the message buffer as read-only. */
+        const char* message() const {
+            return m_cur_message.data();
         }
         
         /** Set the binary data content to a std::string */
-        std::string& message(const std::string &s) {
+        void message(const std::string &s) {
             m_isChanged = true;
-            return m_cur_message.assign(s);
+            m_cur_message.allocateData(s.size());
+            s.copy(m_cur_message.data(), s.npos);
         }
         
         /** Set the binary data content to n characters starting from a pointer. */
-        std::string& message(const char* s, std::size_t n) {
+        void message(const char* s, std::size_t n) {
             m_isChanged = true;
-            return m_cur_message.assign(s, n);
+            m_cur_message.allocateData(n);
+            std::copy_n(s, n, m_cur_message.data());
         }
         
         /** Send data synchronously */
