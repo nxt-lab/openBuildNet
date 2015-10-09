@@ -1,6 +1,6 @@
 /* -*- mode: C++; indent-tabs-mode: nil; -*- */
 /** \file
- * \brief YARP node class for the C++ node interface.
+ * \brief MQTT node class for the C++ node interface.
  *
  * Implement the main node class for a C++ node.
  *
@@ -10,8 +10,8 @@
  * \author Truong X. Nghiem (xuan.nghiem@epfl.ch)
  */
 
-#ifndef OBNNODE_YARPNODE_H_
-#define OBNNODE_YARPNODE_H_
+#ifndef OBNNODE_MQTTNODE_H_
+#define OBNNODE_MQTTNODE_H_
 
 #include <cmath>
 #include <iostream>
@@ -22,64 +22,65 @@
 #include <vector>
 #include <exception>
 #include <thread>               // sleep
+#include <condition_variable>
+#include <mutex>
 #include <chrono>               // timing values
 
+#include <sharedqueue_std.h>
 #include <obnnode_basic.h>
-#include <obnnode_yarpportbase.h>
+#include <obnnode_mqttport.h>
+
 #include <obnsim_msg.pb.h>
 
-#include <sharedqueue_yarp.h>
-
-
 namespace OBNnode {
-    /* ============ YARP Node (managing Yarp ports) Interface ===============*/
-    /** \brief Basic YARP Node. */
-    class YarpNodeBase: public NodeBase {
+    /* ============ MQTT Node Interface ===============*/
+    /** \brief Basic MQTT Node. */
+    class MQTTNodeBase: public NodeBase {
     public:
-        static yarp::os::Network yarp_network;      ///< The Yarp network object for Yarp's API
+        OBNnode::MQTTClient mqtt_client;      ///< The MQTT client object for all MQTT communications of this node
+        
+        /** Set the MQTT's client ID. */
+        void setClientID(const std::string& _clientID) {
+            mqtt_client.setClientID(_clientID);
+        }
+        
+        /** Set the MQTT server address */
+        void setServerAddress(const std::string& addr) {
+            mqtt_client.setServerAddress(addr);
+        }
+        
+        /** Start the MQTT communication. */
+        bool startMQTT();
         
         /** \brief Construct a node object. */
-        YarpNodeBase(const std::string& _name, const std::string& ws = ""): NodeBase(_name, ws), _smn_port(this) { }
-        //virtual ~YarpNodeBase();
+        MQTTNodeBase(const std::string& _name, const std::string& ws = ""): NodeBase(_name, ws),
+        mqtt_client(this), m_smn_port(this)
+        {
+            mqtt_client.setClientID(full_name());
+            m_smn_topic = _workspace + "_smn_/_gc_";    // The topic of the SMN's GC port; all nodes publish to this topic
+        }
+        
+        //virtual ~MQTTNodeBase();
         
         /** Opens the port on this node to communication with the SMN, if it hasn't been opened.
          \return true if successful.
          */
         virtual bool openSMNPort() override;
         
-        /** Connect the SMN port on this node to the SMN.
-         The connection is started from this node, however it can also be started from the SMN.
-         If the port is not yet opened, it will be opened first.
-         \param carrier Optional parameter to specify the carrier for the connections.
-         \return true if successful.
-         */
-        bool connectWithSMN(const char *carrier = nullptr);
-        
         /** Callback for permanent communication lost error (e.g. the communication server has shut down).
          \param comm The communication protocol/platform that has lost.
          The node should stop its simulation (if comm is not used by the GC) and exit as cleanly as possible.
          */
         virtual void onPermanentCommunicationLost(CommProtocol comm) override;
-        
+
     protected:
-        /** A YARP message for communicating with the SMN. */
-        typedef YARPMsgPB<OBNSimMsg::N2SMN, OBNSimMsg::SMN2N> SMNMsg;
-        
-        /** The SMN port on a node to communicate with the SMN. */
-        class SMNPort: public yarp::os::BufferedPort<SMNMsg> {
-            YarpNodeBase* _the_node;                ///< Pointer to the node to which this port is attached
-            OBNSimMsg::SMN2N _smn_message;      ///< The SMN2N message received at the node
-            virtual void onRead(SMNMsg& b) override ;
-        public:
-            SMNPort(YarpNodeBase* node) {
-                assert(node);
-                _the_node = node;
-            }
-        };
-        
         /** The Global Clock port to communicate with the SMN. */
-        SMNPort _smn_port;
+        OBNnode::MQTTGCPort m_smn_port;
         
+        std::string m_smn_topic;    ///< Topic of the SMN's main port for nodes to send to
+            
+        OBNsim::ResizableBuffer m_gcbuffer;   ///< The buffer for sending messages to SMN
+            
         /** Send the current message in _n2smn_message via the GC port. */
         virtual void sendN2SMNMsg() override;
         
@@ -92,24 +93,29 @@ namespace OBNnode {
         class WaitForCondition {
             /** Status of the condition: active (waiting for), cleared (but not yet fetched), inactive (can be reused) */
             enum { ACTIVE, CLEARED, INACTIVE } status;
-            yarp::os::Semaphore _event;     ///< The event condition to wait on
+            
+            std::condition_variable _event; ///< The event condition to wait on
+            bool _waitfor_done;   ///< If the event is actually done
+            std::mutex _mutex;  ///< The mutex for this object
+            
             OBNSimMsg::MSGDATA _data;   ///< The data record (if available) of the message that cleared the condition
+            
             /** Returns true if the condition is cleared. */
             typedef std::function<bool (const OBNSimMsg::SMN2N&)> the_checker;
             the_checker _check_func;    ///< The function to check for the condition
 
-            friend class YarpNodeBase;
+            friend class MQTTNodeBase;
             
             /** Make the condition inactive, to be reused later. */
             void reset() {
+                std::lock_guard<std::mutex> lockcond(_mutex);
                 status = INACTIVE;
-                // reset the semaphore by decreasing it until it becomes 0
-                while (_event.check()) { }  // _event.reset();
+                _waitfor_done = false;
                 _data.Clear();
             }
         public:
             template<typename F>
-            WaitForCondition(F f): status(ACTIVE), _event(0), _check_func(f) { }
+            WaitForCondition(F f): status(ACTIVE), _waitfor_done(false), _check_func(f) { }
             
             // virtual ~WaitForCondition() { std::cout << "~WaitForCondition" << std::endl; }
 
@@ -118,7 +124,16 @@ namespace OBNnode {
              \return true if successful; false if timeout
              */
             bool wait(double timeout) {
-                return (timeout <= 0.0)?(_event.wait(),true):_event.waitWithTimeout(timeout);
+                std::unique_lock<std::mutex> lck(_mutex);
+                
+                if (timeout <= 0.0) {
+                    _event.wait(lck, [this]{ return this->_waitfor_done; });
+                    return true;
+                } else {
+                    return _event.wait_for(lck,
+                                           std::chrono::milliseconds(int(timeout * 1000)),
+                                           [this]{ return this->_waitfor_done; });
+                }
             }
             
             /** Return the data of the message that cleared the condition. Make sure that the condition was cleared before accessing the data. */
@@ -128,14 +143,14 @@ namespace OBNnode {
         /** Check if an wait-for condition is cleared. */
         bool isWaitForCleared(const WaitForCondition* c) {
             assert(c);
-            yarp::os::LockGuard lock(_waitfor_conditions_mutex);
+            std::lock_guard<std::mutex> lock(_waitfor_conditions_mutex);
             return c->status == WaitForCondition::CLEARED;
         }
         
         /** Reset wait-for condition. If the condition isn't reset implicitly, it should be reset by calling this function after it was cleared and its result has been used. */
         void resetWaitFor(WaitForCondition* c) {
             assert(c);
-            yarp::os::LockGuard lock(_waitfor_conditions_mutex);
+            std::lock_guard<std::mutex> lock(_waitfor_conditions_mutex);
             c->reset();
         }
 
@@ -150,17 +165,17 @@ namespace OBNnode {
         
     protected:
         std::forward_list<WaitForCondition> _waitfor_conditions;
-        yarp::os::Mutex _waitfor_conditions_mutex;
+        std::mutex _waitfor_conditions_mutex;
         
         /** Check the given message against the list of wait-for conditions. */
         virtual void checkWaitForCondition(const OBNSimMsg::SMN2N&) override;
 
         /** The event queue, which contains smart pointers to event objects. */
-        shared_queue_yarp<NodeEvent> _event_queue;
+        shared_queue<NodeEvent> _event_queue;
         
         /** \brief Push an event object to the event queue.
          
-         This function must be implemented in a thread-safe manner w.r.t. the communication library used because it's usually called in a callback of the communication library (e.g. a Yarp thread or MQTT thread).
+         This function must be implemented in a thread-safe manner w.r.t. the communication library used because it's usually called in a callback of the communication library (e.g. a MQTT thread or MQTT thread).
          */
         virtual void eventqueue_push(NodeEvent *pev) override {
             _event_queue.push(pev);
@@ -168,7 +183,7 @@ namespace OBNnode {
         
         /** \brief Push an event object to the front of the event queue.
          
-         This function must be implemented in a thread-safe manner w.r.t. the communication library used because it's usually called in a callback of the communication library (e.g. a Yarp thread or MQTT thread).
+         This function must be implemented in a thread-safe manner w.r.t. the communication library used because it's usually called in a callback of the communication library (e.g. a MQTT thread or MQTT thread).
          */
         virtual void eventqueue_push_front(NodeEvent *pev) override {
             _event_queue.push_front(pev);
@@ -193,34 +208,9 @@ namespace OBNnode {
     };
     
     
-    /** The main YarpNode class, which supports defining updates, _info_ port, etc. */
-    typedef OBNNodeBase<YarpNodeBase> YarpNode;
+    /** The main MQTTNode class, which supports defining updates, _info_ port, etc. */
+    typedef OBNNodeBase<MQTTNodeBase> MQTTNode;
     
 }
 
-/* OLD CODE: NOT TO BE USED ANYMORE!!!
- 
-// Below is a mechanism to define methods for individual updates to perform their computations of UPDATE_Y.
-#define OBN_DECLARE_UPDATES(...) template<const int N> void doUpdate(); \
-    template<const bool temp, const int Arg1, const int... Args> void performUpdates(OBNnode::updatemask_t& m) { \
-    static_assert(Arg1 >= 0 && Arg1 <= OBNsim::MAX_UPDATE_INDEX, "Update index must be positive."); \
-    if (m & (1 << Arg1)) { doUpdate<Arg1>(); m ^= (1 << Arg1); } \
-    performUpdates<temp, Args...>(m); } \
-    template<const bool temp> void performUpdates(OBNnode::updatemask_t& m) { } \
-    virtual void onUpdateY(OBNnode::updatemask_t m) { performUpdates<true, __VA_ARGS__>(m); }
-
-#define OBN_DEFINE_UPDATE(CLS,N) template<> void CLS::doUpdate<N>()
-
-// Below is a mechanism to define methods for individual updates to perform their computations of UPDATE_X.
-#define OBN_DECLARE_UPDATES_X(...) template<const int N> void doUpdateX(); \
-    template<const bool temp, const int Arg1, const int... Args> void performUpdatesX(OBNnode::updatemask_t& m) { \
-    static_assert(Arg1 >= 0 && Arg1 <= OBNsim::MAX_UPDATE_INDEX, "Update index must be positive."); \
-    if (m & (1 << Arg1)) { doUpdateX<Arg1>(); m ^= (1 << Arg1); } \
-    performUpdatesX<temp, Args...>(m); } \
-    template<const bool temp> void performUpdatesX(OBNnode::updatemask_t& m) { } \
-    virtual void onUpdateX() { performUpdatesX<true, __VA_ARGS__>(_current_updates); }
-
-#define OBN_DEFINE_UPDATE_X(CLS,N) template<> void CLS::doUpdateX<N>()
-*/
-
-#endif /* OBNNODE_YARPNODE_H_ */
+#endif /* OBNNODE_MQTTNODE_H_ */

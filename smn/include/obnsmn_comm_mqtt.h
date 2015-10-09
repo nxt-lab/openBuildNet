@@ -164,6 +164,9 @@ namespace OBNsmn {
             
             /** Called whenever a message is received. */
             static int on_message_arrived(void *context, char *topicName, int topicLen, MQTTAsync_message *message);
+            
+            /** Called whenever a sent message has been delivered. */
+            static void on_message_delivered(void *context, MQTTAsync_token token);
 
             /** Called when the connection with the server is established successfully. */
             static void onConnect(void* context, MQTTAsync_successData* response);

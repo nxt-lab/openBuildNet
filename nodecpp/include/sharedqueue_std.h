@@ -41,15 +41,10 @@ public:
 private :
     std::deque<item_type> mData;
     mutable std::mutex mMut;
-    std::condition_variable &mEmptyCondition;   // condition variable to notify after pushing to queue
+    std::condition_variable mEmptyCondition;   // condition variable to notify after pushing to queue
     
 public:
-    /**
-     A condition_variable object must be given. After an item is pushed to the queue successfully, this condition variable will be notified. It is used by other threads to wait until the item is pushed.
-     
-     \param pc Reference to a valid condition_variable, that will be used to wait for item being pushed into the queue.
-     */
-    shared_queue(std::condition_variable& pc): mEmptyCondition(pc) { }
+    // shared_queue() { }
     
     ///@{
     /** Push an object into the queue.

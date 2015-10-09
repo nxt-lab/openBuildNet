@@ -178,6 +178,9 @@ namespace OBNnode {
         /** Called whenever a message is received. */
         static int on_message_arrived(void *context, char *topicName, int topicLen, MQTTAsync_message *message);
         
+        /** Called whenever a sent message has been delivered. */
+        static void on_message_delivered(void *context, MQTTAsync_token token);
+        
         /** Called when the connection with the server is established successfully. */
         static void onConnect(void* context, MQTTAsync_successData* response);
         
@@ -223,16 +226,18 @@ namespace OBNnode {
     /** The GC/SMN port in MQTT; it's just an input port. */
     class MQTTGCPort: public IMQTTInputPort {
         NodeBase* m_node;       // The node object to which the GC port will push events
-        
         OBNSimMsg::SMN2N m_smn_msg; ///< The internal ProtoBuf message for parsing incoming SMN2N messages
+        
     public:
-        MQTTGCPort(NodeBase* pnode = nullptr): m_node(pnode) { }
+        MQTTGCPort(NodeBase* pnode): m_node(pnode) {
+            assert(pnode);
+        }
         
         /** \brief Set the associated node object. */
-        void setNodeObject(NodeBase *pnode) {
-            assert(pnode);
-            m_node = pnode;
-        }
+//        void setNodeObject(NodeBase *pnode) {
+//            assert(pnode);
+//            m_node = pnode;
+//        }
         
         virtual void parse_message(void* msg, int msglen) override;
     };
@@ -541,56 +546,11 @@ namespace OBNnode {
     };
     
     
-    /** Base class for MQTTOutput classes that need a buffer. */
-    class MQTTOutputPortWithBufferBase: public MQTTOutputPortBase {
-    protected:
-        /** The binary data of the message */
-        char* m_data = nullptr;
-        
-        /** The actual size of the message, not exceeding the allocated size. */
-        size_t m_data_size;
-        
-        /** The size of the allocated memory buffer (m_data). */
-        size_t m_data_allocsize = 0;
-        
-        /** Allocate the memory block _data given the new size. It will reuse memory if possible. It will change _size. */
-        void allocateData(size_t newsize) {
-            assert(newsize >= 0);
-            
-            m_data_size = newsize;
-            
-            if (m_data) {
-                // If _allocsize >= _size, we reuse the memory block
-                if (m_data_allocsize < m_data_size) {
-                    delete [] m_data;
-                }
-            }
-            else {
-                m_data_allocsize = 0;  // Make sure that _allocsize < _size
-            }
-            
-            if (m_data_allocsize < m_data_size) {
-                m_data_allocsize = (m_data_size & 0x0F)?(((m_data_size >> 4)+1) << 4):m_data_size;
-                assert(m_data_allocsize >= m_data_size);
-                m_data = new char[m_data_allocsize];
-            }
-        }
-        
-    public:
-        MQTTOutputPortWithBufferBase(const std::string& _name, MQTTClient* t_client):
-        MQTTOutputPortBase(_name, t_client) { }
-        
-        virtual ~MQTTOutputPortWithBufferBase() {
-            if (m_data) { delete [] m_data; }
-        }
-    };
-    
-    
     /** Implementation of MQTTOutput for fixed data type encoded with ProtoBuf (OBN_PB).
      This class of MQTTOutput is not thread-safe because usually it's accessed in the main thread only.
      */
     template <typename D>
-    class MQTTOutput<OBN_PB, D>: public MQTTOutputPortWithBufferBase {
+    class MQTTOutput<OBN_PB, D>: public MQTTOutputPortBase {
         typedef OBN_DATA_TYPE_CLASS<D> _obn_data_type_class;
         
     public:
@@ -600,8 +560,9 @@ namespace OBNnode {
         ValueType m_cur_value;    ///< The value stored in this port
         typename _obn_data_type_class::PB_message_class m_PBMessage;   ///< The ProtoBuf message object to format the data
 
+        OBNsim::ResizableBuffer m_buffer;   ///< The buffer to store data
     public:
-        MQTTOutput(const std::string& _name, MQTTClient* t_client): MQTTOutputPortWithBufferBase(_name, t_client) { }
+        MQTTOutput(const std::string& _name, MQTTClient* t_client): MQTTOutputPortBase(_name, t_client) { }
         
         /** Get the current (read-only) value of the port.
          The value is copied out, which may be inefficient for large data (e.g. a large vector or matrix).
@@ -641,14 +602,14 @@ namespace OBNnode {
                 OBN_DATA_TYPE_CLASS<D>::writePBMessage(m_cur_value, m_PBMessage);
                 
                 // Generate the binary content
-                allocateData(m_PBMessage.ByteSize());
-                if (!m_PBMessage.SerializeToArray(m_data, m_data_size)) {
+                m_buffer.allocateData(m_PBMessage.ByteSize());
+                if (!m_PBMessage.SerializeToArray(m_buffer.data(), m_buffer.size())) {
                     // Error while serializing the raw message
                     throw OBNnode::outputport_error(this, OBNnode::outputport_error::ERR_SENDMSG);
                 }
                 
                 // Send the MQTT message
-                if (!m_mqtt_client->sendData(m_data, m_data_size, portTopicName())) {
+                if (!m_mqtt_client->sendData(m_buffer.data(), m_buffer.size(), portTopicName())) {
                     // Error while sending the message
                     throw OBNnode::outputport_error(this, OBNnode::outputport_error::ERR_SENDMSG);
                 }
@@ -666,11 +627,12 @@ namespace OBNnode {
      This class of MQTTOutput is not thread-safe because usually it's accessed in the main thread only.
      */
     template <typename PBCLS>
-    class MQTTOutput<OBN_PB_USER, PBCLS>: public MQTTOutputPortWithBufferBase {
+    class MQTTOutput<OBN_PB_USER, PBCLS>: public MQTTOutputPortBase {
         PBCLS m_cur_message;    ///< The ProtoBuf message stored in this port
+        OBNsim::ResizableBuffer m_buffer;   ///< The buffer to store data
         
     public:
-        MQTTOutput(const std::string& _name, MQTTClient* t_client): MQTTOutputPortWithBufferBase(_name, t_client) { }
+        MQTTOutput(const std::string& _name, MQTTClient* t_client): MQTTOutputPortBase(_name, t_client) { }
         
         /** Directly access the ProtoBuf message stored in this port; can change it (so it'll be marked as changed). */
         PBCLS& message() {
@@ -693,14 +655,14 @@ namespace OBNnode {
         virtual void sendSync() override {
             try {
                 // Generate the binary content
-                allocateData(m_cur_message.ByteSize());
-                if (!m_cur_message.SerializeToArray(m_data, m_data_size)) {
+                m_buffer.allocateData(m_cur_message.ByteSize());
+                if (!m_cur_message.SerializeToArray(m_buffer.data(), m_buffer.size())) {
                     // Error while serializing the raw message
                     throw OBNnode::outputport_error(this, OBNnode::outputport_error::ERR_SENDMSG);
                 }
                 
                 // Send the MQTT message
-                if (!m_mqtt_client->sendData(m_data, m_data_size, portTopicName())) {
+                if (!m_mqtt_client->sendData(m_buffer.data(), m_buffer.size(), portTopicName())) {
                     // Error while sending the message
                     throw OBNnode::outputport_error(this, OBNnode::outputport_error::ERR_SENDMSG);
                 }

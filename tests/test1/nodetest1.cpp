@@ -13,14 +13,9 @@
 #include <iostream>
 #include <obnnode.h>
 
-#ifndef OBNSIM_COMM_YARP
-#error This test requires YARP to run
-#endif
-
-
 /** The following macros are defined by CMake to indicate which libraries this SMN build supports:
- - OBNSIM_COMM_YARP: if YARP is supported for communication.
- - OBNSIM_SMN_COMM_MQTT: if MQTT is supported for communication.
+ - OBNNODE_COMM_YARP: if YARP is supported for communication.
+ - OBNNODE_COMM_MQTT: if MQTT is supported for communication.
  */
 
 using namespace OBNnode;
@@ -30,12 +25,22 @@ using std::endl;
 #define MAIN_UPDATE 0
 #define IRREG_UPDATE 1
 
+#ifdef OBNNODE_COMM_MQTT
+#define NODECLASS MQTTNode
+#else
+#ifdef OBNNODE_COMM_YARP
+#define NODECLASS YarpNode
+#else
+#error This program requires either Yarp or MQTT to run
+#endif
+#endif
+
 /* The main node class */
-class MyNode: public YarpNode {
+class MyNode: public NODECLASS {
     int counter;
     WaitForCondition* pWaitFor;
 public:
-    MyNode(const std::string& name, const std::string& ws = ""): YarpNode(name, ws), counter(0)
+    MyNode(const std::string& name, const std::string& ws = ""): NODECLASS(name, ws), counter(0)
     { }
     
     virtual ~MyNode() {
@@ -47,14 +52,15 @@ public:
     
     /* Implement this callback to process UPDATE_X. */
     virtual void onUpdateX(updatemask_t m) {
-        std::cout << "At " << _current_sim_time << " UPDATE_X (" << m << ")" << std::endl;
+        auto tsim = currentSimulationTime();
+        std::cout << "At " << tsim << " UPDATE_X (" << m << ")" << std::endl;
         if (pWaitFor) {
             // Check the result of future update request
             auto r = resultFutureUpdate(pWaitFor);
             if (r != 0) {
-                cout << "At " << _current_sim_time << " Event request was rejected." << endl;
+                cout << "At " << tsim << " Event request was rejected." << endl;
             } else {
-                cout << "At " << _current_sim_time << " Event request was accepted." << endl;
+                cout << "At " << tsim << " Event request was accepted." << endl;
             }
             pWaitFor = nullptr;
         }
@@ -64,12 +70,12 @@ public:
      This is different from initialize() above. */
     virtual void onInitialization() {
         // Initial state and output
-        std::cout << "At " << _current_sim_time << " INIT" << std::endl;
+        std::cout << "At " << currentSimulationTime() << " INIT" << std::endl;
     }
     
     /* This callback is called when the node's current simulation is about to be terminated. */
     virtual void onTermination() {
-        std::cout << "At " << _current_sim_time << " TERMINATED" << std::endl;
+        std::cout << "At " << currentSimulationTime() << " TERMINATED" << std::endl;
     }
     
     /* There are other callbacks for reporting errors, etc. */
@@ -81,33 +87,36 @@ public:
 /* Implement the callback for each update by specializing the template function. */
 template<>
 void MyNode::doUpdateY<MAIN_UPDATE>() {
+    auto tsim = currentSimulationTime();
     if (counter++ % 3 == 2) {
         // Request for future update (event)
-        pWaitFor = requestFutureUpdate(_current_sim_time + 13, 1 << IRREG_UPDATE, false);
+        pWaitFor = requestFutureUpdate(tsim + 13, 1 << IRREG_UPDATE, false);
         if (!pWaitFor) {
-            cout << "At " << _current_sim_time << " Problem: could not request event." << endl;
+            cout << "At " << tsim << " Problem: could not request event." << endl;
         }
     } else {
         pWaitFor = nullptr;
     }
-    std::cout << "At " << _current_sim_time << " Main UPDATE_Y" << std::endl;
+    std::cout << "At " << tsim << " Main UPDATE_Y" << std::endl;
 }
 
 template<>
 void MyNode::doUpdateY<IRREG_UPDATE>() {
-    std::cout << "At " << _current_sim_time << " Irregular UPDATE_Y" << std::endl;
+    std::cout << "At " << currentSimulationTime() << " Irregular UPDATE_Y" << std::endl;
 }
 
 bool MyNode::initialize() {
-    bool success = true;
+    // Open the SMN port
+    bool success = openSMNPort();
+    if (!success) {
+        std::cerr << "Error while opening the GC/SMN port.\n";
+        return false;
+    }
     
     // Add the updates
     // Here the updates are to be defined in the SMN, so we don't care about the details.
     success = success && (addUpdate(MAIN_UPDATE, std::bind(&MyNode::doUpdateY<MAIN_UPDATE>, this)) >= 0);
     success = success && (addUpdate(IRREG_UPDATE, std::bind(&MyNode::doUpdateY<IRREG_UPDATE>, this)) >= 0);
-    
-    // Open the SMN port
-    success = success && openSMNPort();
     
     return success;
 }

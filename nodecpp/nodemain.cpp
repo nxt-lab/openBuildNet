@@ -72,7 +72,7 @@ public:
         input2 = new YarpInput<OBN_PB, obn_vector<double>, false>("u2");
         
         bool success;
-        
+
 #ifdef OBNNODE_COMM_MQTT
         /** Start the MQTT Client. */
         m_mqtt_client.setClientID(full_name());
@@ -82,6 +82,11 @@ public:
         }
 #endif
         
+        // Open the SMN port
+        if (success && !(success = openSMNPort())) {
+            std::cerr << "Error while opening the GC port.\n";
+        }
+
         // Add the ports to the node
         if (success && !(success = addInput(&input1))) {
             std::cerr << "Error while adding input " << input1.getPortName() << std::endl;
@@ -137,9 +142,6 @@ public:
                 std::cerr << "Error while adding the second update with code: " << update_idx << std::endl;
             }
         }
-        
-        // Open the SMN port
-        success = success && openSMNPort();
         
         return success;
     }

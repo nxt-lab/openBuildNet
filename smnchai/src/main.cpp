@@ -65,6 +65,9 @@ void show_usage() {
 
 // Function to shut down the SMN, should be called before exiting
 void shutdown_SMN() {
+    // Wait a bit before shutting down so that we won't overload the nameserver (hopefully)
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    
     // Delete the communication objects (which are created dynamically in loadscript())
 #ifdef OBNSIM_COMM_YARP
     if (comm_objects.yarpThread) {
@@ -81,9 +84,6 @@ void shutdown_SMN() {
     
     // Shutdown ProtoBuf
     google::protobuf::ShutdownProtobufLibrary();
-    
-    // Wait a bit before shutting down so that we won't overload the nameserver (hopefully)
-    std::this_thread::sleep_for(std::chrono::seconds(3));
 }
 
 void shutdown_communication_threads(OBNsmn::GCThread& gc) {

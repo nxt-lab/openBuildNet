@@ -31,7 +31,7 @@ bool MQTTClient::start() {
     }
     
     // Set the callback
-    if ((rc = MQTTAsync_setCallbacks(m_client, this, &MQTTClient::on_connection_lost, &MQTTClient::on_message_arrived, NULL)) != MQTTASYNC_SUCCESS)
+    if ((rc = MQTTAsync_setCallbacks(m_client, this, &MQTTClient::on_connection_lost, &MQTTClient::on_message_arrived, NULL)) != MQTTASYNC_SUCCESS)  // &MQTTClient::on_message_delivered
     {
         return false;
     }
@@ -248,6 +248,8 @@ void MQTTClient::subscribeAllTopics(bool resubscribe) {
 
 void MQTTClient::on_connection_lost(void *context, char *cause)
 {
+    // std::cout << "Connection lost\n";
+    
     MQTTClient* client = static_cast<MQTTClient*>(context);
     
     // Retry to connect once
@@ -270,28 +272,31 @@ void MQTTClient::on_connection_lost(void *context, char *cause)
 
 int MQTTClient::on_message_arrived(void *context, char *topicName, int topicLen, MQTTAsync_message *message)
 {
-    MQTTClient* client = static_cast<MQTTClient*>(context);
-    
-    // copy the topic to C++ string
-    std::string topic;
-    if (topicLen <= 0) {
-        topic.assign(topicName);
-    } else {
-        topic.assign(topicName, topicLen);
-    }
-    
-    // Find if the topic is in the subscription list
-    std::lock_guard<std::mutex> lock(client->m_topics_mutex);
-    auto found = client->m_topics.find(topic);
-    if (found != client->m_topics.end()) {
-        // Ask the subscribing ports to process the message
-        for (auto& port: found->second) {
-            port->parse_message(message->payload, message->payloadlen);
+    // Ignore if the message is a duplicate
+    if (!(message->dup)) {
+        MQTTClient* client = static_cast<MQTTClient*>(context);
+        
+        // copy the topic to C++ string
+        std::string topic;
+        if (topicLen <= 0) {
+            topic.assign(topicName);
+        } else {
+            topic.assign(topicName, topicLen);
         }
-    } else {
-        // Not found
-        if (client->m_node) {
-            client->m_node->onOBNWarning("Unrecognized topic sent to MQTT: " + topic);
+        
+        // Find if the topic is in the subscription list
+        std::lock_guard<std::mutex> lock(client->m_topics_mutex);
+        auto found = client->m_topics.find(topic);
+        if (found != client->m_topics.end()) {
+            // Ask the subscribing ports to process the message
+            for (auto& port: found->second) {
+                port->parse_message(message->payload, message->payloadlen);
+            }
+        } else {
+            // Not found
+            if (client->m_node) {
+                client->m_node->onOBNWarning("Unrecognized topic sent to MQTT: " + topic);
+            }
         }
     }
     
@@ -301,8 +306,15 @@ int MQTTClient::on_message_arrived(void *context, char *topicName, int topicLen,
 }
 
 
+void MQTTClient::on_message_delivered(void *context, MQTTAsync_token token) {
+//    std::cout << "Message delivered: " << std::chrono::duration <double, std::nano> (std::chrono::steady_clock::now()-OBNsim::clockStart).count() << " ns\n";
+}
+
+
 void MQTTClient::onConnect(void* context, MQTTAsync_successData* response)
 {
+    // std::cout << "Connected\n";
+    
     MQTTClient* client = static_cast<MQTTClient*>(context);
 
     // Try to subscribe to topics
@@ -314,6 +326,8 @@ void MQTTClient::onConnect(void* context, MQTTAsync_successData* response)
 
 void MQTTClient::onConnectFailure(void* context, MQTTAsync_failureData* response)
 {
+    // std::cout << "Connect failed\n";
+    
     MQTTClient* client = static_cast<MQTTClient*>(context);
     // Notify of error
     client->m_notify_result = 1;
@@ -337,6 +351,8 @@ void MQTTClient::onSubscribeFailure(void* context, MQTTAsync_failureData* respon
 
 void MQTTClient::onReconnect(void* context, MQTTAsync_successData* response)
 {
+    // std::cout << "Reconnected\n";
+    
     MQTTClient* client = static_cast<MQTTClient*>(context);
     
     // Try to resubscribe to topics
@@ -347,6 +363,8 @@ void MQTTClient::onReconnect(void* context, MQTTAsync_successData* response)
 
 void MQTTClient::onReconnectFailure(void* context, MQTTAsync_failureData* response)
 {
+    // std::cout << "Reconnect failed.\n";
+    
     MQTTClient* client = static_cast<MQTTClient*>(context);
     
     // At this point, the client is not running

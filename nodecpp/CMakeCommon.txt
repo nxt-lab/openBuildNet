@@ -83,8 +83,15 @@ if(WITH_MQTT)
     link_libraries(${PAHOMQTT3A})
   endif()
   add_definitions(-DOBNNODE_COMM_MQTT)
-  set(OBNNODE_COMM_SRC ${OBNNODE_COMM_SRC} ${OBN_NODECPP_SOURCE_DIR}/obnnode_mqttport.cpp)
-  set(OBNNODE_COMM_HDR ${OBNNODE_COMM_HDR} ${OBN_NODECPP_INCLUDE_DIR}/obnnode_mqttport.h)
+  set(OBNNODE_COMM_SRC ${OBNNODE_COMM_SRC}
+    ${OBN_NODECPP_SOURCE_DIR}/obnnode_mqttnode.cpp
+    ${OBN_NODECPP_SOURCE_DIR}/obnnode_mqttport.cpp
+  )
+  set(OBNNODE_COMM_HDR ${OBNNODE_COMM_HDR}
+    ${OBN_NODECPP_INCLUDE_DIR}/obnnode_mqttnode.h
+    ${OBN_NODECPP_INCLUDE_DIR}/obnnode_mqttport.h
+    ${OBN_NODECPP_INCLUDE_DIR}/sharedqueue_std.h
+  )
 endif(WITH_MQTT)
 
 

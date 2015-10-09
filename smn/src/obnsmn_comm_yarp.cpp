@@ -13,27 +13,6 @@
 
 using namespace OBNsmn::YARP;
 
-void YARPMsg::allocateData(size_t newsize) {
-    assert(newsize > 0);
-    
-    _size = newsize;
-    
-    if (_data) {
-        // If _allocsize >= _size, we reuse the memory block
-        if (_allocsize < _size) {
-            delete [] _data;
-        }
-    }
-    else {
-        _allocsize = 0;  // Make sure that _allocsize < _size
-    }
-    
-    if (_allocsize < _size) {
-        _allocsize = (_size & 0x0F)?(((_size >> 4)+1) << 4):_size;
-        assert(_allocsize >= _size);
-        _data = new char[_allocsize];
-    }
-}
 
 bool YARPMsg::read(yarp::os::ConnectionReader& connection) {
     if (connection.isError()) {
@@ -42,13 +21,13 @@ bool YARPMsg::read(yarp::os::ConnectionReader& connection) {
     
     int newsize = connection.expectInt();
     if (newsize <= 0) {
-        _size = 0;
+        m_msgbuffer.allocateData(0);
         return newsize<0?false:true;
     }
     
-    allocateData(newsize);
+    m_msgbuffer.allocateData(newsize);
     
-    return connection.expectBlock(_data, _size);
+    return connection.expectBlock(m_msgbuffer.data(), m_msgbuffer.size());
 }
 
 

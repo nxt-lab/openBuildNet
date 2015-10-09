@@ -170,8 +170,8 @@ namespace OBNnode {
         }
         
         /** \brief The full name of the node, with workspace prefix, e.g. "powerdemo/node1". */
-        const std::string& full_name() const {
-            return _nodeName;
+        std::string full_name() const {
+            return _workspace + _nodeName;
         }
         
         /** Return full path to a port in this node. */

@@ -58,9 +58,9 @@ namespace SMNChai {
     
     /** Communication protocol/platform selection. */
     enum CommProtocol {
-        COMM_DEFAULT,   // For nodes: default option set by the system; for ports: any comm. protocol
-        COMM_YARP,
-        COMM_MQTT
+        COMM_DEFAULT = 0,   // For nodes: default option set by the system; for ports: any comm. protocol
+        COMM_YARP = 1,
+        COMM_MQTT = 2
     };
     
     /** Returns the Communication protocol value from a string.
@@ -69,7 +69,6 @@ namespace SMNChai {
      \exception smnchai_exception if the specified protocol is not supported (built into SMNChai).
      */
     CommProtocol comm_protocol_from_string(const std::string& t_comm);
-    
     
     /** \brief Information about a port on a node, used for specifying connections. */
     struct PortInfo {
@@ -478,6 +477,9 @@ namespace SMNChai {
         
         /** Utility function to print workspace's details to std::cout. */
         void print() const;
+        
+        /** Utility function to print the settings to std::cout. */
+        void print_settings() const;
         
         /** \brief Generate the OBN system of this workspace into the given GC object.
          

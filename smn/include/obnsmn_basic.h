@@ -11,6 +11,7 @@
 #ifndef OBNSMN_BASIC_H
 #define OBNSMN_BASIC_H
 
+#include <chrono>
 #include <obnsim_basic.h>
 
 namespace OBNsmn {

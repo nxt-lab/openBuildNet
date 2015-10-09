@@ -32,6 +32,11 @@ using namespace SMNChai;
 const char *NODE_GC_PORT_NAME = "_gc_";
 std::string Node::m_global_prefix = "";
 
+const char* CommProtocolNames[] = {
+    "default", "yarp", "mqtt"
+};
+
+
 /** This function register all the functions, types, etc. provided by the SMNChai API to a given ChaiScript object.
  \param chai The ChaiScript object to which the API is registered.
  \param ws The WorkSpace object to which nodes and connections are added.
@@ -63,6 +68,7 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     
     chai.add(fun(&Node::add_update), "add_update");
     chai.add(fun(&Node::set_need_updateX), "need_updateX");
+    chai.add(fun(&Node::set_comm_protocol), "set_comm");   // a string of the name of the communication protocol: default, mqtt, yarp
     
     chai.add(fun(&Node::input_to_update), "input_to_update");
     chai.add(fun(&Node::output_from_update), "output_from_update");
@@ -632,17 +638,34 @@ void SMNChai::WorkSpace::connect(const std::string &from_node, const std::string
 
 
 void SMNChai::WorkSpace::print() const {
-    std::cout << "Workspace '" << m_name << "'" << std::endl;
+    print_settings();
+    
+    std::cout << "\n";
+    
     std::cout << "List of nodes:" << std::endl;
     for (auto n: m_nodes) {
-        std::cout << n.second.node.get_name() << ' ';
+        std::cout << n.second.node.get_name();
+        if (n.second.node.m_comm_protocol != COMM_DEFAULT) {
+            std::cout << "(" << CommProtocolNames[int(n.second.node.m_comm_protocol)] << ")";
+        }
+        std::cout << ' ';
     }
-    std::cout << "\nList of connections:" << std::endl;
+    std::cout << "\n\nList of connections:" << std::endl;
     for (auto c: m_connections) {
         std::cout << c.first.node_name << '/' << c.first.port_name << " -> " << c.second.node_name << '/' << c.second.port_name << std::endl;
     }
 }
 
+void SMNChai::WorkSpace::print_settings() const {
+    std::cout << "Settings:\n" <<
+    "+ Workspace: '" << m_name << "'" << std::endl <<
+    "+ Time unit (in us): " << m_settings.m_time_unit << std::endl <<
+    "+ Final time (in us): " << m_settings.m_final_time << std::endl <<
+    "+ ACK timeout (in ms): " << m_settings.m_ack_timeout << std::endl <<
+    "+ Begin wallclock: " << std::ctime(&m_settings.m_wallclock) <<
+    "+ Default communication: " << CommProtocolNames[int(m_settings.m_comm)] << std::endl <<
+    "+ MQTT server: " << m_settings.m_mqtt_server << std::endl;
+}
 
 std::string SMNChai::WorkSpace::get_full_path(const std::string &t_obj1, const std::string &t_obj2) const {
     assert(!t_obj1.empty());

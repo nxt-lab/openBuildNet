@@ -23,7 +23,6 @@ set(OBNSMN_COMM_SRC "")
 set(OBNSMN_COMM_HDR "")
 
 ## To use YARP (optionally)
-option(WITH_YARP "Build SMNChai with YARP support for communication." ON)
 if(WITH_YARP)
   find_package(YARP REQUIRED)
   include_directories(${YARP_INCLUDE_DIRS})
@@ -36,8 +35,7 @@ endif(WITH_YARP)
 
 
 ## To use MQTT (optionally)
-option(WITH_PAHOMQTT "Build SMNChai with Paho MQTT support for communication." OFF)
-if(WITH_PAHOMQTT)
+if(WITH_MQTT)
   find_library(PAHOMQTT3A NAMES paho-mqtt3a)
   if(PAHOMQTT3A_NOTFOUND)
     # Use the local source files (submodule)
@@ -55,7 +53,7 @@ if(WITH_PAHOMQTT)
   add_definitions(-DOBNSIM_COMM_MQTT)
   set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${OBNSMN_SRC_DIR}/obnsmn_comm_mqtt.cpp)
   set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${OBNSMN_INCLUDE_DIR}/obnsmn_comm_mqtt.h)
-endif(WITH_PAHOMQTT)
+endif(WITH_MQTT)
 
 ## These are the include directories used by the compiler.
 
@@ -131,6 +129,13 @@ ADD_EXECUTABLE(nodectrl
 	nodectrl.cpp
 	${OBNNODE_CORE_SRCFILES}
 )
+
+if(WITH_MQTT)
+	add_executable(nodectrl_mqtt
+		nodectrl_mqtt.cpp
+		${OBNNODE_CORE_SRCFILES}
+	)
+endif()
 
 ADD_EXECUTABLE(nodesetpoint
 	nodesetpoint.cpp

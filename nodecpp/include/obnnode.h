@@ -14,4 +14,5 @@
 
 #ifdef OBNNODE_COMM_MQTT
 #include <obnnode_mqttport.h>
+#include <obnnode_mqttnode.h>
 #endif

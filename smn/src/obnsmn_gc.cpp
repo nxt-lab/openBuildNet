@@ -10,6 +10,7 @@
  * \author Truong X. Nghiem (xuan.nghiem@epfl.ch)
  */
 
+#include <chrono>
 #include <iostream>
 #include <algorithm>
 #include <obnsmn_gc.h>
@@ -77,7 +78,7 @@
 
 
 using namespace OBNsmn;
-
+using namespace std;
 
 // This function is the entry point for the GC thread.
 void GCThread::GCThreadMain() {
@@ -116,7 +117,7 @@ void GCThread::GCThreadMain() {
             // Error, can't continue simulation
             break;
         }
-        
+
         // Update-Y
         if (gc_update_size > 0) {
             // Create the run-time node graph, for regular updates

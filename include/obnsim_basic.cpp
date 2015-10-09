@@ -8,10 +8,13 @@
  * \author Truong X. Nghiem (xuan.nghiem@epfl.ch)
  */
 
+#include <cassert>
 #include <obnsim_basic.h>
 #include <cctype>
 
 using namespace std;
+
+// std::chrono::time_point<std::chrono::steady_clock> OBNsim::clockStart;
 
 std::string OBNsim::Utils::trim(const std::string& s0) {
     string s(s0);
@@ -61,4 +64,26 @@ bool OBNsim::Utils::isValidNodeName(const std::string &name) {
     // Double forward slashes are invalid
     // Underscore following / is also invalid
     return (name.find("//") == string::npos) && (name.find("/_") == string::npos);
+}
+
+void OBNsim::ResizableBuffer::allocateData(std::size_t newsize) {
+    assert(newsize >= 0);
+    
+    m_data_size = newsize;
+    
+    if (m_data) {
+        // If _allocsize >= _size, we reuse the memory block
+        if (m_data_allocsize < m_data_size) {
+            delete [] m_data;
+        }
+    }
+    else {
+        m_data_allocsize = 0;  // Make sure that _allocsize < _size
+    }
+    
+    if (m_data_allocsize < m_data_size) {
+        m_data_allocsize = (m_data_size & 0x0F)?(((m_data_size >> 4)+1) << 4):m_data_size;
+        assert(m_data_allocsize >= m_data_size);
+        m_data = new char[m_data_allocsize];
+    }
 }

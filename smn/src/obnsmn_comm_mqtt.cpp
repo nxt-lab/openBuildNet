@@ -8,6 +8,7 @@
  * \author Truong X. Nghiem (xuan.nghiem@epfl.ch)
  */
 
+#include <obnsmn_basic.h>
 #include <obnsmn_comm_mqtt.h>
 
 using namespace OBNsmn::MQTT;
@@ -30,7 +31,8 @@ bool MQTTClient::start() {
     }
     
     // Set the callback
-    if ((rc = MQTTAsync_setCallbacks(m_client, this, &MQTTClient::on_connection_lost, &MQTTClient::on_message_arrived, NULL)) != MQTTASYNC_SUCCESS) {
+    if ((rc = MQTTAsync_setCallbacks(m_client, this, &MQTTClient::on_connection_lost, &MQTTClient::on_message_arrived, NULL)) != MQTTASYNC_SUCCESS)  // &MQTTClient::on_message_delivered
+    {
         OBNsmn::report_error(0, "MQTT error: could not set callbacks with error code = " + std::to_string(rc));
         return false;
     }
@@ -121,12 +123,10 @@ bool MQTTClient::sendMessage(const OBNSimMsg::SMN2N &msg, const std::string& top
 
 
 bool MQTTClient::sendMessageToGC(const OBNSimMsg::SMN2N &msg) {
-    // Call the previous function if available
-    if (m_prev_gc_sendmsg_to_sys_port) {
-        return m_prev_gc_sendmsg_to_sys_port(msg);
-    }
+    bool result = sendMessage(msg, m_portName);
+    bool resultNext = m_prev_gc_sendmsg_to_sys_port?m_prev_gc_sendmsg_to_sys_port(msg):true;
     
-    return sendMessage(msg, m_portName);
+    return result && resultNext;
 }
 
 
@@ -155,22 +155,31 @@ void MQTTClient::on_connection_lost(void *context, char *cause)
 
 
 int MQTTClient::on_message_arrived(void *context, char *topicName, int topicLen, MQTTAsync_message *message)
-{
-    MQTTClient* client = static_cast<MQTTClient*>(context);
-    
-    // Check main GC topic
-    bool isTopic = topicLen>0?(client->m_portName.compare(0, std::string::npos, topicName, topicLen) == 0):(client->m_portName == topicName);
-    if (isTopic) {
-        // Get message and Push to queue
-        if (client->m_n2smn_msg.ParseFromArray(message->payload, message->payloadlen)) {
-            client->pGC->pushNodeEvent(client->m_n2smn_msg, 0);
-        } else {
-            OBNsmn::report_error(0, "Critical error: error while parsing input message to MQTT.");
+{    
+    // Ignore if the message is a duplicate
+    if (!(message->dup)) {
+        MQTTClient* client = static_cast<MQTTClient*>(context);
+        
+        // Check main GC topic
+        bool isTopic = topicLen>0?(client->m_portName.compare(0, std::string::npos, topicName, topicLen) == 0):(client->m_portName == topicName);
+        if (isTopic) {
+            // Get message and Push to queue
+            if (client->m_n2smn_msg.ParseFromArray(message->payload, message->payloadlen)) {
+                client->pGC->pushNodeEvent(client->m_n2smn_msg, 0);
+            } else {
+                OBNsmn::report_error(0, "Critical error: error while parsing input message to MQTT.");
+            }
         }
     }
+    
     MQTTAsync_freeMessage(&message);
     MQTTAsync_free(topicName);
     return 1;
+}
+
+
+void MQTTClient::on_message_delivered(void *context, MQTTAsync_token token) {
+    // std::cout << "Message delivered: " << std::chrono::duration <double, std::nano> (std::chrono::steady_clock::now()-OBNsim::clockStart).count() << " ns\n";
 }
 
 
@@ -291,6 +300,8 @@ void OBNNodeMQTT::allocateBuffer(size_t newsize) {
  \see sendMessageSync()
  */
 bool OBNNodeMQTT::sendMessage(int nodeID, OBNSimMsg::SMN2N &msg) {
+    // OBNsim::clockStart = std::chrono::steady_clock::now();
+    
     msg.set_id(nodeID);
     
     // Allocate buffer to store the bytes of the message
@@ -320,5 +331,8 @@ bool OBNNodeMQTT::sendMessage(int nodeID, OBNSimMsg::SMN2N &msg) {
         return false;
     }
     
+    
+    // std::cout << "Message sent: " << std::chrono::duration <double, std::nano> (std::chrono::steady_clock::now()-OBNsim::clockStart).count() << " ns\n";
+
     return true;
 }

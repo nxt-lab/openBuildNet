@@ -48,45 +48,31 @@ namespace OBNsmn {
          It manages the allocated size (_allocsize) and the actual size of the current message (_size).
          */
         class YARPMsg : public yarp::os::Portable {
+        private:
+            OBNsim::ResizableBuffer m_msgbuffer;    // Resizable buffer for the message
         public:
             virtual bool write(yarp::os::ConnectionWriter& connection) {
-                connection.appendInt(_size);
-                connection.appendExternalBlock(_data, _size);
+                auto sz = m_msgbuffer.size();
+                connection.appendInt(sz);
+                connection.appendExternalBlock(m_msgbuffer.data(), sz);
                 return true;
             }
             virtual bool read(yarp::os::ConnectionReader& connection);
             
             /** \brief Set the contents of the SMN2N message. */
             bool setMessage(const OBNSimMsg::SMN2N &msg) {
-                allocateData(msg.ByteSize());
-                return msg.SerializeToArray(_data, _size);
+                m_msgbuffer.allocateData(msg.ByteSize());
+                return msg.SerializeToArray(m_msgbuffer.data(), m_msgbuffer.size());
             }
             
             /** \brief Get the contents of the message to a N2SMN object. */
             bool getMessage(OBNSimMsg::N2SMN &msg) const {
-                if (!_data || _size <= 0) {
+                if (!m_msgbuffer.data() || m_msgbuffer.size() <= 0) {
                     return false;
                 }
-                return msg.ParseFromArray(_data, _size);
+                return msg.ParseFromArray(m_msgbuffer.data(), m_msgbuffer.size());
             }
-            
-            virtual ~YARPMsg() {
-                if (_data) {
-                    delete [] _data;
-                }
-            }
-        private:
-            /** The binary data of the message */
-            char* _data = nullptr;
-            
-            /** The actual size of the message, not exceeding the allocated size. */
-            size_t _size;
-            
-            /** The size of the allocated memory buffer (_data). */
-            size_t _allocsize = 0;
-            
-            /** Allocate the memory block _data given the new size. It will reuse memory if possible. It will change _size. */
-            void allocateData(size_t newsize);
+
         };
         
         

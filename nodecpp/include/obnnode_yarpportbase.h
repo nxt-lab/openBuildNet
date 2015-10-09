@@ -30,10 +30,13 @@ namespace OBNnode {
      It manages the allocated size (_allocsize) and the actual size of the current message (_size).
      */
     class YARPMsgBin : public yarp::os::Portable {
+    protected:
+        OBNsim::ResizableBuffer m_buffer;   ///< The buffer to store data
+
     public:
         virtual bool write(yarp::os::ConnectionWriter& connection) {
-            connection.appendInt(_size);
-            connection.appendExternalBlock(_data, _size);
+            connection.appendInt(m_buffer.size());
+            connection.appendExternalBlock(m_buffer.data(), m_buffer.size());
             return true;
         }
         virtual bool read(yarp::os::ConnectionReader& connection) {
@@ -43,13 +46,13 @@ namespace OBNnode {
             
             int newsize = connection.expectInt();
             if (newsize <= 0) {
-                _size = 0;
+                m_buffer.allocateData(0);
                 return newsize<0?false:true;
             }
             
-            allocateData(newsize);
+            m_buffer.allocateData(newsize);
             
-            return connection.expectBlock(_data, _size);
+            return connection.expectBlock(m_buffer.data(), m_buffer.size());
         }
         
         /** \brief Set the contents of the message by a byte string.
@@ -58,8 +61,8 @@ namespace OBNnode {
          \param len Length of the binary data, in bytes.
          */
         void setBinaryData(const void* msg, size_t len) {
-            allocateData(len);
-            memcpy(_data, msg, len);
+            m_buffer.allocateData(len);
+            memcpy(m_buffer.data(), msg, len);
         }
         
         /** \brief Set the contents of the message by a std::string.
@@ -67,57 +70,18 @@ namespace OBNnode {
          \param s The std::string to copy from.
          */
         void setBinaryData(const std::string &s) {
-            allocateData(s.length());
-            s.copy(_data, s.length());
+            m_buffer.allocateData(s.length());
+            s.copy(m_buffer.data(), s.length());
         }
         
         /** \brief Get the pointer to the binary contents of the message. */
         const char* getBinaryData() const {
-            return _data;
+            return m_buffer.data();
         }
         
         /** \brief Return the size in bytes of the current binary data. */
         size_t getBinaryDataSize() const {
-            return _size;
-        }
-        
-        virtual ~YARPMsgBin() {
-            if (_data) {
-                delete [] _data;
-            }
-        }
-        
-    protected:
-        /** The binary data of the message */
-        char* _data = nullptr;
-        
-        /** The actual size of the message, not exceeding the allocated size. */
-        size_t _size;
-        
-        /** The size of the allocated memory buffer (_data). */
-        size_t _allocsize = 0;
-        
-        /** Allocate the memory block _data given the new size. It will reuse memory if possible. It will change _size. */
-        void allocateData(size_t newsize) {
-            assert(newsize >= 0);
-            
-            _size = newsize;
-            
-            if (_data) {
-                // If _allocsize >= _size, we reuse the memory block
-                if (_allocsize < _size) {
-                    delete [] _data;
-                }
-            }
-            else {
-                _allocsize = 0;  // Make sure that _allocsize < _size
-            }
-            
-            if (_allocsize < _size) {
-                _allocsize = (_size & 0x0F)?(((_size >> 4)+1) << 4):_size;
-                assert(_allocsize >= _size);
-                _data = new char[_allocsize];
-            }
+            return m_buffer.size();
         }
     };
     
@@ -142,16 +106,16 @@ namespace OBNnode {
         
         /** \brief Set the binary contents of the message from a ProtoBuf message object, to be sent over Yarp. */
         bool setMessage(const TW &msg) {
-            allocateData(msg.ByteSize());
-            return msg.SerializeToArray(_data, _size);
+            m_buffer.allocateData(msg.ByteSize());
+            return msg.SerializeToArray(m_buffer.data(), m_buffer.size());
         }
         
         /** \brief Get the ProtoBuf message object from the binary contents of the message received from Yarp. */
         bool getMessage(TR &msg) const {
-            if (!_data) {
+            if (!m_buffer.data()) {
                 return false;
             }
-            return msg.ParseFromArray(_data, _size);
+            return msg.ParseFromArray(m_buffer.data(), m_buffer.size());
         }
     };
     

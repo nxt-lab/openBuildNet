@@ -15,11 +15,16 @@
 #include <obnsmn_report.h>
 #include <obnsmn_gc.h>   // The GC thread
 
-#ifndef OBNSIM_COMM_YARP
-#error This test requires YARP to run
+#if !defined(OBNSIM_COMM_YARP) && !defined(OBNSIM_COMM_MQTT)
+#error This test requires YARP or MQTT to run
 #endif
 
+
+#ifdef OBNSIM_COMM_MQTT
+#include <obnsmn_comm_mqtt.h>
+#else
 #include <obnsmn_comm_yarp.h>
+#endif
 
 // Implement reporting functions for the SMN
 void OBNsmn::report_error(int code, std::string msg) {
@@ -35,31 +40,40 @@ void OBNsmn::report_info(int code, std::string msg) {
 }
 
 
-
-/** The following macros are defined by CMake to indicate which libraries this SMN build supports:
- - OBNSIM_COMM_YARP: if YARP is supported for communication.
- - OBNSIM_SMN_COMM_MQTT: if MQTT is supported for communication.
- */
-
-
 int main() {
+#ifndef OBNSIM_COMM_MQTT
     yarp::os::Network yarp;
-    
     OBNsmn::YARP::YARPPort gcPort;
-    
     bool ok = gcPort.open("/test1/_smn_/node1");
     if (!ok) {
-        std::cout << "Failed to create ports." << std::endl;
+        std::cerr << "Failed to create ports." << std::endl;
         return 1;
     }
+#endif
 
     // The Global clock thread
     OBNsmn::GCThread gc;
+    
+#ifdef OBNSIM_COMM_MQTT
+    OBNsmn::MQTT::MQTTClient mqttClient(&gc);
+    mqttClient.setClientID("test1");
+    mqttClient.setPortName("test1/_smn_/_gc_");
+    mqttClient.setServerAddress("tcp://localhost:1883");
+    if (!mqttClient.start()) {
+        std::cerr << "ERROR: could not start MQTT communication thread." << std::endl;
+        return 1;
+    }
+#endif
 
     // ======== Creating node =========
     
     // In this test, we create one node
+#ifdef OBNSIM_COMM_MQTT
+    OBNsmn::MQTT::OBNNodeMQTT* pnode = new OBNsmn::MQTT::OBNNodeMQTT("node1", 2, "test1/node1/_gc_", &mqttClient);
+#else
     OBNsmn::YARP::OBNNodeYARP* pnode = new OBNsmn::YARP::OBNNodeYARP("node1", 2, &gcPort);
+#endif
+    
     pnode->setUpdateType(0, 10);  // bit mask 0
     pnode->setUpdateType(1, 0);  // bit mask 1 -> irregular update
 
@@ -72,9 +86,9 @@ int main() {
     
     // Configure the GC
     gc.ack_timeout = 0;
-    gc.setFinalSimulationTime(100);
+    gc.setFinalSimulationTime(30);
 
-    
+#ifndef OBNSIM_COMM_MQTT
     // The YARP communication thread for GC's incoming port
     OBNsmn::YARP::YARPPollingThread yarpThread(&gc, "/test1/_smn_/_gc_");
     if (!yarpThread.startThread()) {
@@ -87,11 +101,13 @@ int main() {
     
     // However, each node has only one IO port to communicate with GC, and all nodes send to the same GC input port
     yarp.connect("/test1/node1/_gc_", "/test1/_smn_/_gc_");
+#endif
+
     
     // Start running the GC thread
     if (!gc.startThread()) {
         std::cout << "Error: cannot start GC thread." << std::endl;
-        return 1;
+        return 2;
     }
     
     
@@ -100,12 +116,16 @@ int main() {
     
     //Join the threads with the main thread
     gc.joinThread();
+    
+#ifndef OBNSIM_COMM_MQTT
     yarpThread.joinThread();
- 
+#endif
     
     //////////////////////
     // Clean up before exiting
     //////////////////////
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    
     google::protobuf::ShutdownProtobufLibrary();
     
     return 0;
