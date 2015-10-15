@@ -13,6 +13,9 @@
 
 using namespace OBNsmn::MQTT;
 
+// The regex expression to check for topics of node arrival announcements
+std::regex OBNsmn::MQTT::MQTTClient::online_nodes_topic_regex("^(\\w+/)?_smn_/_nodes_/(\\w+)$", std::regex::ECMAScript|std::regex::optimize);
+
 bool MQTTClient::start() {
     if (m_running) return false;  // Already running
     if (!pGC) return false;    // pGC must point to a valid GC object
@@ -55,9 +58,9 @@ bool MQTTClient::start() {
     m_notify_done = false;
     m_notify_var.wait(mylock, [this](){ return m_notify_done; });
     
-    m_running = true;
+    m_running = (m_notify_result == 0);
     
-    return true;
+    return m_running;
 }
 
 
@@ -89,17 +92,8 @@ void MQTTClient::stop() {
 }
 
 
-bool MQTTClient::sendMessage(const OBNSimMsg::SMN2N &msg, const std::string& topic) {
+int MQTTClient::sendMessage(char* msg, std::size_t msglen, const std::string& topic, int retained) {
     if (topic.empty()) {
-        return false;
-    }
-    
-    // Allocate buffer to store the bytes of the message
-    auto msgsize = msg.ByteSize();
-    char* buffer = new char[msgsize];
-    
-    if (!msg.SerializeToArray(buffer, msgsize)) {
-        delete [] buffer;
         return false;
     }
     
@@ -109,16 +103,30 @@ bool MQTTClient::sendMessage(const OBNSimMsg::SMN2N &msg, const std::string& top
     // Set the callback opts.onSuccess if we want to make synchronous wait, also the next line
     // opts.context = m_client->m_client;
     
-    pubmsg.payload = buffer;
-    pubmsg.payloadlen = msgsize;
+    pubmsg.payload = msg;
+    pubmsg.payloadlen = msglen;
     pubmsg.qos = MQTTClient::QOS;
-    pubmsg.retained = 0;
+    pubmsg.retained = retained;
     
     // Request to send the message
-    int rc = MQTTAsync_sendMessage(m_client, topic.c_str(), &pubmsg, &opts);
+    return MQTTAsync_sendMessage(m_client, topic.c_str(), &pubmsg, &opts);
+}
+
+
+int MQTTClient::sendMessage(const OBNSimMsg::SMN2N &msg, const std::string& topic, int retained) {
+    if (topic.empty()) {
+        return false;
+    }
     
-    delete [] buffer;
-    return (rc == MQTTASYNC_SUCCESS);
+    // Allocate buffer to store the bytes of the message
+    auto msgsize = msg.ByteSize();
+    char buffer[msgsize];
+    
+    if (!msg.SerializeToArray(buffer, msgsize)) {
+        return false;
+    }
+
+    return sendMessage(buffer, msgsize, topic, retained);
 }
 
 
@@ -127,6 +135,75 @@ bool MQTTClient::sendMessageToGC(const OBNSimMsg::SMN2N &msg) {
     bool resultNext = m_prev_gc_sendmsg_to_sys_port?m_prev_gc_sendmsg_to_sys_port(msg):true;
     
     return result && resultNext;
+}
+
+
+/* Start waiting for nodes to announce their arrivals. */
+bool MQTTClient::startListeningForArrivals(const std::string& t_workspace) {
+    if (!m_running) {
+        // The client must already be running
+        return false;
+    }
+    
+    if (m_listening_for_arrivals) {
+        // Already listening
+        return true;
+    }
+    
+    // subscribe to the topic
+    MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
+    int rc;
+    opts.onSuccess = &MQTTClient::onSubscribe;
+    opts.onFailure = &MQTTClient::onSubscribeFailure;
+    opts.context = this;
+    
+    auto topic_name = t_workspace + "_smn_/_nodes_/+";  // subscribe to all nodes' announcements
+    
+    if ((rc = MQTTAsync_subscribe(m_client, topic_name.c_str(), MQTTClient::QOS, &opts)) != MQTTASYNC_SUCCESS)
+    {
+        OBNsmn::report_error(0, "MQTT error: failed to start subscribe with error code = " + std::to_string(rc));
+        return false;
+    }
+    
+    // Wait until subscribed successfully (or failed)
+    std::unique_lock<std::mutex> mylock(m_notify_mutex);
+    m_notify_done = false;
+    m_notify_var.wait(mylock, [this](){ return m_notify_done; });
+    
+    m_listening_for_arrivals = (m_notify_result == 0);
+    m_online_nodes_topic = topic_name;
+    
+    //std::cout << "Start listening for arrivals: " << topic_name << std::endl;
+    
+    return m_listening_for_arrivals;
+}
+
+/* Stop waiting for nodes to announce their arrivals. */
+void MQTTClient::stopListeningForArrivals() {
+    if (m_running && m_listening_for_arrivals) {
+        // Unsubscribe from the topic
+        MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
+        int rc;
+        // opts.context = this;
+        
+        if ((rc = MQTTAsync_unsubscribe(m_client, m_online_nodes_topic.c_str(), &opts)) != MQTTASYNC_SUCCESS)
+        {
+            OBNsmn::report_error(0, "MQTT error: failed to unsubscribe for nodes' arrival announcements with error code = " + std::to_string(rc));
+        }
+        
+        //std::cout << "Stop listening for arrivals\n";
+    }
+}
+
+/* Check if a given node has announced its arrival. */
+bool MQTTClient::checkNodeOnline(const std::string& name) {
+    std::lock_guard<std::mutex> mylock(m_online_nodes_mutex);
+    return m_online_nodes.count(name) != 0;
+}
+
+void MQTTClient::clearListOfOnlineNodes() {
+    std::lock_guard<std::mutex> mylock(m_online_nodes_mutex);
+    m_online_nodes.clear();
 }
 
 
@@ -160,14 +237,44 @@ int MQTTClient::on_message_arrived(void *context, char *topicName, int topicLen,
     if (!(message->dup)) {
         MQTTClient* client = static_cast<MQTTClient*>(context);
         
+        // std::cout << "msgrcvd: " << topicName << "retained " << message->retained << "len " << message->payloadlen << "track " << client->m_listening_for_arrivals << std::endl;
+        
         // Check main GC topic
-        bool isTopic = topicLen>0?(client->m_portName.compare(0, std::string::npos, topicName, topicLen) == 0):(client->m_portName == topicName);
-        if (isTopic) {
+        bool isGCTopic = topicLen>0?(client->m_portName.compare(0, std::string::npos, topicName, topicLen) == 0):(client->m_portName == topicName);
+        if (isGCTopic) {
             // Get message and Push to queue
             if (client->m_n2smn_msg.ParseFromArray(message->payload, message->payloadlen)) {
                 client->pGC->pushNodeEvent(client->m_n2smn_msg, 0);
             } else {
                 OBNsmn::report_error(0, "Critical error: error while parsing input message to MQTT.");
+            }
+        } else if (message->payloadlen > 0 && client->m_listening_for_arrivals) {
+            // If listening for nodes' arrivals, check if this is an arrival announcement
+            
+            // Copy the topic name to a std::string for easy access
+            std::string theTopic;
+            if (topicLen == 0) {
+                theTopic.assign(topicName);
+            } else {
+                theTopic.assign(topicName, topicLen);
+            }
+            
+            //std::cout << "Arrival: " << theTopic << "(" << std::string((const char*)message->payload, message->payloadlen) << ")" << std::endl;
+            
+            std::smatch m;
+            bool isArrivalTopic = std::regex_match(theTopic, m, MQTTClient::online_nodes_topic_regex);
+            if (isArrivalTopic) {
+                // The node names must match
+                if (m.str(2).compare(0, std::string::npos, (const char*)(message->payload), message->payloadlen) == 0) {
+                    {
+                        // Add this node to the list
+                        std::lock_guard<std::mutex> mylock(client->m_online_nodes_mutex);
+                        client->m_online_nodes.emplace((const char*)(message->payload), message->payloadlen);
+                    }
+                    
+                    // Send an empty retained message to the topic to delete the retained message on the broker
+                    client->sendMessage(nullptr, 0, theTopic, 1);
+                }
             }
         }
     }
@@ -198,7 +305,7 @@ void MQTTClient::onConnect(void* context, MQTTAsync_successData* response)
     if ((rc = MQTTAsync_subscribe(client->m_client, client->m_portName.c_str(), MQTTClient::QOS, &opts)) != MQTTASYNC_SUCCESS)
     {
         OBNsmn::report_error(0, "MQTT error: failed to start subscribe with error code = " + std::to_string(rc));
-        client->notify_done();
+        client->notify_done(1);
     }
 }
 
@@ -207,7 +314,7 @@ void MQTTClient::onConnectFailure(void* context, MQTTAsync_failureData* response
 {
     MQTTClient* client = static_cast<MQTTClient*>(context);
     OBNsmn::report_error(0, "MQTT error: connect failed with error code = " + std::to_string(response ? response->code : 0));
-    client->notify_done();
+    client->notify_done(1);
 }
 
 
@@ -223,7 +330,7 @@ void MQTTClient::onSubscribe(void* context, MQTTAsync_successData* response) {
 void MQTTClient::onSubscribeFailure(void* context, MQTTAsync_failureData* response) {
     MQTTClient* client = static_cast<MQTTClient*>(context);
     OBNsmn::report_error(0, "MQTT error: subscribe failed with error code = " + std::to_string(response ? response->code : 0));
-    client->notify_done();
+    client->notify_done(1);
 }
 
 void MQTTClient::onReconnect(void* context, MQTTAsync_successData* response)
@@ -312,25 +419,13 @@ bool OBNNodeMQTT::sendMessage(int nodeID, OBNSimMsg::SMN2N &msg) {
         return false;
     }
     
-    MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
-    MQTTAsync_message pubmsg = MQTTAsync_message_initializer;
-    
-    // Set the callback opts.onSuccess if we want to make synchronous wait, also the next line
-    // opts.context = m_client->m_client;
-    
-    pubmsg.payload = m_buffer;
-    pubmsg.payloadlen = msgsize;
-    pubmsg.qos = MQTTClient::QOS;
-    pubmsg.retained = 0;
-    
     // Request to send the message
     int rc;
-    if ((rc = MQTTAsync_sendMessage(m_client->m_client, m_topic.c_str(), &pubmsg, &opts)) != MQTTASYNC_SUCCESS) {
+    if ((rc = m_client->sendMessage(m_buffer, msgsize, m_topic.c_str())) != MQTTASYNC_SUCCESS) {
         OBNsmn::report_error(0, "MQTT error: failed to start sending message to node " + std::to_string(nodeID) +
                              " with error code " + std::to_string(rc));
         return false;
     }
-    
     
     // std::cout << "Message sent: " << std::chrono::duration <double, std::nano> (std::chrono::steady_clock::now()-OBNsim::clockStart).count() << " ns\n";
 

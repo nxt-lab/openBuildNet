@@ -22,6 +22,9 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include <unordered_set>
+
+#include <regex>    // For checking topic names
 
 #include <obnsmn_node.h>
 #include <obnsmn_report.h>
@@ -49,11 +52,13 @@ namespace OBNsmn {
             
             // The result variable, mutex and condition variable is used by MQTT callbacks to notify the main execution.
             bool m_notify_done;
+            int m_notify_result;    // Result of the action, typically 0 means success
             std::mutex m_notify_mutex;
             std::condition_variable m_notify_var;
-            void notify_done() {
+            void notify_done(int result = 0) {
                 std::lock_guard<std::mutex> mylock(m_notify_mutex);
                 m_notify_done = true;
+                m_notify_result = result;
                 m_notify_var.notify_all();
             }
             
@@ -71,6 +76,13 @@ namespace OBNsmn {
             
             /** The N2SMN message used for receiving data from GC port. */
             OBNSimMsg::N2SMN m_n2smn_msg;
+            
+            /** List of nodes that have announced their availability. */
+            std::unordered_set<std::string> m_online_nodes;
+            std::string m_online_nodes_topic;
+            bool m_listening_for_arrivals;
+            std::mutex m_online_nodes_mutex;
+            static std::regex online_nodes_topic_regex;
             
             friend class OBNNodeMQTT;
             
@@ -98,8 +110,17 @@ namespace OBNsmn {
             /** \brief Send an SMN2N message to the system port. */
             bool sendMessageToGC(const OBNSimMsg::SMN2N &msg);
             
-            /** \brief Send an SMN2N message to a given topic. */
-            bool sendMessage(const OBNSimMsg::SMN2N &msg, const std::string& topic);
+            /** \brief Send an SMN2N message to a given topic.
+             \param retained If this message should be retained on the broker.
+             \return The return code of MQTT's sendMessage().
+             */
+            int sendMessage(const OBNSimMsg::SMN2N &msg, const std::string& topic, int retained = 0);
+            
+            /** \brief Send a raw message to a given topic.
+             \param retained If this message should be retained on the broker.
+             \return The return code of MQTT's sendMessage().
+             */
+            int sendMessage(char* msg, std::size_t msglen, const std::string& topic, int retained = 0);
             
             /** Set the port's name. */
             void setPortName(const std::string &t_port) {
@@ -137,6 +158,20 @@ namespace OBNsmn {
             
             /** Stop the MQTT client. */
             void stop();
+            
+            /** Start waiting for nodes to announce their arrivals.
+             \param t_workspace The workspace name; either "" (default) or of the form "workspace/" (note the / at the end)
+             */
+            bool startListeningForArrivals(const std::string& t_workspace);
+            
+            /** Stop waiting for nodes to announce their arrivals. */
+            void stopListeningForArrivals();
+            
+            /** Check if a given node has announced its arrival. */
+            bool checkNodeOnline(const std::string& name);
+            
+            /** Clear the list of online nodes. */
+            void clearListOfOnlineNodes();
             
 //            /** \brief Join the thread to current thread.
 //             

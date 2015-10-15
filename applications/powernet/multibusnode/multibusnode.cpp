@@ -33,13 +33,8 @@ using namespace OBNnode;
 #define FEEDBACK_UPDATE 1
 
 
-/* Type of the output port from the bus to the grid. */
-typedef YarpOutput<OBN_PB, obn_vector<double> > Output2GridPort;
-
-/* Type of the input port from the grid to the bus. */
-typedef YarpInput<OBN_PB, obn_vector_fixed<double,4> > InputFromGridPort;
-
 /* The abstract bus node, which implements methods to calculate the values sent to the grid node and to distribute the results from the grid to the users. */
+template <typename BaseCLS>
 class Bus {
     std::string m_name;  // The name of the bus
 public:
@@ -47,20 +42,21 @@ public:
     
     std::string get_name() const { return m_name; }
     
-    virtual bool init(YarpNode *pnode) = 0;  // Initialize the ports associated with this bus in the given node
-    virtual bool calculateV2Grid(Output2GridPort::ValueType &v, OBNnode::simtime_t t) = 0;  // calculate the values to send to the grid node
-    virtual void distributeResults(const InputFromGridPort::ValueType &v, OBNnode::simtime_t t) {}
+    virtual bool init(BaseCLS *pnode) = 0;  // Initialize the ports associated with this bus in the given node
+    virtual bool calculateV2Grid(typename BaseCLS::Output2GridPort::ValueType &v, OBNnode::simtime_t t) = 0;  // calculate the values to send to the grid node
+    virtual void distributeResults(const typename BaseCLS::InputFromGridPort::ValueType &v, OBNnode::simtime_t t) {}
 };
 
 
 /* The const bus class */
-class ConstBus: public Bus {
+template <typename BaseCLS>
+class ConstBus: public Bus<BaseCLS> {
 private:
     // The constant vector to be output, at least of length 4
-    Output2GridPort::ValueType m_const_value;
+    typename BaseCLS::Output2GridPort::ValueType m_const_value;
 public:
     /** Construct the bus object from a vector of constant values. */
-    ConstBus(const std::string &name, const std::vector<double>& t_values): Bus(name)  {
+    ConstBus(const std::string &name, const std::vector<double>& t_values): Bus<BaseCLS>(name)  {
         assert(t_values.size() >= 4);
         
         // Copy the values to the internal vector
@@ -72,12 +68,12 @@ public:
     }
     
     /* This const bus doesn't have any user inputs. */
-    virtual bool init(YarpNode *pnode) override {
+    virtual bool init(BaseCLS *pnode) override {
         return true;
     }
     
     /* Output the constant values to the grid. */
-    virtual bool calculateV2Grid(Output2GridPort::ValueType &v, OBNnode::simtime_t t) override {
+    virtual bool calculateV2Grid(typename BaseCLS::Output2GridPort::ValueType &v, OBNnode::simtime_t t) override {
         v = m_const_value;
         return true;
     }
@@ -85,19 +81,16 @@ public:
 
 
 // The generic bus node, with at least one user attached to it
-class GenericBus: public Bus {
+template <typename BaseCLS>
+class GenericBus: public Bus<BaseCLS> {
 private:
     unsigned int m_nUsers;
     
-    using UserInputType = YarpInput< OBN_PB, obn_vector<double> >;
-    
     // Vector of inputs from user nodes.
-    std::vector< std::unique_ptr<UserInputType> > m_input_users;
-    
-    using UserOutputType = YarpOutput< OBN_PB, obn_vector_fixed<double, 4> >;
+    std::vector< std::unique_ptr<typename BaseCLS::UserInputType> > m_input_users;
     
     // Vector of outputs to user nodes.
-    std::vector< std::unique_ptr<UserOutputType> > m_output_users;
+    std::vector< std::unique_ptr<typename BaseCLS::UserOutputType> > m_output_users;
     
     // Memory variables to store the requested values P's and Q's of users
     struct VWithLimits {
@@ -126,7 +119,7 @@ private:
 public:
     
     // calculate the values to send to the grid node
-    virtual bool calculateV2Grid(Output2GridPort::ValueType &output, OBNnode::simtime_t t) {
+    virtual bool calculateV2Grid(typename BaseCLS::Output2GridPort::ValueType &output, OBNnode::simtime_t t) {
         double curE = NAN, curTheta = NAN;  // Current aggregate values of E and Theta
         
         // Reset variables used in computation
@@ -137,7 +130,7 @@ public:
         // Get and process the requests from users
         for (auto i = 1; i <= m_nUsers; i++) {
             if (!processUserInput(i, curE, curTheta, t)) {
-                std::cout << "[ERROR] At " << t << " bus " << get_name() << " encountered an input error.\n";
+                std::cout << "[ERROR] At " << t << " bus " << this->get_name() << " encountered an input error.\n";
                 return false;
             }
         }
@@ -166,15 +159,15 @@ public:
         return true;
     }
     
-    virtual void distributeResults(const InputFromGridPort::ValueType &v, OBNnode::simtime_t t) override;
+    virtual void distributeResults(const typename BaseCLS::InputFromGridPort::ValueType &v, OBNnode::simtime_t t) override;
     
     /* Add ports to node, register updates, etc. */
-    virtual bool init(YarpNode *pnode) {
+    virtual bool init(BaseCLS *pnode) {
         bool success;
         
         // Add the ports to the node
         for (auto i = 1; i <= m_nUsers; ++i) {
-            m_input_users.emplace_back(new UserInputType("VfU" + get_name() + '_' + std::to_string(i)));
+            m_input_users.emplace_back(pnode->createUserInput("VfU" + this->get_name() + '_' + std::to_string(i)));
             auto p = m_input_users.back().get();
             if (!(success = pnode->addInput(p))) {
                 std::cerr << "Error while adding input: " << p->getPortName() << std::endl;
@@ -184,7 +177,7 @@ public:
         
         if (success) {
             for (auto i = 1; i <= m_nUsers; ++i) {
-                m_output_users.emplace_back(new UserOutputType("VtU" + get_name() + '_' + std::to_string(i)));
+                m_output_users.emplace_back(pnode->createUserOutput("VtU" + this->get_name() + '_' + std::to_string(i)));
                 auto p = m_output_users.back().get();
                 if (!(success = pnode->addOutput(p))) {
                     std::cerr << "Error while adding output: " << p->getPortName() << std::endl;
@@ -199,7 +192,7 @@ public:
     /** Construct the bus node.
      \param t_nUsers Number of users (>= 1)
      */
-    GenericBus(const std::string &name, unsigned int t_nUsers): Bus(name), m_nUsers(t_nUsers)
+    GenericBus(const std::string &name, unsigned int t_nUsers): Bus<BaseCLS>(name), m_nUsers(t_nUsers)
     {
         assert(t_nUsers > 0);
         m_input_users.reserve(m_nUsers);
@@ -212,8 +205,8 @@ public:
     }
 };
 
-
-bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta, OBNnode::simtime_t t) {
+template <typename BaseCLS>
+bool GenericBus<BaseCLS>::processUserInput(int idx, double& t_curE, double& t_curTheta, OBNnode::simtime_t t) {
     int i = idx - 1;
     auto values = (*m_input_users[i])();
     
@@ -221,7 +214,7 @@ bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta, O
     
     // At least P is given
     if (n < 1) {
-        std::cout << "At " << t << " User#" << idx << " of bus " << get_name() << " gave an empty vector.\n";
+        std::cout << "At " << t << " User#" << idx << " of bus " << this->get_name() << " gave an empty vector.\n";
         return false;
     }
     
@@ -243,13 +236,13 @@ bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta, O
         
         if (n < 6) {
             // Not enough length for P limits
-            std::cout << "At " << t << " User#" << idx << " of bus " << get_name() << " failed to give P limits.\n";
+            std::cout << "At " << t << " User#" << idx << " of bus " << this->get_name() << " failed to give P limits.\n";
             return false;
         }
         double Pmin = values[4], Pmax = values[5];
         if (std::isnan(Pmin) || std::isnan(Pmax) || (std::isfinite(Pmin) && std::isfinite(Pmax) && Pmin > Pmax)) {
             // Invalid Pmin and Pmax: they must be non-NAN (can be INF) and Pmin <= Pmax
-            std::cout << "At " << t << " User#" << idx << " of bus " << get_name() << " gave invalid P limits.\n";
+            std::cout << "At " << t << " User#" << idx << " of bus " << this->get_name() << " gave invalid P limits.\n";
             return false;
         }
         m_Ps[i].minvalue = Pmin;
@@ -277,13 +270,13 @@ bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta, O
         
         if (n < 6 || (isPNaN && n < 8)) {
             // Not enough length for Q limits
-            std::cout << "At " << t << " User#" << idx << " of bus " << get_name() << " failed to give Q limits.\n";
+            std::cout << "At " << t << " User#" << idx << " of bus " << this->get_name() << " failed to give Q limits.\n";
             return false;
         }
         double Qmin = values[isPNaN?6:4], Qmax = values[isPNaN?7:5];
         if (std::isnan(Qmin) || std::isnan(Qmax) || (std::isfinite(Qmin) && std::isfinite(Qmax) && Qmin > Qmax)) {
             // Invalid Qmin and Qmax: they must be non-NAN (can be INF) and Qmin <= Qmax
-            std::cout << "At " << t << " User#" << idx << " of bus " << get_name() << " gave invalid Q limits.\n";
+            std::cout << "At " << t << " User#" << idx << " of bus " << this->get_name() << " gave invalid Q limits.\n";
             return false;
         }
         m_Qs[i].minvalue = Qmin;
@@ -311,7 +304,7 @@ bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta, O
             // Check if E is similar to current E
             if (std::abs(E - t_curE) > 1e-6) {
                 // E is different
-                std::cout << "At " << t << " User#" << idx << " of bus " << get_name() << " gave E incompatible with other users.\n";
+                std::cout << "At " << t << " User#" << idx << " of bus " << this->get_name() << " gave E incompatible with other users.\n";
                 return false;
             }
             // else, because they are similar, we keep the current value
@@ -326,7 +319,7 @@ bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta, O
             // Check if Theta is similar to current Theta
             if (std::abs(Theta - t_curTheta) > 1e-6) {
                 // Theta is different
-                std::cout << "At " << t << " User#" << idx << " of bus " << get_name() << " gave theta incompatible with other users.\n";
+                std::cout << "At " << t << " User#" << idx << " of bus " << this->get_name() << " gave theta incompatible with other users.\n";
                 return false;
             }
             // else, because they are similar, we keep the current value
@@ -339,7 +332,8 @@ bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta, O
     return true;
 }
 
-void GenericBus::distributeResults(const InputFromGridPort::ValueType &result, OBNnode::simtime_t t) {
+template <typename BaseCLS>
+void GenericBus<BaseCLS>::distributeResults(const typename BaseCLS::InputFromGridPort::ValueType &result, OBNnode::simtime_t t) {
     // For E and theta
     for (auto i = 0; i < m_nUsers; ++i) {
         auto& user_v = **m_output_users[i];
@@ -597,138 +591,11 @@ void GenericBus::distributeResults(const InputFromGridPort::ValueType &result, O
 }
 
 
-/** The node class for this multi-bus node. */
-class MultiBus: public YarpNode {
-private:
-    // Information about a bus
-    struct BusInfo {
-        std::unique_ptr<Bus> m_bus;
-        InputFromGridPort m_input;
-        Output2GridPort m_output;
-        BusInfo(Bus* pbus): m_bus(pbus), m_input("VfG" + pbus->get_name()), m_output("VtG" + pbus->get_name())
-        { }
-    };
-    
-    // The list of buses
-    // We use pointers because when BusInfo is created and copied, m_bus can't be copied (unique_ptr's copy constructor is deleted) and m_input and m_output can't be copied too (Yarp forbids that).
-    std::vector< std::unique_ptr<BusInfo> > m_buses;
-public:
-    MultiBus(const char* t_name, const char* t_workspace): YarpNode(t_name, t_workspace) { }
-    
-    /* Add a bus to the node */
-    bool addBus(Bus *pbus) {
-        assert(pbus);
-        auto name = pbus->get_name();
-        
-        // Find if this bus already exist
-        for (auto& bus: m_buses) {
-            if (bus->m_bus->get_name() == name) {
-                std::cout << "The bus " << name << " already existed in this node." << std::endl;
-                return false;
-            }
-        }
-        
-        m_buses.emplace_back(new BusInfo(pbus));
-        return true;
-    }
-    
-    bool initialize() {
-        // Initialize all the buses
-        for (auto& bus: m_buses) {
-            // Add the grid input and output for the bus
-            if (!(addInput(&(bus->m_input)) && addOutput(&(bus->m_output)) && bus->m_bus->init(this))) {
-                return false;
-            }
-        }
-        
-        // Add the updates
-        bool success = (addUpdate(MAIN_UPDATE, std::bind(&MultiBus::doMainUpdate, this)) >= 0) &&
-            (addUpdate(FEEDBACK_UPDATE, std::bind(&MultiBus::doFeedbackUpdate, this)) >= 0);
-        
-        // Open the SMN port
-        success = success && openSMNPort();
-        
-        return success;
-    }
-    
-    void doMainUpdate() {
-        auto t = currentSimulationTime();
-        for (auto& bus: m_buses) {
-            if (!bus->m_bus->calculateV2Grid(*(bus->m_output), t)) {
-                // Error: in this case we will request the simulation to stop and exit
-                requestStopSimulation();
-                stopSimulation();
-                return;
-            }
-        }
-        
-        //std::cout << "At " << currentSimulationTime() << " UPDATE_Y" << std::endl;
-    }
-    
-    /* This node has no state update */
-    
-    void doFeedbackUpdate() {
-        auto t = currentSimulationTime();
-        for (auto& bus: m_buses) {
-            bus->m_bus->distributeResults(bus->m_input.get(), t);
-        }
-    }
-    
-    /* This callback is called everytime this node's simulation starts or restarts.
-     This is different from initialize() above. */
-    virtual void onInitialization() {
-        // Initial state and output
-        
-        std::cout << "At " << currentSimulationTime() << " INIT" << std::endl;
-    }
-    
-    /* This callback is called when the node's current simulation is about to be terminated. */
-    virtual void onTermination() {
-        std::cout << "At " << currentSimulationTime() << " TERMINATED" << std::endl;
-    }
-    
-    /* There are other callbacks for reporting errors, etc. */
-};
-
-void show_usage(char *prog) {
-    std::cout << "USAGE:" << std::endl <<
-    prog << " node_name bus_data_file_name [--workspace <workspace_name>]" << std::endl <<
-    R"args(
-where
-   node_name is the name of the bus node
-   bus_data_file_name is the name of the CSV file that contains all the buses' configurations.
-   workspace_name is the name of the simulation workspace (default: "powernet").
-
-Each of the rows in the CSV file defines a bus in the following format:
-   bus_name, no_of_users, P, Q, E, Th, ...
-bus_name is a unique string that identifies the bus.
-no_of_users is the number of users connected to the bus.
-If no_of_users = 0, this is a "constant" bus, which always sends constant values P, Q, E, theta, ... to the grid.
-In this case, the four values P, Q, E, theta are required, but optional extra values can be specified after them.
-All real values can be either a finite real number (e.g. 0, 0.5) or one of the words "NaN", "Inf", "-Inf".
-If an invalid number is given, 0.0 will be used instead.
-
-If no_of_users > 0, appropriate input and output ports for each user will be created automatically.
-In this case, the values P, Q, E, theta, ..., if supplied, will not be used.
-)args";
-}
-
-void show_banner() {
-    std::cout << R"banner(
-+-------------------------------------------------------------------+
-|                      Generic Multi-Bus Node                       |
-|        Part of the Power Network library for openBuildNet.        |
-+-------------------------------------------------------------------+
-        
-This program is part of the openBuildNet framework developed at EPFL.
-
-)banner";
-}
-
 struct BusInfo {
     int nUsers;
     std::vector<double> const_values;       // The constants sent to the grid node
 };
+
 
 std::map<std::string, BusInfo> load_csv_bus_defs(const char* t_file) {
     CsvParser *csvparser = CsvParser_new(t_file, ",", false);
@@ -786,6 +653,239 @@ std::map<std::string, BusInfo> load_csv_bus_defs(const char* t_file) {
     return v;
 }
 
+
+#ifdef OBNNODE_COMM_YARP
+class MultiBusYarp: public YarpNode {
+public:
+    /* Type of the output port from the bus to the grid. */
+    typedef YarpOutput<OBN_PB, obn_vector<double> > Output2GridPort;
+    
+    /* Type of the input port from the grid to the bus. */
+    typedef YarpInput<OBN_PB, obn_vector_fixed<double,4> > InputFromGridPort;
+    
+    /* Type of the Bus base class. */
+    typedef Bus<MultiBusYarp> BusType;
+    
+    typedef ConstBus<MultiBusYarp> ConstBusType;
+    typedef GenericBus<MultiBusYarp> GenericBusType;
+    
+    using UserInputType = YarpInput< OBN_PB, obn_vector<double> >;
+    
+    UserInputType* createUserInput(const std::string& t_name) {
+        return new UserInputType(t_name);
+    }
+
+    using UserOutputType = YarpOutput< OBN_PB, obn_vector_fixed<double, 4> >;
+    
+    UserOutputType* createUserOutput(const std::string& t_name) {
+        return new UserOutputType(t_name);
+    }
+    
+    // Information about a bus
+    struct BusInfo {
+        std::unique_ptr<BusType> m_bus;
+        InputFromGridPort m_input;
+        Output2GridPort m_output;
+        BusInfo(BusType* pbus, MultiBusYarp* pnode): m_bus(pbus), m_input("VfG" + pbus->get_name()), m_output("VtG" + pbus->get_name())
+        { }
+    };
+    
+    MultiBusYarp(const std::string& _name, const std::string& ws): YarpNode(_name, ws) { }
+};
+#endif
+
+
+#ifdef OBNNODE_COMM_MQTT
+class MultiBusMQTT: public MQTTNode {
+public:
+    /* Type of the output port from the bus to the grid. */
+    typedef MQTTOutput<OBN_PB, obn_vector<double> > Output2GridPort;
+    
+    /* Type of the input port from the grid to the bus. */
+    typedef MQTTInput<OBN_PB, obn_vector_fixed<double,4> > InputFromGridPort;
+    
+    /* Type of the Bus base class. */
+    typedef Bus<MultiBusMQTT> BusType;
+    
+    typedef ConstBus<MultiBusMQTT> ConstBusType;
+    typedef GenericBus<MultiBusMQTT> GenericBusType;
+
+    
+    using UserInputType = MQTTInput< OBN_PB, obn_vector<double> >;
+    
+    UserInputType* createUserInput(const std::string& t_name) {
+        return new UserInputType(t_name, &mqtt_client);
+    }
+    
+    using UserOutputType = MQTTOutput< OBN_PB, obn_vector_fixed<double, 4> >;
+
+    UserOutputType* createUserOutput(const std::string& t_name) {
+        return new UserOutputType(t_name, &mqtt_client);
+    }
+    
+    // Information about a bus
+    struct BusInfo {
+        std::unique_ptr<BusType> m_bus;
+        InputFromGridPort m_input;
+        Output2GridPort m_output;
+        BusInfo(BusType* pbus, MultiBusMQTT* pnode): m_bus(pbus), m_input("VfG" + pbus->get_name(), &pnode->mqtt_client), m_output("VtG" + pbus->get_name(), &pnode->mqtt_client)
+        { }
+    };
+    
+    MultiBusMQTT(const std::string& _name, const std::string& ws): MQTTNode(_name, ws) { }
+};
+#endif
+
+/** The node class for this multi-bus node. */
+template <typename BaseCLS>
+class MultiBus: public BaseCLS {
+private:
+    // The list of buses
+    // We use pointers because when BusInfo is created and copied, m_bus can't be copied (unique_ptr's copy constructor is deleted) and m_input and m_output can't be copied too (Yarp forbids that).
+    std::vector< std::unique_ptr<typename BaseCLS::BusInfo> > m_buses;
+public:
+    MultiBus(const char* t_name, const char* t_workspace): BaseCLS(t_name, t_workspace) { }
+    
+    /* Add a bus to the node */
+    bool addBus(typename BaseCLS::BusType *pbus) {
+        assert(pbus);
+        auto name = pbus->get_name();
+        
+        // Find if this bus already exist
+        for (auto& bus: m_buses) {
+            if (bus->m_bus->get_name() == name) {
+                std::cout << "The bus " << name << " already existed in this node." << std::endl;
+                return false;
+            }
+        }
+        
+        m_buses.emplace_back(new typename BaseCLS::BusInfo(pbus, this));
+        return true;
+    }
+    
+    bool loadCSV(const char* csv_file) {
+        // Load the CSV file into a vector of BusInfo records
+        auto csvbuses = load_csv_bus_defs(csv_file);
+        if (csvbuses.empty()) {
+            return false;
+        }
+        
+        // Loop through the vector to create the buses
+        for (auto& bus: csvbuses) {
+            if (bus.second.nUsers == 0) {
+                // Const bus
+                addBus(new typename BaseCLS::ConstBusType(bus.first, bus.second.const_values));
+            } else {
+                // Generic bus
+                addBus(new typename BaseCLS::GenericBusType(bus.first, bus.second.nUsers));
+            }
+        }
+        
+        return true;
+    }
+    
+    int numBuses() const {
+        return m_buses.size();
+    }
+    
+    bool initialize() {
+        if (!this->openSMNPort()) {
+            std::cerr << "Error while opening the GC port; check the network or server.\n";
+            return false;
+        }
+        
+        // Initialize all the buses
+        for (auto& bus: m_buses) {
+            // Add the grid input and output for the bus
+            if (!(this->addInput(&(bus->m_input)) && this->addOutput(&(bus->m_output)) && bus->m_bus->init(this))) {
+                return false;
+            }
+        }
+        
+        // Add the updates
+        bool success = (this->addUpdate(MAIN_UPDATE, std::bind(&MultiBus::doMainUpdate, this)) >= 0) &&
+            (this->addUpdate(FEEDBACK_UPDATE, std::bind(&MultiBus::doFeedbackUpdate, this)) >= 0);
+        
+        return success;
+    }
+    
+    void doMainUpdate() {
+        auto t = this->currentSimulationTime();
+        for (auto& bus: m_buses) {
+            if (!bus->m_bus->calculateV2Grid(*(bus->m_output), t)) {
+                // Error: in this case we will request the simulation to stop and exit
+                this->requestStopSimulation();
+                this->stopSimulation();
+                return;
+            }
+        }
+        
+        //std::cout << "At " << currentSimulationTime() << " UPDATE_Y" << std::endl;
+    }
+    
+    /* This node has no state update */
+    
+    void doFeedbackUpdate() {
+        auto t = this->currentSimulationTime();
+        for (auto& bus: m_buses) {
+            bus->m_bus->distributeResults(bus->m_input.get(), t);
+        }
+    }
+    
+    /* This callback is called everytime this node's simulation starts or restarts.
+     This is different from initialize() above. */
+    virtual void onInitialization() {
+        // Initial state and output
+        
+        std::cout << "At " << this->currentSimulationTime() << " INIT" << std::endl;
+    }
+    
+    /* This callback is called when the node's current simulation is about to be terminated. */
+    virtual void onTermination() {
+        std::cout << "At " << this->currentSimulationTime() << " TERMINATED" << std::endl;
+    }
+    
+    /* There are other callbacks for reporting errors, etc. */
+};
+
+void show_usage(char *prog) {
+    std::cout << "USAGE:" << std::endl <<
+    prog << " node_name bus_data_file_name [--workspace <workspace_name>] [--mqtt [serveraddr]]" << std::endl <<
+    R"args(
+where
+   node_name is the name of the bus node
+   bus_data_file_name is the name of the CSV file that contains all the buses' configurations.
+   workspace_name is the name of the simulation workspace (default: "powernet").
+   --mqtt specifies that the MQTT communication framework will be used, and the optional serveraddr is the address of the MQTT server/broker.
+    
+The default communication framework is YARP.
+
+Each of the rows in the CSV file defines a bus in the following format:
+   bus_name, no_of_users, P, Q, E, Th, ...
+bus_name is a unique string that identifies the bus.
+no_of_users is the number of users connected to the bus.
+If no_of_users = 0, this is a "constant" bus, which always sends constant values P, Q, E, theta, ... to the grid.
+In this case, the four values P, Q, E, theta are required, but optional extra values can be specified after them.
+All real values can be either a finite real number (e.g. 0, 0.5) or one of the words "NaN", "Inf", "-Inf".
+If an invalid number is given, 0.0 will be used instead.
+
+If no_of_users > 0, appropriate input and output ports for each user will be created automatically.
+In this case, the values P, Q, E, theta, ..., if supplied, will not be used.
+)args";
+}
+
+void show_banner() {
+    std::cout << R"banner(
++-------------------------------------------------------------------+
+|                      Generic Multi-Bus Node                       |
+|        Part of the Power Network library for openBuildNet.        |
++-------------------------------------------------------------------+
+        
+This program is part of the openBuildNet framework developed at EPFL.
+
+)banner";
+}
+
 int main(int argc, char **argv) {
     show_banner();
     
@@ -798,6 +898,10 @@ int main(int argc, char **argv) {
     
     const char *workspace_name = nullptr;     // The workspace name
     const std::string WORKSPACE_OPTION("--workspace");
+    
+    std::string mqtt_server{""};     // The MQTT server address
+    const std::string MQTT_OPTION("--mqtt");
+    bool mqtt_used = false;
     
     int k = 1;
     while (k < argc) {
@@ -818,6 +922,15 @@ int main(int argc, char **argv) {
                     std::cout << "Workspace name must be given after the option --workspace." << std::endl;
                     show_usage(argv[0]);
                     exit(1);
+                }
+            } else if (MQTT_OPTION.compare(argv[k]) == 0) {
+                // Get the server address if given
+                mqtt_used = true;
+                if (++k < argc) {
+                    // Check that this is not another option
+                    if (std::strlen(argv[k]) <= 2 || argv[k][0] != '-' || argv[k][1] != '-') {
+                        mqtt_server = argv[k++];
+                    }
                 }
             } else {
                 std::cout << "Unrecognized options: " << argv[k] << std::endl;
@@ -851,47 +964,73 @@ int main(int argc, char **argv) {
         workspace_name = "powernet";
     }
     
-    // Set verbosity level
-    yarp::os::Network::setVerbosity(-1);
+    // The bus node object
+    std::unique_ptr<NodeBase> pbus;
+    bool success;
+    int numBuses = 0;
     
-    MultiBus buses(node_name, workspace_name);  // The OBN node object
-    
-    {
-        // Load the CSV file into a vector of BusInfo records
-        auto csvbuses = load_csv_bus_defs(csv_file);
-        if (csvbuses.empty()) {
-            std::cout << "Could not load the CSV file of bus definitions, or the file is empty/invalid." << std::endl;
-            show_usage(argv[0]);
-            exit(1);
+    if (mqtt_used) {
+        // MQTT is used
+#ifdef OBNNODE_COMM_MQTT
+        // Create the node
+        auto *p = new MultiBus<MultiBusMQTT>(node_name, workspace_name);
+        pbus.reset(p);
+        
+        if (!mqtt_server.empty()) {
+            p->setServerAddress(mqtt_server);
         }
         
-        // Display info
-        std::cout << "This is a multi-bus node named \"" << node_name
-        << "\" in the workspace \"" << workspace_name << "\"\n"
-        << "There are " << csvbuses.size() << " buses on this node.\n\n";
-        
-        // Loop through the vector to create the buses
-        for (auto& bus: csvbuses) {
-            if (bus.second.nUsers == 0) {
-                // Const bus
-                buses.addBus(new ConstBus(bus.first, bus.second.const_values));
-            } else {
-                // Generic bus
-                buses.addBus(new GenericBus(bus.first, bus.second.nUsers));
-            }
+        success = p->initialize();
+        if (!success) {
+            std::cout << "There was/were error(s) while initializing the node.\n";
+            return 2;
         }
-    }
-    
-    if (!buses.initialize()) {
-        std::cout << "There was/were error(s) while initializing the node.\n";
-        return 2;
-    }
+        
+        success = p->loadCSV(csv_file);
+        numBuses = p->numBuses();
+#else
+        std::cerr << "MQTT communication is specified but not supported by this node.\n";
+        return 1;
+#endif
+    } else {
+        // Yarp is used
+#ifdef OBNNODE_COMM_YARP
+        // Set verbosity level
+        yarp::os::Network::setVerbosity(-1);
 
+        auto *p = new MultiBus<MultiBusYarp>(node_name, workspace_name);
+        pbus.reset(p);
+        
+        success = p->initialize();
+        if (!success) {
+            std::cout << "There was/were error(s) while initializing the node.\n";
+            return 2;
+        }
+        
+        success = p->loadCSV(csv_file);
+        numBuses = p->numBuses();
+#else
+        std::cerr << "YARP communication is specified but not supported by this node.\n";
+        return 1;
+#endif
+    }
+    
+    if (!success) {
+        std::cout << "Could not load the CSV file of bus definitions, or the file is empty/invalid." << std::endl;
+        show_usage(argv[0]);
+        return 1;
+    }
+    
+    
+    // Display info
+    std::cout << "This is a multi-bus node named \"" << node_name
+    << "\" in the workspace \"" << workspace_name << "\"\n"
+    << "There are " << numBuses << " buses on this node.\n\n";
     
     // Here we will not connect the node to the GC, let the SMN do it
-    std::cout << "Starting simulation of node " << buses.name() << std::endl;
+    std::cout << "Starting simulation of node " << pbus->name() << std::endl;
     
-    buses.run();
+    pbus->run();
     
     std::cout << "Simulation finished. Goodbye!" << std::endl;
     
@@ -900,7 +1039,7 @@ int main(int argc, char **argv) {
     //////////////////////
     google::protobuf::ShutdownProtobufLibrary();
     
-    buses.delayBeforeShutdown();
+    pbus->delayBeforeShutdown();
     
-    return buses.hasError()?3:0;
+    return pbus->hasError()?3:0;
 }

@@ -86,7 +86,7 @@ int main() {
     
     // Configure the GC
     gc.ack_timeout = 0;
-    gc.setFinalSimulationTime(30);
+    gc.setFinalSimulationTime(100);
 
 #ifndef OBNSIM_COMM_MQTT
     // The YARP communication thread for GC's incoming port

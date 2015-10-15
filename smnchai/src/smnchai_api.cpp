@@ -29,7 +29,6 @@
 using namespace chaiscript;
 using namespace SMNChai;
 
-const char *NODE_GC_PORT_NAME = "_gc_";
 std::string Node::m_global_prefix = "";
 
 const char* CommProtocolNames[] = {
@@ -69,6 +68,7 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     chai.add(fun(&Node::add_update), "add_update");
     chai.add(fun(&Node::set_need_updateX), "need_updateX");
     chai.add(fun(&Node::set_comm_protocol), "set_comm");   // a string of the name of the communication protocol: default, mqtt, yarp
+    chai.add(fun(&Node::get_comm_protocol), "get_comm");   // returns a string of the name of the communication protocol: default, mqtt, yarp
     
     chai.add(fun(&Node::input_to_update), "input_to_update");
     chai.add(fun(&Node::output_from_update), "output_from_update");
@@ -131,11 +131,11 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     // Functions to start remote nodes, wait for nodes to go online, etc.
     // *********************************************
     
-    chai.add(fun<bool (WorkSpace::*) (const Node &) const>(&WorkSpace::is_node_online, &ws), "is_node_online");
-    chai.add(fun<bool (WorkSpace::*) (const std::string &) const>(&WorkSpace::is_node_online, &ws), "is_node_online");
+    chai.add(fun<bool (WorkSpace::*) (const Node &)>(&WorkSpace::is_node_online, &ws), "is_node_online");
+    //chai.add(fun<bool (WorkSpace::*) (const std::string &) const>(&WorkSpace::is_node_online, &ws), "is_node_online");
 
-    chai.add(fun<void (WorkSpace::*) (const SMNChai::Node &, const std::string &, const std::string &, const std::string &, const std::string &) const>(&WorkSpace::start_remote_node, &ws), "start_remote_node");
-    chai.add(fun<void (WorkSpace::*) (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &) const>(&WorkSpace::start_remote_node, &ws), "start_remote_node");
+    chai.add(fun<void (WorkSpace::*) (const SMNChai::Node &, const std::string &, const std::string &, const std::string &, const std::string &)>(&WorkSpace::start_remote_node, &ws), "start_remote_node");
+    chai.add(fun<void (WorkSpace::*) (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &)>(&WorkSpace::start_remote_node, &ws), "start_remote_node");
     
     chai.add(fun([&ws](const SMNChai::Node &n, const std::string &c, const std::string &p, const std::string &a) {
         ws.start_remote_node(n, c, p, a);
@@ -146,8 +146,8 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, WorkSpace &ws) {
     
     chai.add(fun(&run_remote_command), "run_remote_command");
     
-    chai.add(fun<void (WorkSpace::*)(const Node &, double) const>(&WorkSpace::waitfor_node_online, &ws), "waitfor_node");
-    chai.add(fun<void (WorkSpace::*)(const std::string &, double) const>(&WorkSpace::waitfor_node_online, &ws), "waitfor_node");
+    chai.add(fun<void (WorkSpace::*)(const Node &, double)>(&WorkSpace::waitfor_node_online, &ws), "waitfor_node");
+    //chai.add(fun<void (WorkSpace::*)(const std::string &, double) const>(&WorkSpace::waitfor_node_online, &ws), "waitfor_node");
     
     chai.add(fun(&WorkSpace::waitfor_all_nodes_online, &ws), "waitfor_all_nodes");
     
@@ -233,7 +233,7 @@ void SMNChai::run_remote_command(const std::string &t_node, const std::string &t
 }
 
 
-void SMNChai::WorkSpace::start_remote_node(const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag) const {
+void SMNChai::WorkSpace::start_remote_node(const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag) {
     // Only start if node is not online
     if (m_settings.m_run_simulation && !is_node_online(t_node)) {
         if (t_tag.empty()) {
@@ -244,21 +244,116 @@ void SMNChai::WorkSpace::start_remote_node(const std::string &t_node, const std:
     }
 }
 
-void SMNChai::WorkSpace::start_remote_node(const SMNChai::Node &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag) const {
+void SMNChai::WorkSpace::start_remote_node(const SMNChai::Node &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag) {
     start_remote_node(t_node.get_name(), t_computer, t_prog, t_args, t_tag);
 }
 
-bool SMNChai::WorkSpace::is_node_online(const SMNChai::Node &t_node) const {
-    // YARP requires / at the beginning
-    return yarp::os::Network::exists('/' + get_full_path(t_node.get_name(), NODE_GC_PORT_NAME));
+bool SMNChai::WorkSpace::is_node_online(const SMNChai::Node &t_node) {
+    // According to the communication framework used by this node
+    if (t_node.m_comm_protocol == SMNChai::COMM_YARP ||
+        (t_node.m_comm_protocol == SMNChai::COMM_DEFAULT && m_settings.m_comm == SMNChai::COMM_YARP)) {
+#ifdef OBNSIM_COMM_YARP
+        // YARP requires / at the beginning
+        return yarp::os::Network::exists('/' + get_full_path(t_node.get_name(), OBNsim::NODE_GC_PORT_NAME));
+#else
+        throw smnchai_exception("Error: YARP communication is not supported in this SMN.");
+#endif
+    }
+    else if (t_node.m_comm_protocol == SMNChai::COMM_MQTT ||
+             (t_node.m_comm_protocol == SMNChai::COMM_DEFAULT && m_settings.m_comm == SMNChai::COMM_MQTT)) {
+#ifdef OBNSIM_COMM_MQTT
+        // We should check the list of online nodes, then ping the node's GC port;
+        // for now we only check the list and assume it's still online.
+        if (!m_tracking_mqtt_online_nodes) {
+            // Start tracking
+            if (start_mqtt_client()) {
+                if (m_comm.mqttClient->startListeningForArrivals(m_name.empty()?"":(m_name+'/'))) {
+                    m_tracking_mqtt_online_nodes = true;
+                    
+                    // Delay a bit for receiving nodes' announcements
+                    std::this_thread::sleep_for (std::chrono::seconds(1));
+                } else {
+                    // Error
+                    throw smnchai_exception("Error: Could not start tracking nodes' availability in MQTT.");
+                }
+            } else {
+                // Error
+                throw smnchai_exception("Error: MQTT communication could not be started.");
+            }
+        }
+        
+        // At this point, we should be able to track the nodes
+        return m_comm.mqttClient->checkNodeOnline(t_node.get_name());
+#else
+        throw smnchai_exception("Error: MQTT communication is not supported in this SMN.");
+#endif
+    }
+    
+    return false;
 }
 
-bool SMNChai::WorkSpace::is_node_online(const std::string &t_node) const {
-    // YARP requires / at the beginning
-    return yarp::os::Network::exists('/' + get_full_path(t_node, NODE_GC_PORT_NAME));
-}
 
-void SMNChai::WorkSpace::waitfor_node_online(const std::string &t_node, double timeout) const {
+#ifdef OBNSIM_COMM_MQTT
+bool SMNChai::WorkSpace::start_mqtt_client() {
+    bool create_mqtt = (m_comm.mqttClient == nullptr);
+    if (create_mqtt) {
+        m_comm.mqttClient = new OBNsmn::MQTT::MQTTClient(&m_gcthread);
+    } else if (m_comm.mqttClient->isRunning()) {
+        // already running
+        return true;
+    }
+    
+    m_comm.mqttClient->setClientID(get_name());
+    m_comm.mqttClient->setPortName(get_full_path("_smn_", OBNsim::NODE_GC_PORT_NAME));
+    m_comm.mqttClient->setServerAddress(m_settings.m_mqtt_server);
+    
+    // Start MQTT communication
+    bool success = m_comm.mqttClient->start();
+    if (!success) {
+        // Delete the MQTT client
+        if (create_mqtt) {
+            delete m_comm.mqttClient;
+            m_comm.mqttClient = nullptr;
+        }
+    }
+    
+    return success;
+}
+#endif
+
+//bool SMNChai::WorkSpace::is_node_online(const std::string &t_node) const {
+//    // YARP requires / at the beginning
+//    return yarp::os::Network::exists('/' + get_full_path(t_node, OBNsim::NODE_GC_PORT_NAME));
+//}
+
+//void SMNChai::WorkSpace::waitfor_node_online(const std::string &t_node, double timeout) const {
+//    if (!m_settings.m_run_simulation) {
+//        // If not going to run simulation then we should not wait
+//        return;
+//    }
+//    if (timeout <= 0.0) {
+//        while (!is_node_online(t_node)) {
+//            std::this_thread::sleep_for (std::chrono::milliseconds(100));
+//        }
+//    } else {
+//        std::chrono::time_point<std::chrono::steady_clock> start;
+//        std::chrono::duration<double> dur;
+//        
+//        start = std::chrono::steady_clock::now();
+//        
+//        while (!is_node_online(t_node)) {
+//            std::this_thread::sleep_for (std::chrono::milliseconds(100));
+//            
+//            dur = std::chrono::steady_clock::now() - start;
+//            if (dur.count() > timeout) {
+//                // Timeout occurs
+//                throw smnchai_exception("Waiting for node '" + t_node + "' to go online but timeout occurred.");
+//            }
+//        }
+//    }
+//}
+
+void SMNChai::WorkSpace::waitfor_node_online(const SMNChai::Node &t_node, double timeout) {
     if (!m_settings.m_run_simulation) {
         // If not going to run simulation then we should not wait
         return;
@@ -279,17 +374,13 @@ void SMNChai::WorkSpace::waitfor_node_online(const std::string &t_node, double t
             dur = std::chrono::steady_clock::now() - start;
             if (dur.count() > timeout) {
                 // Timeout occurs
-                throw smnchai_exception("Waiting for node '" + t_node + "' to go online but timeout occurred.");
+                throw smnchai_exception("Waiting for node '" + t_node.get_name() + "' to go online but timeout occurred.");
             }
         }
     }
 }
 
-void SMNChai::WorkSpace::waitfor_node_online(const SMNChai::Node &t_node, double timeout) const {
-    waitfor_node_online(t_node.get_name(), timeout);
-}
-
-void SMNChai::WorkSpace::waitfor_all_nodes_online(double timeout) const {
+void SMNChai::WorkSpace::waitfor_all_nodes_online(double timeout) {
     if (!m_settings.m_run_simulation) {
         // If not going to run simulation then we should not wait
         return;
@@ -317,9 +408,9 @@ void SMNChai::WorkSpace::waitfor_all_nodes_online(double timeout) const {
     }
 }
 
-bool SMNChai::WorkSpace::are_all_nodes_online() const {
+bool SMNChai::WorkSpace::are_all_nodes_online() {
     for (auto it = m_nodes.begin(); it != m_nodes.end(); ++it) {
-        if (!yarp::os::Network::exists('/' + get_full_path(it->second.node.get_name(), NODE_GC_PORT_NAME))) {
+        if (!is_node_online(it->second.node)) {
             return false;
         }
     }
@@ -329,7 +420,6 @@ bool SMNChai::WorkSpace::are_all_nodes_online() const {
 bool SMNChai::Node::port_exists(const std::string &t_name) const {
     return (m_inputs.count(t_name) > 0) || (m_outputs.count(t_name) > 0) || (m_dataports.count(t_name) > 0);
 }
-
 
 OBNsmn::YARP::OBNNodeYARP* SMNChai::Node::create_yarp_node(OBNsmn::YARP::YARPPort *sys_port, const WorkSpace &ws) const {
     assert(sys_port);
@@ -348,7 +438,7 @@ OBNsmn::YARP::OBNNodeYARP* SMNChai::Node::create_yarp_node(OBNsmn::YARP::YARPPor
 }
 
 OBNsmn::MQTT::OBNNodeMQTT* SMNChai::Node::create_mqtt_node(OBNsmn::MQTT::MQTTClient* t_mqttclient, const WorkSpace &ws) const {
-    auto *p_node = new OBNsmn::MQTT::OBNNodeMQTT(m_name, m_updates.size(), ws.get_full_path(m_name, NODE_GC_PORT_NAME), t_mqttclient);
+    auto *p_node = new OBNsmn::MQTT::OBNNodeMQTT(m_name, m_updates.size(), ws.get_full_path(m_name, OBNsim::NODE_GC_PORT_NAME), t_mqttclient);
     
     p_node->needUPDATEX = m_updateX;
     
@@ -381,6 +471,10 @@ SMNChai::CommProtocol SMNChai::comm_protocol_from_string(const std::string& t_co
     } else {
         throw smnchai_exception("The communication protocol " + t_comm + " is not supported by this SMNChai program.");
     }
+}
+
+std::string SMNChai::Node::get_comm_protocol() {
+    return std::string(CommProtocolNames[m_comm_protocol]);
 }
 
 void SMNChai::Node::add_input(const std::string &t_name, const std::string &t_comm) {
@@ -529,7 +623,7 @@ SMNChai::PortInfo SMNChai::Node::port(const std::string &t_port) const {
 void SMNChai::WorkSpace::register_settings_with_Chaiscript(ChaiScript &chai) {
     // Register the Settings class and the settings object
     chai.add(user_type<SMNChai::WorkSpace::Settings>(), "WorkspaceSettings");
-    chai.add(var(&m_settings), "settings");
+    chai.add_global(var(&m_settings), "settings");
     
     /* Set/get timeout for ACK, in milliseconds. */
     chai.add(fun(static_cast<void (SMNChai::WorkSpace::Settings::*)(int)>(&SMNChai::WorkSpace::Settings::ack_timeout)), "ack_timeout");
@@ -554,8 +648,9 @@ void SMNChai::WorkSpace::register_settings_with_Chaiscript(ChaiScript &chai) {
      */
     chai.add(fun([this](bool b) { this->m_settings.m_run_simulation = b; }), "run_simulation");
     
-    /* Set the default communication. */
-    chai.add(fun(&SMNChai::WorkSpace::Settings::default_comm), "default_comm");
+    /* Get and Set the default communication. */
+    chai.add(fun(static_cast<std::string (SMNChai::WorkSpace::Settings::*) () const>(&SMNChai::WorkSpace::Settings::default_comm)), "default_comm");
+    chai.add(fun(static_cast<void (SMNChai::WorkSpace::Settings::*) (const std::string&)>(&SMNChai::WorkSpace::Settings::default_comm)), "default_comm");
     
     /* Set/get MQTT server. */
     chai.add(fun(static_cast<void (SMNChai::WorkSpace::Settings::*)(const std::string&)>(&SMNChai::WorkSpace::Settings::MQTT_server)), "MQTT_server");
@@ -567,6 +662,10 @@ void SMNChai::WorkSpace::Settings::default_comm(const std::string& t_comm) {
     if (m_comm == SMNChai::COMM_DEFAULT) {
         throw smnchai_exception("Default communication protocol must be specific.");
     }
+}
+
+std::string SMNChai::WorkSpace::Settings::default_comm() const {
+    return std::string(CommProtocolNames[m_comm]);
 }
 
 
@@ -717,7 +816,7 @@ void SMNChai::WorkSpace::generate_obn_system_yarp(decltype(SMNChai::WorkSpace::m
     
     // Connect the SMN and the ports (via their system ports)
     // Remote ports must already exist, i.e. remote nodes have already started and are waiting
-    std::string remote_gc_port = '/' + get_full_path(mynode->first, NODE_GC_PORT_NAME);  // YARP requires / at the beginning
+    std::string remote_gc_port = '/' + get_full_path(mynode->first, OBNsim::NODE_GC_PORT_NAME);  // YARP requires / at the beginning
     
     // Check that the remote port exists
     if (!yarp::os::Network::exists(remote_gc_port)) {
@@ -733,7 +832,7 @@ void SMNChai::WorkSpace::generate_obn_system_yarp(decltype(SMNChai::WorkSpace::m
     
     // However, all nodes send to the same GC input port
     // YARP requires / at the beginning
-    if (!yarp::os::Network::connect(remote_gc_port, '/'+get_full_path("_smn_", NODE_GC_PORT_NAME), "", false))
+    if (!yarp::os::Network::connect(remote_gc_port, '/'+get_full_path("_smn_", OBNsim::NODE_GC_PORT_NAME), "", false))
     {
         // Failed -> error; note that the GC is now managing all node objects, so do not delete node objects
         throw smnchai_exception("Could not connect from remote node " + mynode->first + " to the SMN.");

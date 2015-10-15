@@ -1,3 +1,5 @@
+## Build multibusnode
+
 CMAKE_MINIMUM_REQUIRED(VERSION 3.1.0 FATAL_ERROR)
 
 ## Here comes the name of your project:
@@ -45,14 +47,6 @@ ENDIF(CMAKE_COMPILER_IS_GNUCXX)
 # ENDIF(MSVC)
 
 
-## Make sure that C++ 11 is used (for thread, mutex...)
-if(APPLE)
-  list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
-else()
-  set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD 11)
-  set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD_REQUIRED ON)
-endif()
-
 ADD_EXECUTABLE(obn_powernet_multibus
 	csvparser.c
 	multibusnode.cpp
@@ -63,6 +57,16 @@ ADD_EXECUTABLE(obn_powernet_multibus
 # TARGET_LINK_LIBRARIES(obn_powernet_multibus
 # 	extra libraries here if necessary
 # )
+
+
+## Make sure that C++ 11 is used (for thread, mutex...)
+if(APPLE)
+  list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
+else()
+  set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD 11)
+  set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD_REQUIRED ON)
+endif()
+
 
 INSTALL(
   TARGETS obn_powernet_multibus

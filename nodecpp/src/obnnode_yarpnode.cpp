@@ -15,7 +15,6 @@
 #include <obnnode_yarpnode.h>
 #include <obnnode_exceptions.h>
 
-using namespace std;
 using namespace OBNnode;
 using namespace OBNSimMsg;
 

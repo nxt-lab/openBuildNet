@@ -43,7 +43,6 @@
  */
 
 namespace SMNChai {
-
     /** The main exception class of SMNChai, for propagating errors from ChaiScript to main program. */
     class smnchai_exception: public std::exception {
         std::string m_message;
@@ -141,6 +140,9 @@ namespace SMNChai {
         void set_comm_protocol(const std::string& t_comm) {
             m_comm_protocol = comm_protocol_from_string(t_comm);
         }
+        
+        /** Returns the current comm protocol of the node as a string. */
+        std::string get_comm_protocol();
         
         /** \brief Add a new physical input port to the node.
          \param t_name The name of the port.
@@ -349,6 +351,13 @@ namespace SMNChai {
         /** List of all connections between ports in this workspace. */
         std::forward_list< std::pair<PortInfo, PortInfo> > m_connections;
         
+        SMNChai::SMNChaiComm& m_comm;   // reference to the comm structure of the main SMN
+        OBNsmn::GCThread& m_gcthread;   // the GC thread object
+        
+#ifdef OBNSIM_COMM_MQTT
+        bool m_tracking_mqtt_online_nodes = false;  // am I tracking online nodes in MQTT using m_comm->mqttclient;
+#endif
+        
     public:
         /** Class that contains the settings of a workspace/simulation. */
         struct Settings {
@@ -362,6 +371,9 @@ namespace SMNChai {
             
             /* Set the default communication protocol. */
             void default_comm(const std::string& t_comm);
+            
+            /* Get the default communication protocol. */
+            std::string default_comm() const;
             
             /* ACK timeout. */
             void ack_timeout(int t) {
@@ -423,7 +435,7 @@ namespace SMNChai {
         
     public:
         /** Construct a workspace object with a given name. */
-        WorkSpace(const std::string &t_name = "") {
+        WorkSpace(const std::string &t_name, SMNChai::SMNChaiComm& t_comm, OBNsmn::GCThread& gc): m_comm(t_comm), m_gcthread(gc) {
             set_name(t_name);
         }
         
@@ -509,25 +521,25 @@ namespace SMNChai {
          This function checks if the given node is online yet by checking the availability of its GC system port.
          Note that this function uses the current workspace name, so it's important to set the workspace name correctly before calling this function (from ChaiScrip).
          */
-        bool is_node_online(const Node &t_node) const;
+        bool is_node_online(const Node &t_node);
         
-        /** \brief Check if the given node is online.
+        /* \brief Check if the given node is online.
          
          This function checks if a node, given by its name, is online yet by checking the availability of its GC system port.
          Note that this function uses the current workspace name, so it's important to set the workspace name correctly before calling this function (from ChaiScrip).
          */
-        bool is_node_online(const std::string &t_node) const;
+        //bool is_node_online(const std::string &t_node) const;
         
         /** \brief Check if all nodes in the workspace are online.
          
          Note that this function uses the current workspace name, so it's important to set the workspace name correctly before calling this function (from ChaiScrip).
          */
-        bool are_all_nodes_online() const;
+        bool are_all_nodes_online();
         
         /** Starts a remote node if it's not online.
          This function checks if the given node is online; if it's not, SMNChai::start_remote_node() is called to start the remote node with the given arguments. */
-        void start_remote_node(const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag = "") const;
-        void start_remote_node(const Node &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag = "") const;
+        void start_remote_node(const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag = "");
+        void start_remote_node(const Node &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag = "");
         
 
         /** Wait until a node is online or a timeout.
@@ -536,22 +548,34 @@ namespace SMNChai {
          \param timeout The timeout value in seconds; it's ignored if timeout <= 0.
          \exception smnchai_exception An error (timeout) happens.
          */
-        void waitfor_node_online(const SMNChai::Node &t_node, double timeout) const;
+        void waitfor_node_online(const SMNChai::Node &t_node, double timeout);
         
-        /** Wait until a node is online or a timeout.
+        /* Wait until a node is online or a timeout.
             If the simulation is not going to run, this function will return immediately.
          \param t_node The name of the node to wait for.
          \param timeout The timeout value in seconds; it's ignored if timeout <= 0.
          \exception smnchai_exception An error (timeout) happens.
          */
-        void waitfor_node_online(const std::string &t_node, double timeout) const;
+        // void waitfor_node_online(const std::string &t_node, double timeout) const;
         
         /** Wait until all nodes go online or a timeout.
             If the simulation is not going to run, this function will return immediately.
          \param timeout The timeout value in seconds; it's ignored if timeout <= 0.
          \exception smnchai_exception An error (timeout) happens.
          */
-        void waitfor_all_nodes_online(double timeout) const;
+        void waitfor_all_nodes_online(double timeout);
+        
+#ifdef OBNSIM_COMM_MQTT
+        /** \brief Start the MQTTClient in the comm structure of the SMN.
+         
+         Call this function to start the MQTTClient in the comm structure of the SMN.
+         The client should not be created outside this function.
+         This function sets the configuration of the MQTT client using the Settings of this workspace.
+         \return true if successful.
+         */
+        //bool start_mqtt_client(OBNsmn::GCThread& gc);
+        bool start_mqtt_client();
+#endif
         
     public:
         // Methods for exporting the network description to DOT, etc.

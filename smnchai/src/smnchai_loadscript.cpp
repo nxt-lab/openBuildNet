@@ -24,10 +24,12 @@
 const char *SMNCHAI_ENV_VAR = "SMNCHAI_DIR";    // environment variable that contains the path to the main SMNChai directory
 const char *SMNCHAI_STDLIB_NAME = "stdlib.chai";    // name of the standard library file
 
-
 // Return true if simulation should continue, false if should exit with given return code in the second value
-std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file, const std::vector<std::string>& script_args, const std::string& default_workspace,
-                        OBNsmn::GCThread& gc, SMNChai::SMNChaiComm& comm)
+std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
+                                                 const std::vector<std::string>& script_args,
+                                                 const std::string& default_workspace,
+                                                 OBNsmn::GCThread& gc,
+                                                 SMNChai::SMNChaiComm& comm)
 {
     // Get the main directory of SMNChai
     boost::filesystem::path smnchai_main_dir;
@@ -76,7 +78,7 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
     chaiscript::ChaiScript chai(chaiscript::Std_Lib::library(), std::vector<std::string>(), chai_usepath);  // Static standard library + search path
 #endif
     
-    SMNChai::WorkSpace ws(default_workspace);  // default workspace name is the name of the script file
+    SMNChai::WorkSpace ws(default_workspace, comm, gc);  // default workspace name is the name of the script file
     SMNChai::registerSMNAPI(chai, ws);
     
     std::cout << "Loading the Chaiscript file: " << script_file << std::endl;
@@ -110,7 +112,6 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
     
     // Need to create and start the communication threads here to get certain messages from the nodes
     bool create_yarp = (comm.yarpThread == nullptr);
-    bool create_mqtt = (comm.mqttClient == nullptr);
     
     if (ws.is_comm_protocol_used(SMNChai::COMM_YARP)) {
         // Create and Open Yarp port
@@ -120,7 +121,9 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
         }
         
         // Set the GC port name on this SMN
-        comm.yarpThread->setPortName('/' + ws.get_full_path("_smn_", "_gc_"));  // YARP requires / at the beginning
+        comm.yarpThread->setPortName('/' + ws.get_full_path("_smn_", OBNsim::NODE_GC_PORT_NAME));  // YARP requires / at the beginning
+        
+        bool yarpSuccess = true;
         
         // Must open the GC port on this SMN because other nodes will be connected to it in generate_obn_system()
         if (!comm.yarpThread->openPort()) {
@@ -130,7 +133,7 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
                 delete comm.yarpThread;
                 comm.yarpThread = nullptr;
             }
-            return std::make_pair(false, 5);
+            yarpSuccess = false;
         }
         
         // Start Yarp communication
@@ -141,6 +144,18 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
                 delete comm.yarpThread;
                 comm.yarpThread = nullptr;
             }
+            yarpSuccess = false;
+        }
+        
+        if (!yarpSuccess) {
+            // Delete the MQTT thread if it's already started
+#ifdef OBNSIM_COMM_MQTT
+            if (comm.mqttClient != nullptr) {
+                comm.mqttClient->stop();
+                delete comm.mqttClient;
+                comm.mqttClient = nullptr;
+            }
+#endif
             return std::make_pair(false, 5);
         }
 #else
@@ -153,15 +168,8 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
         // Create and Open MQTT port
         // If fail, remember to also shut down Yarp if necessary (shutdown_communication_threads)
 #ifdef OBNSIM_COMM_MQTT
-        if (create_mqtt) {
-            comm.mqttClient = new OBNsmn::MQTT::MQTTClient(&gc);
-        }
-        comm.mqttClient->setClientID(ws.get_name());
-        comm.mqttClient->setPortName(ws.get_full_path("_smn_", "_gc_"));
-        comm.mqttClient->setServerAddress(ws.m_settings.m_mqtt_server);
-        
         // Start MQTT communication
-        if (!comm.mqttClient->start()) {
+        if (!ws.start_mqtt_client()) {
             std::cerr << "ERROR: could not start MQTT communication thread." << std::endl;
 #ifdef OBNSIM_COMM_YARP
             // Shut down Yarp
@@ -174,7 +182,7 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
             }
 #endif
             // Delete the MQTT client
-            if (create_mqtt) {
+            if (comm.mqttClient != nullptr) {
                 delete comm.mqttClient;
                 comm.mqttClient = nullptr;
             }
@@ -192,7 +200,20 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
         return std::make_pair(false, 5);
 #endif
     }
+#ifdef OBNSIM_COMM_MQTT
+    else if (comm.mqttClient) {
+        comm.mqttClient->stop();
+        delete comm.mqttClient;
+    }
+#endif
 
+#ifdef OBNSIM_COMM_MQTT
+    if (comm.mqttClient) {
+        // The MQTT client is running and may be tracking nodes' availability -> stop tracking
+        comm.mqttClient->stopListeningForArrivals();
+    }
+#endif
+    
     try {
         ws.generate_obn_system(gc, comm);
     } catch (SMNChai::smnchai_exception const &e) {
@@ -209,7 +230,8 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
         }
 #endif
 #ifdef OBNSIM_COMM_MQTT
-        if (comm.mqttClient && create_mqtt) {
+        if (comm.mqttClient) {
+            comm.mqttClient->stop();
             delete comm.mqttClient;
             comm.mqttClient = nullptr;
         }

@@ -15,7 +15,6 @@
 #include <obnnode_basic.h>
 #include <obnnode_exceptions.h>
 
-using namespace std;
 using namespace OBNnode;
 using namespace OBNSimMsg;
 
@@ -113,7 +112,7 @@ bool NodeBase::addOutput(OutputPortBase* port, bool owned) {
  \param name The required name of the node; must be a valid node name.
  \param ws The optional workspace; must be a valid identifier. The workspace name is prepended to all names used by this node, including the SMN. Default workspace is "" (i.e. no workspace).
  */
-NodeBase::NodeBase(const string& _name, const string& ws) {
+NodeBase::NodeBase(const std::string& _name, const std::string& ws) {
     _nodeName = OBNsim::Utils::trim(_name);
     assert(OBNsim::Utils::isValidNodeName(_nodeName));
     
@@ -183,8 +182,9 @@ void NodeBase::delayBeforeShutdown() const {
 
 
 /** This method initializes the node before a simulation starts. This is different from the callback for the INIT message. This method is called before the node even starts waiting for the INIT message. */
-void NodeBase::initializeForSimulation() {
+bool NodeBase::initializeForSimulation() {
     _current_sim_time = 0;
+    return true;
 }
 
 
@@ -238,7 +238,13 @@ void NodeBase::run(double timeout) {
         return;
     }
     
-    initializeForSimulation();
+    if (!initializeForSimulation()) {
+        // Error
+        _node_state = NODE_ERROR;
+        onReportInfo("[NODE] Could not initialize the simulation.");
+        return;
+    }
+    
     _node_state = NODE_STARTED;     // Node has started, but not yet initialized
     
     // Looping to process events until the simulation stops or a timeout occurs

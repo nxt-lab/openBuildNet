@@ -15,7 +15,6 @@
 #include <obnnode_MQTTnode.h>
 #include <obnnode_exceptions.h>
 
-using namespace std;
 using namespace OBNnode;
 using namespace OBNSimMsg;
 
@@ -62,6 +61,34 @@ bool MQTTNodeBase::openSMNPort() {
     
     // Subscribe to the SMN topic
     return mqtt_client.addSubscription(&m_smn_port, fullPortName("_gc_")) >= 0;
+}
+
+
+bool MQTTNodeBase::initializeForSimulation() {
+    //onReportInfo("MQTT initializeForSimulation.");
+    
+    // Call the parent's initialization
+    if (!NodeBase::initializeForSimulation()) {
+        return false;
+    }
+    
+    if (!mqtt_client.isRunning()) {
+        onReportInfo("[MQTT] MQTT Client is not running; check the communication network or the MQTT broker.");
+        return false;
+    }
+    
+    // Send a message which contains my name to the common MQTT topic to announce that I'm online
+    // This needs to be done everytime this node starts a simulation run
+    auto namelen = _nodeName.size();
+    char myname[namelen];
+    _nodeName.copy(myname, namelen);
+    
+    // Send message: last param is retained = 1
+    if (!mqtt_client.sendData(myname, namelen, _workspace + "_smn_/_nodes_/" + _nodeName, 1)) {
+        onReportInfo("[MQTT] Could not send the availability announcement; check the communication network or the MQTT broker.");
+        return false;
+    }
+    return true;
 }
 
 

@@ -16,6 +16,9 @@
 #include <chrono>
 
 namespace OBNsim {
+    // Some constants
+    extern const char *NODE_GC_PORT_NAME;
+    
     // For debugging purposes
     // extern std::chrono::time_point<std::chrono::steady_clock> clockStart;
     

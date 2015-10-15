@@ -281,7 +281,7 @@ namespace OBNnode {
         simtime_t _timeunit = 1;
         
         /** \brief Initialize node for simulation. */
-        void initializeForSimulation();
+        virtual bool initializeForSimulation();
         
         /** Check the given message against the list of wait-for conditions. */
         virtual void checkWaitForCondition(const OBNSimMsg::SMN2N&) = 0;

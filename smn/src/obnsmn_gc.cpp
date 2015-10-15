@@ -593,6 +593,11 @@ bool GCThread::gc_send_update_y() {
     msg.set_msgtype(OBNSimMsg::SMN2N_MSGTYPE_SIM_Y);
     msg.set_time(current_sim_time);
     
+    // Set up wait-for now because otherwise, for large number of nodes, ACK messages may start coming in soon and not registered.
+    if (!gc_waitfor_start(updateList, OBNSimMsg::N2SMN::SIM_Y_ACK)) {
+        return false;
+    }
+    
     for (const auto & node: updateList) {
         // Each node is a pair (node-ID, updatemask)
         int thisNodeID = node.first;
@@ -602,11 +607,6 @@ bool GCThread::gc_send_update_y() {
         msg.set_i(node.second); // Set the update mask specified in the update list
 
         _nodes[thisNodeID]->sendMessage(thisNodeID, msg);
-    }
-    
-    // Set up wait-for
-    if (!gc_waitfor_start(updateList, OBNSimMsg::N2SMN::SIM_Y_ACK)) {
-        return false;
     }
     
     // Set up timeout if necessary
@@ -700,13 +700,52 @@ bool GCThread::gc_send_update_x() {
         }
     }
     
-    // Send the UPDATE_X messages to all nodes in gc_update_list
     int numUpdateX = 0;    // Number of nodes receiving UPDATE_X
     
+    // Set up wait-for now because otherwise, for large number of nodes, ACK messages may start coming in soon and are thus not registered.
+    {
+        std::lock_guard<std::mutex> lock(gc_waitfor_mutex);
+        
+        if (gc_waitfor_status == GC_WAITFOR_RESULT_ACTIVE) {
+            // It's an error that wait-for is still active
+            report_error(0, "Internal error: wait-for event is active before sending UPDATE_X messages.");
+            return false;
+        } else if (gc_waitfor_status == GC_WAITFOR_RESULT_ERROR) {
+            // It's an error that wait-for is in error state
+            report_error(0, "Internal error: wait-for event is in error state before sending UPDATE_X messages.");
+            return false;
+        }
+        
+        for (size_t k = 0; k < gc_update_size; ++k) {
+            auto ID = gc_update_list[k].nodeID;
+            
+            if (_nodes[ID]->needUPDATEX) {
+                // Mark the corresponding bit for wait-for event
+                gc_waitfor_bits[ID] = false;
+                ++numUpdateX;
+            }
+        }
+        
+        if (numUpdateX > 0) {
+            gc_waitfor_type = OBNSimMsg::N2SMN::SIM_X_ACK;
+            gc_waitfor_num = numUpdateX;
+            gc_waitfor_status = GC_WAITFOR_RESULT_ACTIVE;
+            gc_waitfor_predicate = nullptr;
+        } else {
+            // No nodes need UPDATE_X -> disable wait-for and return
+            gc_waitfor_status = GC_WAITFOR_RESULT_NONE;
+        }
+    }
+    
+    if (numUpdateX == 0) {
+        return true;
+    }
+    
+    // Send the UPDATE_X messages to all nodes in gc_update_list
     OBNSimMsg::SMN2N msg;
     msg.set_msgtype(OBNSimMsg::SMN2N_MSGTYPE_SIM_X);
     msg.set_time(current_sim_time);
-    
+
     for (size_t k = 0; k < gc_update_size; ++k) {
         auto ID = gc_update_list[k].nodeID;
         
@@ -716,36 +755,15 @@ bool GCThread::gc_send_update_x() {
 
             msg.set_i(gc_update_list[k].updateMask);    // Set the update mask specified in the update list
             _nodes[ID]->sendMessage(ID, msg);
-            
-            ++numUpdateX;
         }
     }
-
-    if (numUpdateX > 0) {
-        // Set up timeout if necessary
-        if (ack_timeout > 0) {
-            gc_timer_start(ack_timeout);
-        }
-        else {
-            gc_timer_reset();
-        }
-        
-        // Set up wait-for
-        std::lock_guard<std::mutex> lock(gc_waitfor_mutex);
-        
-        for (size_t k = 0; k < gc_update_size; ++k) {
-            auto ID = gc_update_list[k].nodeID;
-            
-            if (_nodes[ID]->needUPDATEX) {
-                // Mark the corresponding bit for wait-for event
-                gc_waitfor_bits[ID] = false;
-            }
-        }
-        
-        gc_waitfor_type = OBNSimMsg::N2SMN::SIM_X_ACK;
-        gc_waitfor_num = numUpdateX;
-        gc_waitfor_status = GC_WAITFOR_RESULT_ACTIVE;
-        gc_waitfor_predicate = nullptr;
+    
+    // Set up timeout if necessary
+    if (ack_timeout > 0) {
+        gc_timer_start(ack_timeout);
+    }
+    else {
+        gc_timer_reset();
     }
     
     return true;
@@ -805,9 +823,14 @@ bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OB
         std::lock_guard<std::mutex> mlock(gc_waitfor_mutex);
         if (gc_waitfor_status == GC_WAITFOR_RESULT_ACTIVE) {
             // It's an error that wait-for is still active
-            report_error(0, "Internal error: wait-for event is active before sending message #");
+            report_error(0, "Internal error: wait-for event is active before sending messages of type " + std::to_string(msgtype) + " to all nodes.");
             return false;
         }
+    }
+    
+    // Set up the wait-for event now because otherwise, for large number of nodes, ACK messages may start coming in very soon and are not registered.
+    if (!gc_waitfor_start_all(acktype, pred)) {
+        return false;
     }
     
     // Send the message to all nodes
@@ -820,9 +843,8 @@ bool GCThread::gc_send_to_all(simtime_t t, OBNSimMsg::SMN2N::MSGTYPE msgtype, OB
     if (ack_timeout > 0) {
         gc_timer_start(ack_timeout);
     }
-    
-    // Set up the wait-for event
-    return gc_waitfor_start_all(acktype, pred);
+
+    return true;
 }
 
 

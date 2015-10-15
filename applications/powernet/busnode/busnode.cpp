@@ -30,21 +30,111 @@ using namespace OBNnode;
 // The update that gets the values returned from the grid node, disaggregates them, and forwards them to the user nodes.
 #define FEEDBACK_UPDATE 1
 
-
-/* The controller node class */
-class ConstBus: public YarpNode {
-private:
-    // The constant vector to be output, at least of length 4
-    Eigen::VectorXd m_const_value;
+#ifdef OBNNODE_COMM_YARP
+class ConstBusYarp: public YarpNode {
+protected:
     
     // One input: V from the grid node, a vector of 4 doubles
     YarpInput<OBN_PB, obn_vector_fixed<double, 4> > m_input_grid;
     
     // Output: V from bus to grid, vector of doubles, at least 4
     YarpOutput<OBN_PB, obn_vector<double> > m_output_grid;
+    
 public:
-    ConstBus(const char* t_name, const char* t_workspace, const std::vector<double>& t_values):
-    YarpNode(t_name, t_workspace), m_input_grid("VfromGrid"), m_output_grid("VtoGrid")
+    ConstBusYarp(const std::string& _name, const std::string& ws): YarpNode(_name, ws), m_input_grid("VfromGrid"), m_output_grid("VtoGrid") { }
+};
+
+class GenericBusYarp: public YarpNode {
+protected:
+    using UserInputType = YarpInput< OBN_PB, obn_vector<double> >;
+    UserInputType* new_user_input_port(const std::string& t_name) {
+        return new UserInputType(t_name);
+    }
+    
+    // Vector of inputs from user nodes.
+    std::vector< std::unique_ptr<UserInputType> > m_input_users;
+    
+    // Output: V from bus to grid, vector of doubles
+    YarpOutput<OBN_PB, obn_vector<double> > m_output_grid;
+    
+    // Input: V from the grid node, a vector of 4 doubles
+    YarpInput<OBN_PB, obn_vector_fixed<double, 4> > m_input_grid;
+    
+    using UserOutputType = YarpOutput< OBN_PB, obn_vector_fixed<double, 4> >;
+    UserOutputType* new_user_output_port(const std::string& t_name) {
+        return new UserOutputType(t_name);
+    }
+    
+    // Vector of outputs to user nodes.
+    std::vector< std::unique_ptr<UserOutputType> > m_output_users;
+    
+public:
+    GenericBusYarp(const std::string& t_name, const std::string& ws): YarpNode(t_name, ws), m_output_grid("VtoGrid"), m_input_grid("VfromGrid")
+    {
+    }
+
+};
+#endif
+
+
+#ifdef OBNNODE_COMM_MQTT
+class ConstBusMQTT: public MQTTNode {
+protected:
+    
+    // One input: V from the grid node, a vector of 4 doubles
+    MQTTInput<OBN_PB, obn_vector_fixed<double, 4> > m_input_grid;
+    
+    // Output: V from bus to grid, vector of doubles, at least 4
+    MQTTOutput<OBN_PB, obn_vector<double> > m_output_grid;
+    
+public:
+    ConstBusMQTT(const std::string& _name, const std::string& ws): MQTTNode(_name, ws), m_input_grid("VfromGrid", &mqtt_client), m_output_grid("VtoGrid", &mqtt_client) { }
+};
+
+class GenericBusMQTT: public MQTTNode {
+protected:
+    using UserInputType = MQTTInput< OBN_PB, obn_vector<double> >;
+    UserInputType* new_user_input_port(const std::string& t_name) {
+        return new UserInputType(t_name, &mqtt_client);
+    }
+    
+    // Vector of inputs from user nodes.
+    std::vector< std::unique_ptr<UserInputType> > m_input_users;
+    
+    // Output: V from bus to grid, vector of doubles
+    MQTTOutput<OBN_PB, obn_vector<double> > m_output_grid;
+    
+    // Input: V from the grid node, a vector of 4 doubles
+    MQTTInput<OBN_PB, obn_vector_fixed<double, 4> > m_input_grid;
+    
+    using UserOutputType = MQTTOutput< OBN_PB, obn_vector_fixed<double, 4> >;
+    UserOutputType* new_user_output_port(const std::string& t_name) {
+        return new UserOutputType(t_name, &mqtt_client);
+    }
+    
+    // Vector of outputs to user nodes.
+    std::vector< std::unique_ptr<UserOutputType> > m_output_users;
+    
+public:
+    GenericBusMQTT(const std::string& t_name, const std::string& ws): MQTTNode(t_name, ws), m_output_grid("VtoGrid", &mqtt_client), m_input_grid("VfromGrid", &mqtt_client)
+    {
+    }
+    
+};
+#endif
+
+
+/* The constant bus node class, defined on a base class (for Yarp, MQTT, etc.)
+ The base class must have the inputs and outputs of the node.
+ */
+template <typename BaseCLS>
+class ConstBus: public BaseCLS {
+private:
+    // The constant vector to be output, at least of length 4
+    Eigen::VectorXd m_const_value;
+    
+public:
+    ConstBus(const char* t_name, const char* t_workspace, const std::vector<double>& t_values): BaseCLS(t_name, t_workspace)
     {
         assert(t_values.size() >= 4);
         
@@ -58,31 +148,33 @@ public:
     
     /* Add ports to node, hardware components may be started, etc. */
     bool initialize() {
+        if (!this->openSMNPort()) {
+            std::cerr << "Error while opening the GC port; check the network or server.\n";
+            return false;
+        }
+        
         bool success;
         
         // Add the ports to the node
-        if (!(success = addInput(&m_input_grid))) {
-            std::cerr << "Error while adding input: " << m_input_grid.getPortName() << std::endl;
+        if (!(success = this->addInput(&this->m_input_grid))) {
+            std::cerr << "Error while adding input: " << this->m_input_grid.getPortName() << std::endl;
         }
         
-        if (success && !(success = addOutput(&m_output_grid))) {
-            std::cerr << "Error while adding output: " << m_output_grid.getPortName() << std::endl;
+        if (success && !(success = this->addOutput(&this->m_output_grid))) {
+            std::cerr << "Error while adding output: " << this->m_output_grid.getPortName() << std::endl;
         }
         
         // Add the updates
-        success = success && (addUpdate(MAIN_UPDATE, std::bind(&ConstBus::doMainUpdate, this)) >= 0);
-        
-        // Open the SMN port
-        success = success && openSMNPort();
+        success = success && (this->addUpdate(MAIN_UPDATE, std::bind(&ConstBus::doMainUpdate, this)) >= 0);
         
         return success;
     }
     
     void doMainUpdate() {
         // Send the constant values to the grid node
-        m_output_grid = m_const_value;
+        this->m_output_grid = m_const_value;
         
-        //std::cout << "At " << _current_sim_time << " UPDATE_Y" << std::endl;
+        //std::cout << "At " << currentSimulationTime() << " UPDATE_Y" << std::endl;
     }
     
     /* This node has no state update */
@@ -91,40 +183,27 @@ public:
      This is different from initialize() above. */
     virtual void onInitialization() {
         // Initial state and output
-        m_output_grid = m_const_value;
+        this->m_output_grid = m_const_value;
         
-        std::cout << "At " << _current_sim_time << " INIT" << std::endl;
+        std::cout << "At " << this->currentSimulationTime() << " INIT" << std::endl;
     }
     
     /* This callback is called when the node's current simulation is about to be terminated. */
     virtual void onTermination() {
-        std::cout << "At " << _current_sim_time << " TERMINATED" << std::endl;
+        std::cout << "At " << this->currentSimulationTime() << " TERMINATED" << std::endl;
     }
     
     /* There are other callbacks for reporting errors, etc. */
 };
 
 
-// The generic bus node, with at least one user attached to it
-class GenericBus: public YarpNode {
+/* The generic bus node, with at least one user attached to it, defined on a base class (for Yarp, MQTT, etc.)
+ The base class must have the inputs and outputs of the node.
+ */
+template <typename BaseCLS>
+class GenericBus: public BaseCLS {
 private:
     unsigned int m_nUsers;
-    
-    using UserInputType = YarpInput< OBN_PB, obn_vector<double> >;
-    
-    // Vector of inputs from user nodes.
-    std::vector< std::unique_ptr<UserInputType> > m_input_users;
-    
-    // Output: V from bus to grid, vector of doubles
-    YarpOutput<OBN_PB, obn_vector<double> > m_output_grid;
-    
-    // Input: V from the grid node, a vector of 4 doubles
-    YarpInput<OBN_PB, obn_vector_fixed<double, 4> > m_input_grid;
-    
-    using UserOutputType = YarpOutput< OBN_PB, obn_vector_fixed<double, 4> >;
-    
-    // Vector of outputs to user nodes.
-    std::vector< std::unique_ptr<UserOutputType> > m_output_users;
     
     // Memory variables to store the requested values P's and Q's of users
     struct VWithLimits {
@@ -161,13 +240,13 @@ private:
         // Get and process the requests from users
         for (auto i = 1; i <= m_nUsers; i++) {
             if (!processUserInput(i, curE, curTheta)) {
-                std::cout << "[ERROR] At " << currentSimulationTime() << " encountered an input error; continue with previous values.\n";
+                std::cout << "[ERROR] At " << this->currentSimulationTime() << " encountered an input error; continue with previous values.\n";
                 return;
             }
         }
 
         // Send out the aggregate values
-        auto& output = (*m_output_grid);
+        auto& output = (*(this->m_output_grid));
         bool bPNaN = m_nPNaNs>0, bQNaN = m_nQNaNs>0;
         output.resize(4 + (bPNaN?2:0) + (bQNaN?2:0));
         
@@ -188,15 +267,15 @@ private:
             output[5 + (bPNaN?2:0)] = m_Qsum + m_Qmax;
         }
         
-        //std::cout << "At " << _current_sim_time << " UPDATE_Y" << std::endl;
+        //std::cout << "At " << currentSimulationTime() << " UPDATE_Y" << std::endl;
     }
     
     void doFeedbackUpdate() {
-        auto result = m_input_grid();
+        auto result = this->m_input_grid();
         
         // For E and theta
         for (auto i = 0; i < m_nUsers; ++i) {
-            auto& user_v = **m_output_users[i];
+            auto& user_v = **(this->m_output_users)[i];
             user_v[2] = result[2];
             user_v[3] = result[3];
         }
@@ -215,7 +294,7 @@ private:
             // Ratios for distributing P/Q to flexible users (i.e. NaN users)
             double Pr = m_nPNaNs>0?((result[0] - m_Psum) - m_Pmin)/(m_Pmax - m_Pmin):0;
             for (auto i = 0; i < m_nUsers; ++i) {
-                auto& user_v = **m_output_users[i];
+                auto& user_v = **(this->m_output_users)[i];
                 user_v[0] = std::isfinite(m_Ps[i].value)?m_Ps[i].value:((m_Ps[i].maxvalue-m_Ps[i].minvalue)*Pr + m_Ps[i].minvalue);
             }
         } else if (std::isfinite(m_Pmin)) {
@@ -224,7 +303,7 @@ private:
             auto Pr = result[0];
             int theOne = -1;
             for (auto i = 0; i < m_nUsers; ++i) {
-                auto& user_v = **m_output_users[i];
+                auto& user_v = **(this->m_output_users)[i];
                 if (std::isfinite(m_Ps[i].value)) {
                     auto tmp = m_Ps[i].value;
                     user_v[0] = tmp;
@@ -236,7 +315,7 @@ private:
                     user_v[0] = tmp;
                     Pr -= tmp;
                 }
-                (**m_output_users[theOne])[0] = Pr;
+                (**(this->m_output_users)[theOne])[0] = Pr;
             }
         } else if (std::isfinite(m_Pmax)) {
             // Case 3
@@ -244,7 +323,7 @@ private:
             auto Pr = result[0];
             int theOne = -1;
             for (auto i = 0; i < m_nUsers; ++i) {
-                auto& user_v = **m_output_users[i];
+                auto& user_v = **(this->m_output_users)[i];
                 if (std::isfinite(m_Ps[i].value)) {
                     auto tmp = m_Ps[i].value;
                     user_v[0] = tmp;
@@ -256,7 +335,7 @@ private:
                     user_v[0] = tmp;
                     Pr -= tmp;
                 }
-                (**m_output_users[theOne])[0] = Pr;
+                (**(this->m_output_users)[theOne])[0] = Pr;
             }
         } else {
             // Case 4
@@ -287,7 +366,7 @@ private:
             
             auto Pr = result[0];
             for (auto i = 0; i < m_nUsers; ++i) {
-                auto& user_v = **m_output_users[i];
+                auto& user_v = **(this->m_output_users)[i];
                 if (std::isfinite(m_Ps[i].value)) {
                     auto tmp = m_Ps[i].value;
                     user_v[0] = tmp;
@@ -317,13 +396,13 @@ private:
                 }
                 if (theI == theJ) {
                     // Case 4a
-                    (**m_output_users[theI])[0] = Pr;
+                    (**(this->m_output_users)[theI])[0] = Pr;
                 } else {
                     // Case 4b
                     // If x-A > B then we take Pj = x - A; o.w. Pj = B. Then Pi = x - Pj.
                     double Pj = (Pr-A > B)?Pr-A:B;
-                    (**m_output_users[theI])[0] = Pr - Pj;
-                    (**m_output_users[theJ])[0] = Pj;
+                    (**(this->m_output_users)[theI])[0] = Pr - Pj;
+                    (**(this->m_output_users)[theJ])[0] = Pj;
                 }
             }
         }
@@ -335,7 +414,7 @@ private:
             // Ratios for distributing P/Q to flexible users (i.e. NaN users)
             double Qr = m_nQNaNs>0?((result[1] - m_Qsum) - m_Qmin)/(m_Qmax - m_Qmin):0;
             for (auto i = 0; i < m_nUsers; ++i) {
-                auto& user_v = **m_output_users[i];
+                auto& user_v = **(this->m_output_users)[i];
                 user_v[1] = std::isfinite(m_Qs[i].value)?m_Qs[i].value:((m_Qs[i].maxvalue - m_Qs[i].minvalue)*Qr + m_Qs[i].minvalue);
             }
         } else if (std::isfinite(m_Qmin)) {
@@ -344,7 +423,7 @@ private:
             auto Qr = result[1];
             int theOne = -1;
             for (auto i = 0; i < m_nUsers; ++i) {
-                auto& user_v = **m_output_users[i];
+                auto& user_v = **(this->m_output_users)[i];
                 if (std::isfinite(m_Qs[i].value)) {
                     auto tmp = m_Qs[i].value;
                     user_v[1] = tmp;
@@ -356,7 +435,7 @@ private:
                     user_v[1] = tmp;
                     Qr -= tmp;
                 }
-                (**m_output_users[theOne])[1] = Qr;
+                (**(this->m_output_users)[theOne])[1] = Qr;
             }
         } else if (std::isfinite(m_Qmax)) {
             // Case 3
@@ -364,7 +443,7 @@ private:
             auto Qr = result[1];
             int theOne = -1;
             for (auto i = 0; i < m_nUsers; ++i) {
-                auto& user_v = **m_output_users[i];
+                auto& user_v = **(this->m_output_users)[i];
                 if (std::isfinite(m_Qs[i].value)) {
                     auto tmp = m_Qs[i].value;
                     user_v[1] = tmp;
@@ -376,7 +455,7 @@ private:
                     user_v[1] = tmp;
                     Qr -= tmp;
                 }
-                (**m_output_users[theOne])[1] = Qr;
+                (**(this->m_output_users)[theOne])[1] = Qr;
             }
         } else {
             // Case 4
@@ -407,7 +486,7 @@ private:
             
             auto Qr = result[1];
             for (auto i = 0; i < m_nUsers; ++i) {
-                auto& user_v = **m_output_users[i];
+                auto& user_v = **(this->m_output_users)[i];
                 if (std::isfinite(m_Qs[i].value)) {
                     auto tmp = m_Qs[i].value;
                     user_v[1] = tmp;
@@ -437,17 +516,17 @@ private:
                 }
                 if (theI == theJ) {
                     // Case 4a
-                    (**m_output_users[theI])[1] = Qr;
+                    (**(this->m_output_users)[theI])[1] = Qr;
                 } else {
                     // Case 4b
                     double Qj = (Qr-A > B)?Qr-A:B;
-                    (**m_output_users[theI])[1] = Qr - Qj;
-                    (**m_output_users[theJ])[1] = Qj;
+                    (**(this->m_output_users)[theI])[1] = Qr - Qj;
+                    (**(this->m_output_users)[theJ])[1] = Qj;
                 }
             }
         }
         
-        //std::cout << "At " << _current_sim_time << " UPDATE_Y" << std::endl;
+        //std::cout << "At " << currentSimulationTime() << " UPDATE_Y" << std::endl;
     }
     
 public:
@@ -457,33 +536,37 @@ public:
      \param t_workspace The workspace name
      \param t_nUsers Number of users (>= 1)
      */
-    GenericBus(const char* t_name, const char* t_workspace, unsigned int t_nUsers):
-    YarpNode(t_name, t_workspace), m_nUsers(t_nUsers),
-    m_output_grid("VtoGrid"), m_input_grid("VfromGrid")
+    GenericBus(const char* t_name, const char* t_workspace, unsigned int t_nUsers): BaseCLS(t_name, t_workspace), m_nUsers(t_nUsers)
     {
         assert(t_nUsers > 0);
-        m_input_users.reserve(m_nUsers);
-        m_output_users.reserve(m_nUsers);
+        this->m_input_users.reserve(m_nUsers);
+        this->m_output_users.reserve(m_nUsers);
     }
     
     /* Add ports to node, register updates, etc. */
     bool initialize() {
+        // Open the SMN port
+        if (!this->openSMNPort()) {
+            std::cerr << "Error while opening the GC port; check the network or server.\n";
+            return false;
+        }
+        
         bool success;
         
         // Add the ports to the node
-        if (!(success = addInput(&m_input_grid))) {
-            std::cerr << "Error while adding input: " << m_input_grid.getPortName() << std::endl;
+        if (!(success = this->addInput(&this->m_input_grid))) {
+            std::cerr << "Error while adding input: " << this->m_input_grid.getPortName() << std::endl;
         }
         
-        if (success && !(success = addOutput(&m_output_grid))) {
-            std::cerr << "Error while adding output: " << m_output_grid.getPortName() << std::endl;
+        if (success && !(success = this->addOutput(&this->m_output_grid))) {
+            std::cerr << "Error while adding output: " << this->m_output_grid.getPortName() << std::endl;
         }
         
         if (success) {
             for (auto i = 1; i <= m_nUsers; ++i) {
-                m_input_users.emplace_back(new UserInputType("Vfrom" + std::to_string(i)));
-                auto p = m_input_users.back().get();
-                if (!(success = addInput(p))) {
+                this->m_input_users.emplace_back(this->new_user_input_port("Vfrom" + std::to_string(i)));
+                auto p = this->m_input_users.back().get();
+                if (!(success = this->addInput(p))) {
                     std::cerr << "Error while adding input: " << p->getPortName() << std::endl;
                     break;
                 }
@@ -492,9 +575,9 @@ public:
         
         if (success) {
             for (auto i = 1; i <= m_nUsers; ++i) {
-                m_output_users.emplace_back(new UserOutputType("Vto" + std::to_string(i)));
-                auto p = m_output_users.back().get();
-                if (!(success = addOutput(p))) {
+                this->m_output_users.emplace_back(this->new_user_output_port("Vto" + std::to_string(i)));
+                auto p = this->m_output_users.back().get();
+                if (!(success = this->addOutput(p))) {
                     std::cerr << "Error while adding output: " << p->getPortName() << std::endl;
                     break;
                 }
@@ -502,11 +585,8 @@ public:
         }
         
         // Add the updates
-        success = success && (addUpdate(MAIN_UPDATE, std::bind(&GenericBus::doMainUpdate, this)) >= 0);
-        success = success && (addUpdate(FEEDBACK_UPDATE, std::bind(&GenericBus::doFeedbackUpdate, this)) >= 0);
-        
-        // Open the SMN port
-        success = success && openSMNPort();
+        success = success && (this->addUpdate(MAIN_UPDATE, std::bind(&GenericBus::doMainUpdate, this)) >= 0);
+        success = success && (this->addUpdate(FEEDBACK_UPDATE, std::bind(&GenericBus::doFeedbackUpdate, this)) >= 0);
         
         return success;
     }
@@ -521,26 +601,26 @@ public:
         m_Ps.assign(m_nUsers, v);
         m_Qs.assign(m_nUsers, v);
         
-        std::cout << "At " << currentSimulationTime() << " INIT" << std::endl;
+        std::cout << "At " << this->currentSimulationTime() << " INIT" << std::endl;
     }
     
     /* This callback is called when the node's current simulation is about to be terminated. */
     virtual void onTermination() {
-        std::cout << "At " << _current_sim_time << " TERMINATED" << std::endl;
+        std::cout << "At " << this->currentSimulationTime() << " TERMINATED" << std::endl;
     }
     
     /* There are other callbacks for reporting errors, etc. */
 };
 
-
-bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta) {
+template <typename BaseCLS>
+bool GenericBus<BaseCLS>::processUserInput(int idx, double& t_curE, double& t_curTheta) {
     int i = idx - 1;
-    auto values = (*m_input_users[i])();
+    auto values = (*(this->m_input_users)[i])();
     auto n = values.size();
     
     // At least P is given
     if (n < 1) {
-        std::cout << "At " << currentSimulationTime() << " User#" << idx << " gave an empty vector.\n";
+        std::cout << "At " << this->currentSimulationTime() << " User#" << idx << " gave an empty vector.\n";
         return false;
     }
     
@@ -562,13 +642,13 @@ bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta) {
         
         if (n < 6) {
             // Not enough length for P limits
-            std::cout << "At " << currentSimulationTime() << " User#" << idx << " failed to give P limits.\n";
+            std::cout << "At " << this->currentSimulationTime() << " User#" << idx << " failed to give P limits.\n";
             return false;
         }
         double Pmin = values[4], Pmax = values[5];
         if (std::isnan(Pmin) || std::isnan(Pmax) || (std::isfinite(Pmin) && std::isfinite(Pmax) && Pmin > Pmax)) {
             // Invalid Pmin and Pmax: they must be non-NAN (can be INF) and Pmin <= Pmax
-            std::cout << "At " << currentSimulationTime() << " User#" << idx << " gave invalid P limits.\n";
+            std::cout << "At " << this->currentSimulationTime() << " User#" << idx << " gave invalid P limits.\n";
             return false;
         }
         m_Ps[i].minvalue = Pmin;
@@ -596,13 +676,13 @@ bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta) {
         
         if (n < 6 || (isPNaN && n < 8)) {
             // Not enough length for Q limits
-            std::cout << "At " << currentSimulationTime() << " User#" << idx << " failed to give Q limits.\n";
+            std::cout << "At " << this->currentSimulationTime() << " User#" << idx << " failed to give Q limits.\n";
             return false;
         }
         double Qmin = values[isPNaN?6:4], Qmax = values[isPNaN?7:5];
         if (std::isnan(Qmin) || std::isnan(Qmax) || (std::isfinite(Qmin) && std::isfinite(Qmax) && Qmin > Qmax)) {
             // Invalid Qmin and Qmax: they must be non-NAN (can be INF) and Qmin <= Qmax
-            std::cout << "At " << currentSimulationTime() << " User#" << idx << " gave invalid Q limits.\n";
+            std::cout << "At " << this->currentSimulationTime() << " User#" << idx << " gave invalid Q limits.\n";
             return false;
         }
         m_Qs[i].minvalue = Qmin;
@@ -630,7 +710,7 @@ bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta) {
             // Check if E is similar to current E
             if (std::abs(E - t_curE) > 1e-6) {
                 // E is different
-                std::cout << "At " << currentSimulationTime() << " User#" << idx << " gave E incompatible with other users.\n";
+                std::cout << "At " << this->currentSimulationTime() << " User#" << idx << " gave E incompatible with other users.\n";
                 return false;
             }
             // else, because they are similar, we keep the current value
@@ -645,7 +725,7 @@ bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta) {
             // Check if Theta is similar to current Theta
             if (std::abs(Theta - t_curTheta) > 1e-6) {
                 // Theta is different
-                std::cout << "At " << currentSimulationTime() << " User#" << idx << " gave theta incompatible with other users.\n";
+                std::cout << "At " << this->currentSimulationTime() << " User#" << idx << " gave theta incompatible with other users.\n";
                 return false;
             }
             // else, because they are similar, we keep the current value
@@ -660,14 +740,17 @@ bool GenericBus::processUserInput(int idx, double& t_curE, double& t_curTheta) {
 
 void show_usage(char *prog) {
     std::cout << "USAGE:" << std::endl <<
-    prog << " node_name nUsers [P Q E theta ...] [--workspace <workspace_name>]" << std::endl <<
+    prog << " node_name nUsers [P Q E theta ...] [--workspace <workspace_name>] [--mqtt [serveraddr]]" << std::endl <<
     R"args(
 where
    node_name is the name of the bus node
    nUsers is the number of user nodes attached to this bus node (must be a non-negative integer)
    [P Q E theta ...] are optional values in the case when nUsers = 0 (see below)
    workspace_name is the name of the simulation workspace (default: "powernet").
+   --mqtt specifies that the MQTT communication framework will be used, and the optional serveraddr is the address of the MQTT server/broker.
 
+The default communication framework is YARP.
+    
 If nUsers = 0, the bus node will be a "constant" bus, which always sends constant values P, Q, E, theta, ... to the grid.
 In this case, the four values P, Q, E, theta are required, but optional extra values can be specified after them in the command line.
 All real values can be either a finite real number (e.g. 0, 0.5) or one of the words "NaN", "Inf", "-Inf".
@@ -704,6 +787,10 @@ int main(int argc, char **argv) {
     
     const char *workspace_name = nullptr;     // The workspace name
     const std::string WORKSPACE_OPTION("--workspace");
+
+    std::string mqtt_server{""};     // The MQTT server address
+    const std::string MQTT_OPTION("--mqtt");
+    bool mqtt_used = false;
     
     int k = 1;
     while (k < argc) {
@@ -724,6 +811,15 @@ int main(int argc, char **argv) {
                     std::cout << "Workspace name must be given after the option --workspace." << std::endl;
                     show_usage(argv[0]);
                     exit(1);
+                }
+            } else if (MQTT_OPTION.compare(argv[k]) == 0) {
+                // Get the server address if given
+                mqtt_used = true;
+                if (++k < argc) {
+                    // Check that this is not another option
+                    if (std::strlen(argv[k]) <= 2 || argv[k][0] != '-' || argv[k][1] != '-') {
+                        mqtt_server = argv[k++];
+                    }
                 }
             } else {
                 std::cout << "Unrecognized options: " << argv[k] << std::endl;
@@ -781,6 +877,20 @@ int main(int argc, char **argv) {
         exit(1);
     }
     
+#ifndef OBNNODE_COMM_MQTT
+    if (mqtt_used) {
+        std::cerr << "MQTT communication is specified but not supported by this node.\n";
+        return 1;
+    }
+#endif
+    
+#ifndef OBNNODE_COMM_YARP
+    if (!mqtt_used) {
+        std::cerr << "YARP communication is specified but not supported by this node.\n";
+        return 1;
+    }
+#endif
+    
     // Display info
     if (nUsers == 0) {
         std::cout << "This is constant bus node named \"" << node_name
@@ -798,23 +908,62 @@ int main(int argc, char **argv) {
             std::cout << "\nWarning: there are constant values provided but they will not be used.";
         }
     }
+    
     std::cout << "\n\n";
-    
-    // Set verbosity level
-    yarp::os::Network::setVerbosity(-1);
-    
-    // Create the node
-    std::unique_ptr<YarpNode> pbus;
-    bool success;
-    if (nUsers > 0) {
-        GenericBus *p = new GenericBus(node_name, workspace_name, nUsers);
-        success = p->initialize();
-        pbus.reset(p);
+    if (mqtt_used) {
+        std::cout << "MQTT communication is used with ";
+        if (mqtt_server.empty()) {
+            std::cout << "the default server.\n\n";
+        } else {
+            std::cout << "server " << mqtt_server << "\n\n";
+        }
     } else {
-        ConstBus *p = new ConstBus(node_name, workspace_name, const_values);
-        success = p->initialize();
-        pbus.reset(p);
+        std::cout << "Yarp communication is used.\n\n";
     }
+    
+    // The bus node object
+    std::unique_ptr<NodeBase> pbus;
+    bool success;
+    
+#ifdef OBNNODE_COMM_YARP
+    if (!mqtt_used) {
+        // Set verbosity level
+        yarp::os::Network::setVerbosity(-1);
+        
+        // Create the node
+        if (nUsers > 0) {
+            auto *p = new GenericBus<GenericBusYarp>(node_name, workspace_name, nUsers);
+            success = p->initialize();
+            pbus.reset(p);
+        } else {
+            auto *p = new ConstBus<ConstBusYarp>(node_name, workspace_name, const_values);
+            success = p->initialize();
+            pbus.reset(p);
+        }
+    }
+#endif
+    
+#ifdef OBNNODE_COMM_MQTT
+    if (mqtt_used) {
+        // Create the node
+        if (nUsers > 0) {
+            auto *p = new GenericBus<GenericBusMQTT>(node_name, workspace_name, nUsers);
+            if (!mqtt_server.empty()) {
+                p->setServerAddress(mqtt_server);
+            }
+            success = p->initialize();
+            pbus.reset(p);
+        } else {
+            auto *p = new ConstBus<ConstBusMQTT>(node_name, workspace_name, const_values);
+            if (!mqtt_server.empty()) {
+                p->setServerAddress(mqtt_server);
+            }
+            success = p->initialize();
+            pbus.reset(p);
+        }
+    }
+#endif
+    
     if (!success) {
         std::cout << "There was/were error(s) while initializing the node.\n";
         return 2;

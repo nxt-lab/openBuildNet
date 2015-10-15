@@ -66,7 +66,7 @@ void show_usage() {
 // Function to shut down the SMN, should be called before exiting
 void shutdown_SMN() {
     // Wait a bit before shutting down so that we won't overload the nameserver (hopefully)
-    std::this_thread::sleep_for(std::chrono::seconds(3));
+    std::this_thread::sleep_for(std::chrono::seconds(2));
     
     // Delete the communication objects (which are created dynamically in loadscript())
 #ifdef OBNSIM_COMM_YARP
@@ -131,11 +131,12 @@ int main(int argc, const char* argv[]) {
     // Run Chaiscript to load the network
     auto load_script_result = SMNChai::smnchai_loadscript(script_file.string(), script_args, script_file.stem().string(), gc, comm_objects);
 
-    // Done with running Chaiscript to load the network, now we only need to run the simulation
     if (!load_script_result.first) {
+        shutdown_SMN();
         return load_script_result.second;
     }
     
+    // Done with running Chaiscript to load the network, now we only need to run the simulation
     std::cout << "Done constructing the network.\nStart simulation...\n";
     
     // Start running the GC thread

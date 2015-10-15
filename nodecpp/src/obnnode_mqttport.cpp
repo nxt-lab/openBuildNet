@@ -89,7 +89,7 @@ void MQTTClient::stop() {
 }
 
 
-bool MQTTClient::sendData(void *data, int size, const std::string& topic) {
+bool MQTTClient::sendData(void *data, int size, const std::string& topic, int retained) {
     if (topic.empty() || data == nullptr || size <= 0) {
         return false;
     }
@@ -103,7 +103,7 @@ bool MQTTClient::sendData(void *data, int size, const std::string& topic) {
     pubmsg.payload = data;
     pubmsg.payloadlen = size;
     pubmsg.qos = MQTTClient::QOS;
-    pubmsg.retained = 0;
+    pubmsg.retained = retained;
     
     // Request to send the message
     return (MQTTAsync_sendMessage(m_client, topic.c_str(), &pubmsg, &opts) == MQTTASYNC_SUCCESS);

@@ -123,6 +123,7 @@ class POWERNET_BusNode {
   attr m_added;   // if the bus node has already been added (hence can't be changed anymore)
   attr m_vnode;   // the virtual node which this bus node will implement
   attr m_node;    // the actual node's full name, after this bus node has been added
+  attr m_noderef; // teh actual node object, after it has been added
   
   def POWERNET_BusNode(string name, double period, int nUsers, Vector values, VNode vnode): nUsers >= 0 && period > 0.0 {
     this.m_name = name;
@@ -180,6 +181,7 @@ class POWERNET_BusNode {
     add_node(mybus);
     this.m_added = true;
     this.m_node = mybus.get_name();
+    this.m_noderef := mybus;
     return mybus;
   }
 
@@ -199,10 +201,18 @@ class POWERNET_BusNode {
       throw("A bus node must be added to the workspace before it can be started remotely.");
     }
     var args = "${this.m_node} --workspace ${workspace()} ${this.m_nUsers}";
+
     if (this.m_nUsers == 0) {
       // If const bus, construct the values and append to args
       args = args + foldl(this.m_values, fun(x,s) {"${s} ${x}"}, "");
     }
+
+    // Set the correct communication
+    var mycomm = this.m_noderef.get_comm();
+    if (mycomm == "mqtt" || (mycomm == "default" && settings.default_comm() == "mqtt")) {
+      args = args + " --mqtt ${settings.MQTT_server()}";
+    }
+
     start_remote_node(this.m_node, t_computer, t_prog, args, t_tag);
   }
   def start_remote_node(string t_computer, string t_prog) {

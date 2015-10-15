@@ -18,7 +18,8 @@ bool OBNsmn::GCThread::gc_waitfor_process_ACK(const OBNSimMsg::N2SMN& msg, int I
     std::lock_guard<std::mutex> lock(gc_waitfor_mutex);
     if (gc_waitfor_status == GC_WAITFOR_RESULT_ERROR) { return true; }
     if (gc_waitfor_status != GC_WAITFOR_RESULT_ACTIVE || gc_waitfor_type != type) {
-        report_warning(0, "Unexpected ACK received from node " + std::to_string(ID) + " with type " + std::to_string(type));
+        report_warning(0, "Unexpected ACK received from node " + std::to_string(ID) + " with type " + std::to_string(type) +
+                       " expecting type " + std::to_string(gc_waitfor_type));
         return true;
     }
     if (gc_waitfor_predicate && !gc_waitfor_predicate(msg)) {

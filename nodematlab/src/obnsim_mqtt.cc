@@ -195,11 +195,10 @@ MQTTNodeMatlab::~MQTTNodeMatlab() {
     // If the node is still running, we need to stop it first
     stopSimulation();
     
-    // We don't need to delete all port objects belonging to this node (in _all_ports vector) because this node object OWNS these ports and will delete them in the destructor ~NodeBase()
-    // Although deleting them here won't cause error.
-    //for (auto p:_all_ports) {
-    //    delete p.port;
-    //}
+    // We need to delete all port objects belonging to this node (in _all_ports vector) because if we don't, they will be deleted in ~NodeBase() when the MQTTClient object (which belongs to the child class MQTTNodeBase) is already deleted --> access to the MQTT client will cause an error.
+    for (auto p:_all_ports) {
+        delete p.port;
+    }
 }
 
 

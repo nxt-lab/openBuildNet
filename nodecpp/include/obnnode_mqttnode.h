@@ -85,6 +85,9 @@ namespace OBNnode {
         /** Send the current message in _n2smn_message via the GC port. */
         virtual void sendN2SMNMsg() override;
         
+        /** Initialize the simulation, even before we start receiving the INIT message. */
+        virtual bool initializeForSimulation() override;
+        
         /* ================== Support for asynchronuous waiting for conditions ================== */
         /* We use a vector of fields: bool inuse, a semaphore, and a function object std::function<bool (...)>.
          * The function object can be assigned to a function or lambda (most of the cases) or a functor (if memory is needed).

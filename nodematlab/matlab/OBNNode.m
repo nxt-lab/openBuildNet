@@ -602,7 +602,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             if isscalar(this)
                 b = this.obnnode_mexfunc_('isNodeErr', this.id_);
             else
-                b = arrayfun(@(obj) this.obnnode_mexfunc_('isNodeErr', obj.id_), this);
+                b = arrayfun(@(obj) obj.obnnode_mexfunc_('isNodeErr', obj.id_), this);
             end
         end
         
@@ -614,7 +614,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             if isscalar(this)
                 b = this.obnnode_mexfunc_('isNodeRunning', this.id_);
             else
-                b = arrayfun(@(obj) this.obnnode_mexfunc_('isNodeRunning', obj.id_), this);
+                b = arrayfun(@(obj) obj.obnnode_mexfunc_('isNodeRunning', obj.id_), this);
             end
         end
         
@@ -626,7 +626,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             if isscalar(this)
                 b = this.obnnode_mexfunc_('isNodeStopped', this.id_);
             else
-                b = arrayfun(@(obj) this.obnnode_mexfunc_('isNodeStopped', obj.id_), this);
+                b = arrayfun(@(obj) obj.obnnode_mexfunc_('isNodeStopped', obj.id_), this);
             end
         end        
                 
@@ -642,7 +642,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             
             %assert(isscalar(this));
             for k = 1:numel(this)
-                this.obnnode_mexfunc_('stopSim', this(k).id_);
+                this(k).obnnode_mexfunc_('stopSim', this(k).id_);
             end
         end
 
@@ -659,7 +659,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
 
             %assert(isscalar(this));
             for k = 1:numel(this)
-                this.obnnode_mexfunc_('requestStopSim', this(k).id_);
+                this(k).obnnode_mexfunc_('requestStopSim', this(k).id_);
             end
         end
         
@@ -737,7 +737,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
                         continue;
                     end
                     
-                    [status(k), evtype, evargs] = this.obnnode_mexfunc_('runStep', this(k).id_, tWaitfor);  % small timeout is used
+                    [status(k), evtype, evargs] = this(k).obnnode_mexfunc_('runStep', this(k).id_, tWaitfor);  % small timeout is used
                     switch status(k)
                         case 0  % Got an event
                             switch upper(evtype)

@@ -157,9 +157,10 @@ namespace OBNnode {
          \param data Pointer to the data to be sent.
          \param size The number of bytes of the data.
          \param topic The topic to send to.
+         \param retained Whether the message should be retained by the broker/server.
          \return true if successful.
          */
-        bool sendData(void *data, int size, const std::string& topic);
+        bool sendData(void *data, int size, const std::string& topic, int retained=0);
         
         /** \brief Start the MQTT client (thread).
          
