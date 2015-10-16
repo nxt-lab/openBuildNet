@@ -11,12 +11,22 @@
 #include <obnnode_mqttport.h>
 #include <algorithm>        // std::find
 
+//#define MQTT_PRINT_DEBUG
+
 using namespace OBNnode;
 
 const int MQTTClient::QOS = 2;
 
 bool MQTTClient::initialize() {
+    if (m_client_id.empty() || m_server_address.empty()) {
+        return false;
+    }
+    
     int rc;
+    
+#ifdef MQTT_PRINT_DEBUG
+    std::cout << "MQTT with address: " << m_server_address << " and Client ID: " << m_client_id << std::endl;
+#endif
     
     if ((rc = MQTTAsync_create(&m_client, m_server_address.c_str(), m_client_id.c_str(), MQTTCLIENT_PERSISTENCE_NONE, NULL)) != MQTTASYNC_SUCCESS)
     {
@@ -35,10 +45,6 @@ bool MQTTClient::initialize() {
 bool MQTTClient::start() {
     if (isRunning()) return false;  // Already running
     
-    if (m_client_id.empty() || m_server_address.empty()) {
-        return false;
-    }
-    
     int rc;
     
     // Connect
@@ -50,6 +56,9 @@ bool MQTTClient::start() {
     conn_opts.context = this;
     if ((rc = MQTTAsync_connect(m_client, &conn_opts)) != MQTTASYNC_SUCCESS)
     {
+#ifdef MQTT_PRINT_DEBUG
+        std::cout << "[MQTT] Request to connect failed: " << rc << std::endl;
+#endif
         return false;
     }
     
@@ -243,6 +252,9 @@ void MQTTClient::subscribeAllTopics(bool resubscribe) {
     delete [] topics;
     
     if (rc != MQTTASYNC_SUCCESS) {
+#ifdef MQTT_PRINT_DEBUG
+        std::cout << "[MQTT] Request to subscribe failed.\n";
+#endif
         m_notify_result = 1;    // error
         // Notify waiting threads
         notify_done();
@@ -253,7 +265,9 @@ void MQTTClient::subscribeAllTopics(bool resubscribe) {
 
 void MQTTClient::on_connection_lost(void *context, char *cause)
 {
-    // std::cout << "Connection lost\n";
+#ifdef MQTT_PRINT_DEBUG
+    std::cout << "Connection lost\n";
+#endif
     
     MQTTClient* client = static_cast<MQTTClient*>(context);
     
@@ -318,7 +332,9 @@ void MQTTClient::on_message_delivered(void *context, MQTTAsync_token token) {
 
 void MQTTClient::onConnect(void* context, MQTTAsync_successData* response)
 {
-    // std::cout << "Connected\n";
+#ifdef MQTT_PRINT_DEBUG
+    std::cout << "[MQTT] Connected\n";
+#endif
     
     MQTTClient* client = static_cast<MQTTClient*>(context);
 
@@ -331,7 +347,19 @@ void MQTTClient::onConnect(void* context, MQTTAsync_successData* response)
 
 void MQTTClient::onConnectFailure(void* context, MQTTAsync_failureData* response)
 {
-    // std::cout << "Connect failed\n";
+#ifdef MQTT_PRINT_DEBUG
+    std::cout << "[MQTT] Connect failed";
+    if (response != nullptr) {
+        std::cout << " with code: " << response->code;
+        if (response->message) {
+            std::cout << " and message: " << response->message << std::endl;
+        } else {
+            std::cout << std::endl;
+        }
+    }  else {
+        std::cout << std::endl;
+    }
+#endif
     
     MQTTClient* client = static_cast<MQTTClient*>(context);
     // Notify of error
@@ -341,6 +369,10 @@ void MQTTClient::onConnectFailure(void* context, MQTTAsync_failureData* response
 
 
 void MQTTClient::onSubscribe(void* context, MQTTAsync_successData* response) {
+#ifdef MQTT_PRINT_DEBUG
+    std::cout << "[MQTT] Subscribed.\n";
+#endif
+    
     MQTTClient* client = static_cast<MQTTClient*>(context);
     // Notify of success
     client->m_notify_result = 0;
@@ -348,6 +380,20 @@ void MQTTClient::onSubscribe(void* context, MQTTAsync_successData* response) {
 }
 
 void MQTTClient::onSubscribeFailure(void* context, MQTTAsync_failureData* response) {
+#ifdef MQTT_PRINT_DEBUG
+    std::cout << "[MQTT] Subscribe failed";
+    if (response != nullptr) {
+        std::cout << " with code: " << response->code;
+        if (response->message) {
+            std::cout << " and message: " << response->message << std::endl;
+        } else {
+            std::cout << std::endl;
+        }
+    }  else {
+        std::cout << std::endl;
+    }
+#endif
+    
     MQTTClient* client = static_cast<MQTTClient*>(context);
     // Notify of failure
     client->m_notify_result = 2;
