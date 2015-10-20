@@ -9,30 +9,10 @@
  */
 
 #include <obnsmn_comm_yarp.h>
+#include <obnsmn_report.h>
 
 using namespace OBNsmn::YARP;
 
-void YARPMsg::allocateData(size_t newsize) {
-    assert(newsize > 0);
-    
-    _size = newsize;
-    
-    if (_data) {
-        // If _allocsize >= _size, we reuse the memory block
-        if (_allocsize < _size) {
-            delete [] _data;
-        }
-    }
-    else {
-        _allocsize = 0;  // Make sure that _allocsize < _size
-    }
-    
-    if (_allocsize < _size) {
-        _allocsize = (_size & 0x0F)?(((_size >> 4)+1) << 4):_size;
-        assert(_allocsize >= _size);
-        _data = new char[_allocsize];
-    }
-}
 
 bool YARPMsg::read(yarp::os::ConnectionReader& connection) {
     if (connection.isError()) {
@@ -41,13 +21,13 @@ bool YARPMsg::read(yarp::os::ConnectionReader& connection) {
     
     int newsize = connection.expectInt();
     if (newsize <= 0) {
-        _size = 0;
+        m_msgbuffer.allocateData(0);
         return newsize<0?false:true;
     }
     
-    allocateData(newsize);
+    m_msgbuffer.allocateData(newsize);
     
-    return connection.expectBlock(_data, _size);
+    return connection.expectBlock(m_msgbuffer.data(), m_msgbuffer.size());
 }
 
 
@@ -115,7 +95,7 @@ The ID field (which indicates the ID of the node) is not set by the caller (GC),
 //}
 
 
-bool YARPPollingThread::sendMessage(OBNSimMsg::SMN2N &msg) {
+bool YARPPollingThread::sendMessage(const OBNSimMsg::SMN2N &msg) {
     if (port.isClosed()) {
         return false;
     }
@@ -129,5 +109,35 @@ bool YARPPollingThread::sendMessage(OBNSimMsg::SMN2N &msg) {
     // Send and strictly make sure that the message will not be dropped
     port.writeStrict();
     
+    // Call the previous function if available
+    if (m_prev_gc_sendmsg_to_sys_port) {
+        return m_prev_gc_sendmsg_to_sys_port(msg);
+    }
+    
     return true;
+}
+
+void YARPPollingThread::ThreadMain() {
+    done_execution = false;
+    
+    // This thread simply polls the main GC port
+    OBNSimMsg::N2SMN msg;
+    
+    while (!pGC->simple_thread_terminate) {
+        YARPMsg *b = port.read(false);
+        if (b) {
+            // data received in *b
+            if (b->getMessage(msg)) {
+                pGC->pushNodeEvent(msg, 0);
+            } else {
+                // We should report an error here
+                OBNsmn::report_error(0, "Critical error: error while parsing input message to Yarp.");
+            }
+        }
+    }
+    
+    // Close the port after finishing
+    port.close();
+    
+    done_execution = true;
 }

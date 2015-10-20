@@ -46,6 +46,9 @@ namespace SMNChai {
         
         /** Load some useful functions to fix problems with Chaiscript. */
         chaiscript::ModulePtr smnchai_api_utils_fixes(chaiscript::ModulePtr m = std::make_shared<chaiscript::Module>());
+        
+        /** Load some useful misc functions. */
+        chaiscript::ModulePtr smnchai_api_utils_misc(chaiscript::ModulePtr m = std::make_shared<chaiscript::Module>());
     }
 }
 

@@ -3,7 +3,7 @@
  * \brief Node that implements a simple controller.
  *
  * Uses the node.cpp framework.
- * Requires YARP.
+ * Requires YARP for communication with SMN, but will use MQTT for ports if it's available.
  *
  * This file is part of the openBuildNet simulation framework
  * (OBN-Sim) developed at EPFL.
@@ -14,26 +14,40 @@
 #include <fstream>
 #include <obnnode.h>
 
-#ifndef OBNSIM_COMM_YARP
+/** The following macros are defined by CMake to indicate which libraries this SMN build supports:
+ - OBNNODE_COMM_YARP: if YARP is supported for communication.
+ - OBNNODE_SMN_COMM_MQTT: if MQTT is supported for communication.
+ */
+
+#ifndef OBNNODE_COMM_YARP
 #error This test requires YARP to run
 #endif
 
-/** The following macros are defined by CMake to indicate which libraries this SMN build supports:
- - OBNSIM_COMM_YARP: if YARP is supported for communication.
- - OBNSIM_SMN_COMM_MQTT: if MQTT is supported for communication.
- */
-
 using namespace OBNnode;
+
+#ifdef OBNNODE_COMM_MQTT
+#define MQTT_SERVER_ADDRESS "tcp://localhost:1883"
+typedef MQTTInput<OBN_PB, double> INPUT_PORT_CLASS;
+typedef MQTTOutput<OBN_PB, double> OUTPUT_PORT_CLASS;
+MQTTClient mqtt_client;     // The MQTT client of this node (used for all communications)
+#else
+typedef YarpInput<OBN_PB, double> INPUT_PORT_CLASS;
+typedef YarpOutput<OBN_PB, double> OUTPUT_PORT_CLASS;
+#endif
 
 #define MAIN_UPDATE 0
 
 /* The controller node class */
 class Controller: public YarpNode {
     /* Two inputs: velocity and setpoint */
-    YarpInput<OBN_PB, double> velocity, setpoint;
-    
     /* Output: the control value */
-    YarpOutput<OBN_PB, double> command;
+#ifdef OBNNODE_COMM_MQTT
+    INPUT_PORT_CLASS velocity{"v", &mqtt_client}, setpoint{"sp", &mqtt_client};
+    OUTPUT_PORT_CLASS command{"u", &mqtt_client};
+#else
+    INPUT_PORT_CLASS velocity{"v"}, setpoint{"sp"};
+    OUTPUT_PORT_CLASS command{"u"};
+#endif
     
     /* The state variable */
     Eigen::Vector3d x;
@@ -48,8 +62,7 @@ class Controller: public YarpNode {
     const char tab = '\t';
     
 public:
-    Controller(const std::string& name, const std::string& ws = ""): YarpNode(name, ws),
-    velocity("v"), setpoint("sp"), command("u"), dump("controller.txt")
+    Controller(const std::string& name, const std::string& ws = ""): YarpNode(name, ws), dump("controller.txt")
     { }
     
     virtual ~Controller() {
@@ -130,6 +143,16 @@ public:
 int main() {
     std::cout << "This is controller node." << std::endl;
     
+    // Initialize the MQTT client
+#ifdef OBNNODE_COMM_MQTT
+    mqtt_client.setServerAddress(MQTT_SERVER_ADDRESS);
+    mqtt_client.setClientID("test2_ctrl");
+    if (!mqtt_client.start()) {
+        std::cerr << "Error while connecting to MQTT" << std::endl;
+        return 10;
+    }
+#endif
+    
     Controller ctrl("ctrl", "test2");       // Node "ctrl" inside workspace "test2"
 
     if (!ctrl.initialize()) {
@@ -148,6 +171,10 @@ int main() {
     //////////////////////
     // Clean up before exiting
     //////////////////////
+    if (mqtt_client.isRunning()) {
+        mqtt_client.stop();
+    }
+    
     google::protobuf::ShutdownProtobufLibrary();
     
     return ctrl.hasError()?3:0;

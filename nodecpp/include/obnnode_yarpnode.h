@@ -21,6 +21,8 @@
 #include <functional>
 #include <vector>
 #include <exception>
+#include <thread>               // sleep
+#include <chrono>               // timing values
 
 #include <obnnode_basic.h>
 #include <obnnode_yarpportbase.h>
@@ -32,57 +34,18 @@
 namespace OBNnode {
     /* ============ YARP Node (managing Yarp ports) Interface ===============*/
     /** \brief Basic YARP Node. */
-    class YarpNodeBase {
+    class YarpNodeBase: public NodeBase {
     public:
         static yarp::os::Network yarp_network;      ///< The Yarp network object for Yarp's API
         
-        /** Type of the node's state. */
-        enum NODE_STATE {
-            NODE_STOPPED = 0,   ///< Node hasn't run yet, or has stopped
-            NODE_STARTED = 1,   ///< Node has been started (from STOPPED) but not yet running, it must be initialized first
-            NODE_RUNNING = 2,   ///< The node is running (simulation is going on)
-            NODE_ERROR = 3     ///< The node has had an error, which caused it to stop. The error must be cleared before the node can restart
-        };
-        
-        /** Returns true if the node has had an error causing it to stop. An error must be cleared for the node to restart. */
-        bool hasError() const {
-            return (_node_state == NODE_ERROR);
-        }
-        
-        /** Clear the error and put the node to STOPPED. */
-        void clearError() {
-            if (_node_state == NODE_ERROR) {
-                _node_state = NODE_STOPPED;
-            }
-        }
-        
         /** \brief Construct a node object. */
-        YarpNodeBase(const std::string& _name, const std::string& ws = "");
-        virtual ~YarpNodeBase();
-        
-        const std::string& name() const {
-            return _nodeName;
-        }
-        
-        /** Return full path to a port in this node. */
-        std::string fullPortName(const std::string& portName) const {
-            return _workspace + _nodeName + '/' + portName;
-        }
-        
-        /** Return the current simulation time. */
-        simtime_t currentSimulationTime() const {
-            return _current_sim_time;
-        }
-        
-        /** Return the current wallclock time, as std::time_t value, rounded downward to a second. */
-        std::time_t currentWallClockTime() const {
-            return static_cast<std::time_t>(std::floor( _initial_wallclock + (_timeunit * 1.0e-6) * _current_sim_time ));
-        }
+        YarpNodeBase(const std::string& _name, const std::string& ws = ""): NodeBase(_name, ws), _smn_port(this) { }
+        //virtual ~YarpNodeBase();
         
         /** Opens the port on this node to communication with the SMN, if it hasn't been opened.
          \return true if successful.
          */
-        bool openSMNPort();
+        virtual bool openSMNPort() override;
         
         /** Connect the SMN port on this node to the SMN.
          The connection is started from this node, however it can also be started from the SMN.
@@ -92,61 +55,11 @@ namespace OBNnode {
          */
         bool connectWithSMN(const char *carrier = nullptr);
         
-        /** Returns the current state of the node. */
-        NODE_STATE nodeState() const {
-            return _node_state;
-        }
-        
-        /** \brief Run the node (simulation in the network) */
-        void run(double timeout = -1.0);
-        
-        /** \brief Stop the simulation if it's running. */
-        void stopSimulation();
-        
-        /** \brief Request the SMN/GC to stop the current simulation. */
-        void requestStopSimulation();
-        
-        /* ========== Methods to add ports ============ */
-        
-        /** \brief Add an existing (physical) input port to the node. */
-        bool addInput(YarpPortBase* port);
-        
-        /* \brief Create and add a new (physical) input port to the node. */
-        
-        
-        /** \brief Add an existing (physical) output port to the node. */
-        bool addOutput(YarpOutputPortBase* port);
-        
-        /* \brief Create and add a new (physical) output port to the node. */
-        
-        /** \brief Add an existing data port (not managed by GC) to the node. */
-        
-        /** \brief Remove a port (of any type) from this node, i.e. detach it. */
-        void removePort(YarpPortBase* port);
-        void removePort(YarpOutputPortBase* port);
-        
-        /** \brief Delay by a short amount of time before shutting down the node.
-         
-         When a simulation system has too many nodes/ports (hundreds) which all terminate at approximately the same time
-         the nameserver can be overloaded with requests to close ports from all the nodes. This may cause some ports fail
-         to close.
-         
-         A simple, but not every elegant, solution is to make each node delay for different short amounts of time before
-         shutting down, hence reducing the load on the nameserver.
-         This function implements a mechanism for such a delay.
-         There are several ways to determine the delay amount of each node, e.g. randomly.
-         In this implementation, a simple mechanism is used, which delays a node accordingly to its node ID
-         (with some rounding).
+        /** Callback for permanent communication lost error (e.g. the communication server has shut down).
+         \param comm The communication protocol/platform that has lost.
+         The node should stop its simulation (if comm is not used by the GC) and exit as cleanly as possible.
          */
-        void delayBeforeShutdown() const;
-        
-        /* Create a Yarp port managed by this manager.
-         \param name Name of the new port, must be a valid and unique name.
-         \param callback true [default] if the port uses callback (so that events are caught); if false, no events will be generated for this port.
-         \param strict Reading of this port is strict or not (default: false)
-         \return The ID of the new port, an unsigned integer.
-         */
-        //unsigned int createPort(const std::string& name, bool callback=true, bool strict=false);
+        virtual void onPermanentCommunicationLost(CommProtocol comm) override;
         
     protected:
         /** A YARP message for communicating with the SMN. */
@@ -164,50 +77,11 @@ namespace OBNnode {
             }
         };
         
-        /** A local N2SMN message to be sent from the node to the SMN. */
-        OBNSimMsg::N2SMN _n2smn_message;
-        
-        /** Convenient methods to send an ACK message to the SMN. */
-        void sendACK(OBNSimMsg::N2SMN::MSGTYPE type);
-        void sendACK(OBNSimMsg::N2SMN::MSGTYPE type, int64_t I);
-        
-        /** Name of the node. */
-        std::string _nodeName;
-        
-        /** The workspace, must either '/' or of the form "/workspace/".
-         The workspace is prepended to all names in this node. */
-        std::string _workspace;
-
-        /** List of physical input ports. */
-        std::forward_list<YarpPortBase*> _input_ports;
-        
-        /** List of physical output ports. */
-        std::forward_list<YarpOutputPortBase*> _output_ports;
-        
         /** The Global Clock port to communicate with the SMN. */
         SMNPort _smn_port;
         
-        /** Attach a port object to this node. */
-        bool attachAndOpenPort(YarpPortBase * port);
-        
-        /** Current state of the node. */
-        NODE_STATE _node_state;
-        
-        /** The ID of the node in the network (assigned by the GC in its messages to the node) */
-        int32_t _node_id;
-        
-        /** Current simulation time. */
-        simtime_t _current_sim_time;
-        
-        /** The initial wallclock time. */
-        std::time_t _initial_wallclock = 0;
-        
-        /** The simulation time unit, in microseconds. */
-        simtime_t _timeunit = 1;
-        
-        /** \brief Initialize node for simulation. */
-        void initializeForSimulation();
-        
+        /** Send the current message in _n2smn_message via the GC port. */
+        virtual void sendN2SMNMsg() override;
         
         /* ================== Support for asynchronuous waiting for conditions ================== */
         /* We use a vector of fields: bool inuse, a semaphore, and a function object std::function<bool (...)>.
@@ -279,285 +153,48 @@ namespace OBNnode {
         yarp::os::Mutex _waitfor_conditions_mutex;
         
         /** Check the given message against the list of wait-for conditions. */
-        void checkWaitForCondition(const OBNSimMsg::SMN2N&);
+        virtual void checkWaitForCondition(const OBNSimMsg::SMN2N&) override;
 
-
-        /* ================== Support for Node Events ================= */
-    protected:
-        /** Event abstract class.
-         An event object is just an executable object (by calling execute()).
-         A child class is created for each type of events, with the appropriate implementation of execute() and data.
-         Any specialized event class should be declared as a friend of the node class.
-         The event will be executed on the main thread only. Events are posted to the queue by the threads of the ports.
-         The execution of the event handler consists of two functions, in the following order: executeMain, executePost.
-         */
-        struct NodeEvent {
-            virtual void executeMain(YarpNodeBase*) = 0;     ///< Main Execution of the event
-            virtual void executePost(YarpNodeBase*) = 0;     ///< Post-Execution of the event
-        };
-        
         /** The event queue, which contains smart pointers to event objects. */
-        shared_queue<NodeEvent> _event_queue;
+        shared_queue_yarp<NodeEvent> _event_queue;
         
-        /** Parent event class for SMN events. */
-        struct NodeEventSMN: public NodeEvent {
-            simtime_t _time;
-            bool _hasID;
-            int32_t _id;
-
-            /** Populate basic info of an event from an SMN2N message. */
-            NodeEventSMN(const OBNSimMsg::SMN2N& msg) {
-                _time = msg.time();
-                if ((_hasID = msg.has_id())) { _id = msg.id(); }
-            }
-            
-            /** Method to process basic details of an SMN event; should be called in the execute() methods of child classes. */
-            void basic_processing(YarpNodeBase* p) {
-                p->_current_sim_time = _time;
-                if (_hasID) {
-                    p->_node_id = _id;
-                }
-            }
-        };
-        
-        /** Event class for cosimulation's UPDATE_Y messages. */
-        struct NodeEvent_UPDATEY: public NodeEventSMN {
-            virtual void executeMain(YarpNodeBase*) override;
-            virtual void executePost(YarpNodeBase*) override;
-            updatemask_t _updates;
-            NodeEvent_UPDATEY(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
-                _updates = msg.has_i()?msg.i():0;
-            }
-        };
-        friend NodeEvent_UPDATEY;
-        
-        /** Event class for cosimulation's UPDATE_X messages. */
-        struct NodeEvent_UPDATEX: public NodeEventSMN {
-            virtual void executeMain(YarpNodeBase*) override;
-            virtual void executePost(YarpNodeBase*) override;
-            updatemask_t _updates;
-            NodeEvent_UPDATEX(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
-                _updates = msg.has_i()?msg.i():0;
-            }
-        };
-        friend NodeEvent_UPDATEX;
-        
-        /** Event class for cosimulation's INITIALIZE messages. */
-        struct NodeEvent_INITIALIZE: public NodeEventSMN {
-            std::time_t _wallclock;
-            simtime_t _timeunit;
-            bool _has_wallclock = false;
-            bool _has_timeunit = false;
-            virtual void executeMain(YarpNodeBase*) override;
-            virtual void executePost(YarpNodeBase*) override;
-            NodeEvent_INITIALIZE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) {
-                if (msg.has_data()) {
-                    if ((_has_wallclock = msg.data().has_t())) {
-                        _wallclock = msg.data().t();
-                    }
-                    if ((_has_timeunit = msg.has_i())) {
-                        _timeunit = msg.i();
-                    }
-                }
-            }
-        };
-        friend NodeEvent_INITIALIZE;
-        
-        /** Event class for cosimulation's TERMINATE messages. */
-        struct NodeEvent_TERMINATE: public NodeEventSMN {
-            virtual void executeMain(YarpNodeBase*) override;
-            virtual void executePost(YarpNodeBase*) override;
-            NodeEvent_TERMINATE(const OBNSimMsg::SMN2N& msg): NodeEventSMN(msg) { }
-        };
-        friend NodeEvent_TERMINATE;
-        
-        
-        
-        /** Event class for any exception (error) thrown anywhere in the program but must be caught by the main thread. */
-        struct NodeEventException: public NodeEvent {
-            std::exception_ptr m_exception;
-            
-            NodeEventException(std::exception_ptr e): m_exception(e) {
-                assert(e);  // the exception should not be NULL
-            }
-            
-            virtual void executeMain(YarpNodeBase*) override;
-            virtual void executePost(YarpNodeBase*) override { }
-        };
-
-        
-    public:
-        /** Post a system openBuildNet event to the end of the queue (from an SMN2N message). */
-        void postEvent(const OBNSimMsg::SMN2N& msg);
-        
-        
-        /* Methods for pushing events of other types (node internal events) will be put here */
-        void postExceptionEvent(std::exception_ptr e) {
-            _event_queue.push_front(new NodeEventException(e));
-        }
-        
-    public:
-        /* =========== Simulation callbacks =========== */
-        
-        /** \brief Callback for UPDATE_Y event
+        /** \brief Push an event object to the event queue.
          
-         This callback is called whenever the node receives an UPDATE_Y event.
-         A node class should always override this callback and implement the node's computation for updating its outputs.
-         The default callback is empty. The current simulation time can be obtained from the node object.
-         There is a mechanism to define updates using template methods, which can be used instead of directly implementing this callback.
-         Typcially values assigned to output ports in this callback are not sent immediately, but will be sent after this callback finishes. So an output port can be set multiple times in this callback without causing communication overheads. If you want to send a message immediately, use a generic data port or use an appropriate method to send messages from output ports.
-         \param m The update type mask.
+         This function must be implemented in a thread-safe manner w.r.t. the communication library used because it's usually called in a callback of the communication library (e.g. a Yarp thread or MQTT thread).
          */
-        virtual void onUpdateY(updatemask_t m) { }
+        virtual void eventqueue_push(NodeEvent *pev) override {
+            _event_queue.push(pev);
+        }
         
-        /** \brief Callback for UPDATE_X event
+        /** \brief Push an event object to the front of the event queue.
          
-         This callback is called whenever the node receives an UPDATE_X event.
-         If a node should update its state using the UPDATE_X event, its class should override this callback and implement the node's state update.
-         The default callback is empty. The current simulation time can be obtained from the node object.
-         \param m The update type mask.
+         This function must be implemented in a thread-safe manner w.r.t. the communication library used because it's usually called in a callback of the communication library (e.g. a Yarp thread or MQTT thread).
          */
-        virtual void onUpdateX(updatemask_t m) { }
+        virtual void eventqueue_push_front(NodeEvent *pev) override {
+            _event_queue.push_front(pev);
+        }
         
-        /** \brief Callback to initialize the node before each simulation.
+        /** \brief Wait until an event exists in the queue and pop it; may wait forever.
          
-         This callback is called when the node is initialized before each simualtion (when it receives the INITIALIZE message from the SMN. Note that during the life of a node process, it can be simulated multiple times (by restarting the simulation), each time this callback will be called. This callback is often used to initialize the node's state, outputs, etc.
-         After this callback finishes, all output ports will send out their current values, so if the node needs to initialize its outputs, it should do so in this callback.
+         This function is called from the main thread, not from the communication callback.
          */
-        virtual void onInitialization() { }
+        virtual std::shared_ptr<NodeEvent> eventqueue_wait_and_pop() override {
+            return _event_queue.wait_and_pop();
+        }
         
-        
-        /** \brief Callback before the node's current simulation is terminated.
+        /** \brief Wait until an event exists in the queue and pop it; may time out.
          
-         This callback is called when the node's current simulation is about to be terminated (after it has received the TERMINATE message from the SMN).
+         \param timeout In seconds.
+         This function is called from the main thread, not from the communication callback.
          */
-        virtual void onTermination() { }
-        
-        /* =========== Callback Methods for errors ============= */
-        
-        /** Callback for error when parsing the raw binary data into a structured message (e.g. ProtoBuf or JSON) */
-        virtual void onRawMessageError(const YarpPortBase * port, const std::string& info) {
-            // Report error and try to exit gracefully
-            std::cerr << "ERROR: error while parsing the raw message from port " << port->fullPortName() << ": "
-            << info << std::endl;
-            
-            stopSimulation();
-        }
-        
-        /** Callback for error when reading the values from a structured message (e.g. ProtoBuf or JSON), e.g. if the type or dimension is invalid. */
-        virtual void onReadValueError(const YarpPortBase * port, const std::string& info) {
-            // Report error and try to exit gracefully
-            std::cerr << "ERROR: error while reading the value from port " << port->fullPortName() << ": "
-            << info << std::endl;
-            
-            stopSimulation();
-        }
-        
-        /** Callback for error when sending the values (typically happens when serializing the message to be sent). */
-        virtual void onSendMessageError(const YarpPortBase * port, const std::string& info) {
-            // Report error and try to exit gracefully
-            std::cerr << "ERROR: error while sending to port " << port->fullPortName() << ": "
-            << info << std::endl;
-            
-            stopSimulation();
-        }
-        
-        /** Callback for timeout error when running the node's simulation.
-         \sa run() with timeout.
-         */
-        virtual void onRunTimeout() {
-            // Currently doing nothing
-        }
-        
-        /** Callback for error interacting with the SMN and openBuildNet system.  Used for serious errors.
-         \param msg A string containing the error message.
-         */
-        virtual void onOBNError(const std::string& msg) {
-            // Report error and try to exit gracefully
-            std::cerr << "ERROR: OpenBuildNet system error: " << msg << std::endl;
-            
-            stopSimulation();
-        }
-        
-        /** Callback for warning issues interacting with the SMN and openBuildNet system, e.g. an unrecognized system message from the SMN.  Usually the simulation may continue without any serious consequence.
-         \param msg A string containing the warning message.
-         */
-        virtual void onOBNWarning(const std::string& msg) {
-            std::cout << "WARNING: OpenBuildNet system warning: " << msg << std::endl;
-        }
-        
-        /* =========== Misc callbacks ============= */
-        
-        /** Callback to report information (e.g. when a simulation start, when a simulation stops). */
-        virtual void onReportInfo(const std::string& msg) {
-            std::cout << msg << std::endl;
+        virtual std::shared_ptr<NodeEvent> eventqueue_wait_and_pop(double timeout) override {
+            return _event_queue.wait_and_pop_timeout(timeout);
         }
     };
     
-    /** Define all details of an update type. */
-    struct UpdateType {
-        bool enabled = false;   ///< If this update is enabled
-        double T_in_us = -1.0;  ///< Sampling time in microseconds, <=0 if non-periodic
-        std::string name;       ///< Name of this update (optional)
-        
-        typedef std::vector<std::string> OUTPUT_LIST;
-        OUTPUT_LIST outputs;   ///< List of outputs of this update
-        
-        typedef std::vector<std::pair<std::string, bool> > INPUT_LIST;
-        INPUT_LIST inputs;  ///< List of inputs of this update and their direct-feedthrough property
-        
-        // Callbacks
-        typedef std::function<void ()> UPDATE_CALLBACK;
-        UPDATE_CALLBACK y_callback; ///< Callback for UPDATE_Y, initially empty
-        UPDATE_CALLBACK x_callback; ///< Callback for UPDATE_X, initially empty
-    };
     
-    
-    /** \brief Main YARP Node, with support for specifying updates and __info__ port. */
-    class YarpNode: public YarpNodeBase {
-    protected:
-        /** Vector of all updates in this node. */
-        std::vector<UpdateType> m_updates;
-        
-        template<typename T>
-        bool does_port_exists(const T& t_list, const std::string& t_name) const {
-            for (const auto p: t_list) {
-                if (p->getPortName() == t_name) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        
-    public:
-        YarpNode(const std::string& _name, const std::string& ws = ""): YarpNodeBase(_name, ws) { }
-        
-        /** Add a new update to the node. */
-        int addUpdate(UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), double t_T = -1.0, const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
-        
-        /** Add a new update to the node with given index. */
-        int addUpdate(int t_idx, UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), double t_T = -1.0, const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
-        
-        /** Add a new update to the node. */
-        int addUpdate(const UpdateType& t_update);
-        
-        /** Add a new update to the node with given index. */
-        int addUpdate(int t_idx, const UpdateType& t_update);
-        
-        /** Remove an update. */
-        bool removeUpdate(int t_idx);
-        
-        virtual void onUpdateY(updatemask_t m) override;
-        
-        virtual void onUpdateX(updatemask_t m) override;
-        
-        // Some constants for specifying the update's sampling time
-        static constexpr double MILLISECOND = 1e3;
-        static constexpr double SECOND = 1e6;
-        static constexpr double MINUTE = 60*SECOND;
-        static constexpr double HOUR = 60*MINUTE;
-        static constexpr double DAY = 24*HOUR;
-    };
+    /** The main YarpNode class, which supports defining updates, _info_ port, etc. */
+    typedef OBNNodeBase<YarpNodeBase> YarpNode;
     
 }
 

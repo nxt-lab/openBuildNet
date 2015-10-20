@@ -15,15 +15,15 @@
 #include <stdexcept>
 #include <cassert>
 
-#include <obnnode_yarpportbase.h>
+#include <obnnode_basic.h>
 
 namespace OBNnode {
     class port_error: public std::runtime_error {
     public:
-        const YarpPortBase* m_port;
+        const PortBase* m_port;
         // const std::string m_info;
         
-        explicit port_error(const YarpPortBase * port, const std::string& info = ""): std::runtime_error(info), m_port(port) //, m_info(info)
+        explicit port_error(const PortBase * port, const std::string& info = ""): std::runtime_error(info), m_port(port) //, m_info(info)
         {
             assert(port);
         }
@@ -36,7 +36,7 @@ namespace OBNnode {
             ERR_READVALUE
         } m_errortype;
         
-        inputport_error(const YarpPortBase * port, ErrorType errortype, const std::string& info = ""): port_error(port, info), m_errortype(errortype)
+        inputport_error(const PortBase * port, ErrorType errortype, const std::string& info = ""): port_error(port, info), m_errortype(errortype)
         { }
     };
     
@@ -46,7 +46,7 @@ namespace OBNnode {
             ERR_SENDMSG
         } m_errortype;
         
-        outputport_error(const YarpOutputPortBase * port, ErrorType errortype, const std::string& info = ""): port_error(port, info), m_errortype(errortype)
+        outputport_error(const OutputPortBase * port, ErrorType errortype, const std::string& info = ""): port_error(port, info), m_errortype(errortype)
         { }
     };
 }

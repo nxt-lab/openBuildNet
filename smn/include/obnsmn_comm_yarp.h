@@ -48,45 +48,31 @@ namespace OBNsmn {
          It manages the allocated size (_allocsize) and the actual size of the current message (_size).
          */
         class YARPMsg : public yarp::os::Portable {
+        private:
+            OBNsim::ResizableBuffer m_msgbuffer;    // Resizable buffer for the message
         public:
             virtual bool write(yarp::os::ConnectionWriter& connection) {
-                connection.appendInt(_size);
-                connection.appendExternalBlock(_data, _size);
+                auto sz = m_msgbuffer.size();
+                connection.appendInt(sz);
+                connection.appendExternalBlock(m_msgbuffer.data(), sz);
                 return true;
             }
             virtual bool read(yarp::os::ConnectionReader& connection);
             
             /** \brief Set the contents of the SMN2N message. */
             bool setMessage(const OBNSimMsg::SMN2N &msg) {
-                allocateData(msg.ByteSize());
-                return msg.SerializeToArray(_data, _size);
+                m_msgbuffer.allocateData(msg.ByteSize());
+                return msg.SerializeToArray(m_msgbuffer.data(), m_msgbuffer.size());
             }
             
             /** \brief Get the contents of the message to a N2SMN object. */
             bool getMessage(OBNSimMsg::N2SMN &msg) const {
-                if (!_data || _size <= 0) {
+                if (!m_msgbuffer.data() || m_msgbuffer.size() <= 0) {
                     return false;
                 }
-                return msg.ParseFromArray(_data, _size);
+                return msg.ParseFromArray(m_msgbuffer.data(), m_msgbuffer.size());
             }
-            
-            virtual ~YARPMsg() {
-                if (_data) {
-                    delete [] _data;
-                }
-            }
-        private:
-            /** The binary data of the message */
-            char* _data = nullptr;
-            
-            /** The actual size of the message, not exceeding the allocated size. */
-            size_t _size;
-            
-            /** The size of the allocated memory buffer (_data). */
-            size_t _allocsize = 0;
-            
-            /** Allocate the memory block _data given the new size. It will reuse memory if possible. It will change _size. */
-            void allocateData(size_t newsize);
+
         };
         
         
@@ -143,8 +129,8 @@ namespace OBNsmn {
          See the comments at the top of this file for more details.
          */
         class YARPPollingThread {
+            OBNsmn::GCThread::TSendMsgToSysPortFunc m_prev_gc_sendmsg_to_sys_port;
         public:
-            
             /**
              Construct the YARP polling thread object, associated with a given GC and with a given port name.
              This object will create and manage the YARP port.
@@ -154,8 +140,9 @@ namespace OBNsmn {
              \param _gc Pointer to a valid GC thread, with which this thread is associated.
              \param _port Name of the incoming YARP port.
              */
-            YARPPollingThread(GCThread* _gc, std::string _port): done_execution(true), pGC(_gc), portName(_port) {
+            YARPPollingThread(GCThread* _gc, const std::string& _port): done_execution(true), pGC(_gc), portName(_port) {
                 // Set the function to send a message to the system port
+                m_prev_gc_sendmsg_to_sys_port = pGC->getSendMsgToSysPortFunc();     // Save the current function to call it -> form a chain of function calls
                 pGC->setSendMsgToSysPortFunc(std::bind(&YARPPollingThread::sendMessage, this, std::placeholders::_1));
             }
             
@@ -163,8 +150,8 @@ namespace OBNsmn {
                 if (pThread) {
                     // Although we can detach the thread, it's not a good idea because the thread's main procedure uses members of this object; once this object is deleted, the thread may not be able to run anymore. So in this destructor, we need to finish the thread's execution before we can destroy the object.
                     
-                    if (pThread->joinable()) pThread->join();
-                    pThread->detach();
+                    if (pThread->joinable()) { pThread->join(); }
+                    //pThread->detach();
                     delete pThread;
                 }
                 
@@ -175,7 +162,7 @@ namespace OBNsmn {
             const YARPPort& getPort() const { return port; }
             
             /** \brief Send an SMN2N message to the system port. */
-            bool sendMessage(OBNSimMsg::SMN2N &msg);
+            bool sendMessage(const OBNSimMsg::SMN2N &msg);
             
             /** Set the port's name. */
             void setPortName(const std::string &t_port) {
@@ -246,30 +233,7 @@ namespace OBNsmn {
             std::thread * pThread = nullptr;
             
             /** This function is the entry point for the thread. Do not call it directly. */
-            void ThreadMain() {
-                done_execution = false;
-                
-                // This thread simply polls the main GC port
-                OBNSimMsg::N2SMN msg;
-                
-                while (!pGC->simple_thread_terminate) {
-                    YARPMsg *b = port.read(false);
-                    if (b) {
-                        // data received in *b
-                        if (!b->getMessage(msg)) {
-                            // We should report an error here
-                            std::cout << "Critical error: error while parsing input message from a node." << std::endl;
-                        }
-                        
-                        pGC->pushNodeEvent(msg, 0);
-                    }
-                }
-                
-                // Close the port after finishing
-                port.close();
-                
-                done_execution = true;
-            }
+            void ThreadMain();
         };
     }
 }

@@ -80,6 +80,9 @@ namespace OBNsmn {
         SMNNodeEvent(OBNSimMsg::N2SMN_MSGTYPE _type, EventCategory _cat, int _id, bool _hasID = true):
         nodeID(_id), type(_type), category(_cat), has_id(_hasID), has_t(0), has_i(0), has_b(0)
         { }
+        
+        // Currently this class is not to be derived from, so we won't need the virtual destructor; if it's to be derived, make sure to have the virtual destructor
+        //virtual ~SMNNodeEvent() { }
     };
 }
 

@@ -6,12 +6,8 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
     %
     % Author: Truong X. Nghiem (xuan.nghiem@epfl.ch)
     
-    % Last update: 2015-06-05
-    
-    properties (Constant)
-        MaxUpdateID = obnsim_yarp_('maxUpdateID');
-    end
-    
+    % Last update: 2015-10-09
+
     methods (Access=protected)
         % These are the event handler for events sent from the MEX (node
         % object).
@@ -51,13 +47,20 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
     end
     
     methods
-        function this = OBNNode(nodeName, ws)
-            %       obj = OBNNode(nodeName, ws)
+        function this = OBNNode(nodeName, ws, comm, server)
+            %       obj = OBNNode(nodeName, ws = '', comm = 'yarp', server = '')
             % Create a new openBuildNet node in Matlab with a given name
             % and optionally a workspace name. The full name of the node in
             % the network will be /ws/nodeName
+            %
+            % comm is the communication used for this node; default is Yarp
+            % Supported communication types: yarp, mqtt.
+            %
+            % server is the address of the server, used in certain
+            % communication network (e.g. MQTT); default = '' which means
+            % the default server (often a local server).
             
-            narginchk(1, 2);
+            narginchk(1, 4);
             [b, nodeName] = OBNNode.isValidNodeName(nodeName);
             assert(b, 'Invalid node''s name.');
             if nargin > 1 && ~isempty(ws)
@@ -69,8 +72,45 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             
             this.nodeName = nodeName;
             
-            % Create a new node object and save its pointer in id_
-            this.id_  = obnsim_yarp_('nodeNew', nodeName, ws);
+            if nargin > 2 && ~isempty(comm)
+                comm = lower(comm);
+            else
+                comm = 'yarp';
+            end
+            
+            if nargin < 4 || isempty(server)
+                server = '';
+            end
+            
+            switch comm
+                case 'yarp'
+                    this.obnnode_mexfunc_ = @obnsim_yarp_;
+                    
+                case 'mqtt'
+                    this.obnnode_mexfunc_ = @obnsim_mqtt_;
+                    
+                otherwise
+                    error('The communication %s is not supported.', comm);
+            end
+            
+            % Try to access the MEX to make sure that it exists
+            try
+                this.MaxUpdateID = this.obnnode_mexfunc_('maxUpdateID');
+            catch
+                error('Could not call the MEX interface for the communication %s.', comm);
+            end
+            
+            this.communication_ = comm;
+            
+            switch comm
+                case 'yarp'
+                    % Create a new node object and save its pointer in id_
+                    this.id_  = obnsim_yarp_('nodeNew', nodeName, ws);
+                    
+                case 'mqtt'
+                    % Create a new node object and save its pointer in id_
+                    this.id_  = obnsim_mqtt_('nodeNew', nodeName, ws, server);
+            end
             
             % Create the maps from nodes' names to their IDs
             this.inputPorts = containers.Map('KeyType', 'char', 'ValueType', 'int32');
@@ -79,7 +119,12 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
         
         function delete(this)
             % disp('Delete');
-            obnsim_yarp_('nodeDelete', this.id_);
+            this.obnnode_mexfunc_('nodeDelete', this.id_);
+        end
+        
+        function s = getCommunication(this)
+            % Returns the communication for this node
+            s = this.communication_;
         end
         
         function createInputPort(this, portName, containerType, elementType, varargin)
@@ -111,7 +156,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             end;
             [portName, elementType] = this.checkPortSettings(portName, containerType, elementType);
             
-            id = obnsim_yarp_('createInput', this.id_, containerType, elementType, portName, varargin{:});
+            id = this.obnnode_mexfunc_('createInput', this.id_, containerType, elementType, portName, varargin{:});
             assert(id >= 0, 'Could not create and open the input port.');
 
             % save the port to the map
@@ -144,7 +189,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             end;
             [portName, elementType] = this.checkPortSettings(portName, containerType, elementType);
             
-            id = obnsim_yarp_('createOutput', this.id_, containerType, elementType, portName);
+            id = this.obnnode_mexfunc_('createOutput', this.id_, containerType, elementType, portName);
             assert(id >= 0, 'Could not create and open the output port.');
 
             % save the port to the map
@@ -171,7 +216,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
            assert(this.isValidIdentifier(portName), 'Port name is invalid.');
            assert(this.inputPorts.isKey(portName), 'Input port does not exist.');
            
-           d = obnsim_yarp_('readInput', this.id_, this.inputPorts(portName));
+           d = this.obnnode_mexfunc_('readInput', this.id_, this.inputPorts(portName));
         end
         
         
@@ -201,7 +246,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
            assert(this.isValidIdentifier(portName), 'Port name is invalid.');
            assert(this.outputPorts.isKey(portName), 'Output port does not exist.');
            
-           obnsim_yarp_('writeOutput', this.id_, this.outputPorts(portName), d);
+           this.obnnode_mexfunc_('writeOutput', this.id_, this.outputPorts(portName), d);
         end
         
         function sendSync(this, portName, d)
@@ -233,9 +278,9 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
            
            if nargin > 2
                % Set the value first
-               obnsim_yarp_('writeOutput', this.id_, this.outputPorts(portName), d);
+               this.obnnode_mexfunc_('writeOutput', this.id_, this.outputPorts(portName), d);
            end
-           obnsim_yarp_('sendSync', this.id_, this.outputPorts(portName));
+           this.obnnode_mexfunc_('sendSync', this.id_, this.outputPorts(portName));
         end
         
         function s = listInputs(this)
@@ -313,8 +358,35 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             info = repmat(struct('type', '', 'container', '', 'element', '', 'strict', false), 1, numel(portIDs));
             for k = 1:numel(portIDs)
                 [info(k).type, info(k).container, info(k).element, info(k).strict] = ...
-                    obnsim_yarp_('portInfo', this.id_, portIDs(k));
+                    this.obnnode_mexfunc_('portInfo', this.id_, portIDs(k));
             end
+        end
+        
+        function [result, msg] = connectFromPort(this, portName, srcPort)
+            %   [result, msg] = connectFromPort(this, portName, srcPort)
+            % Request to connect from a given srcPort to a port on this node.
+            % - portName is a port's name (a string) on this node.
+            % - srcPort is the address/fullname of the source port.
+            %
+            % Returns: result is 0 if successful, 1 if connection already
+            % exists, < 0 if error (failed); msg is the message.
+            
+            narginchk(3, 3);
+            assert(isscalar(this));
+            assert(ischar(portName));
+            assert(~isempty(portName), 'portName is empty.');
+            assert(this.isValidIdentifier(portName), 'Port name is invalid.');
+            assert(ischar(srcPort) && ~isempty(srcPort), 'Source port''s name must be a non-empty string.');
+            
+            if this.inputPorts.isKey(portName)
+                portID = this.inputPorts(portName);
+            elseif this.outputPorts.isKey(portName)
+                portID = this.outputPorts(portName);
+            else
+                error('OBNNode:connectFromPort', 'Port name "%s" does not exist.', portName);
+            end
+
+            [result, msg] = this.obnnode_mexfunc_('connectPort', this.id_, portID, srcPort);
         end
         
         % Returns the full path of a port given by its ID or name
@@ -442,7 +514,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             end
             
             % Call MEX with futureT converted to int64
-            r = obnsim_yarp_('futureUpdate', this.id_, int64(futureT), mask, timeout);
+            r = this.obnnode_mexfunc_('futureUpdate', this.id_, int64(futureT), mask, timeout);
         end
 
         function t = currentSimTime(this)
@@ -451,7 +523,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             %micro-seconds from the beginning of the simulation (when
             %simulation time is 0).
             assert(isscalar(this));
-            t = obnsim_yarp_('simTime', this.id_);
+            t = this.obnnode_mexfunc_('simTime', this.id_);
         end
         
         function t = currentWallclockTime(this)
@@ -459,7 +531,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             %returns the current wallclock time as a datetime value
             %(Matlab's data type to represent date and time).
             assert(isscalar(this));
-            tposix = obnsim_yarp_('wallclock', this.id_);
+            tposix = this.obnnode_mexfunc_('wallclock', this.id_);
             t = datetime(tposix, 'ConvertFrom', 'posixtime');
         end
         
@@ -528,9 +600,9 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             
             % assert(isscalar(this));
             if isscalar(this)
-                b = obnsim_yarp_('isNodeErr', this.id_);
+                b = this.obnnode_mexfunc_('isNodeErr', this.id_);
             else
-                b = arrayfun(@(obj) obnsim_yarp_('isNodeErr', obj.id_), this);
+                b = arrayfun(@(obj) obj.obnnode_mexfunc_('isNodeErr', obj.id_), this);
             end
         end
         
@@ -540,9 +612,9 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             
             %assert(isscalar(this));
             if isscalar(this)
-                b = obnsim_yarp_('isNodeRunning', this.id_);
+                b = this.obnnode_mexfunc_('isNodeRunning', this.id_);
             else
-                b = arrayfun(@(obj) obnsim_yarp_('isNodeRunning', obj.id_), this);
+                b = arrayfun(@(obj) obj.obnnode_mexfunc_('isNodeRunning', obj.id_), this);
             end
         end
         
@@ -552,9 +624,9 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             
             % assert(isscalar(this));
             if isscalar(this)
-                b = obnsim_yarp_('isNodeStopped', this.id_);
+                b = this.obnnode_mexfunc_('isNodeStopped', this.id_);
             else
-                b = arrayfun(@(obj) obnsim_yarp_('isNodeStopped', obj.id_), this);
+                b = arrayfun(@(obj) obj.obnnode_mexfunc_('isNodeStopped', obj.id_), this);
             end
         end        
                 
@@ -570,7 +642,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             
             %assert(isscalar(this));
             for k = 1:numel(this)
-                obnsim_yarp_('stopSim', this(k).id_);
+                this(k).obnnode_mexfunc_('stopSim', this(k).id_);
             end
         end
 
@@ -587,7 +659,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
 
             %assert(isscalar(this));
             for k = 1:numel(this)
-                obnsim_yarp_('requestStopSim', this(k).id_);
+                this(k).obnnode_mexfunc_('requestStopSim', this(k).id_);
             end
         end
         
@@ -665,7 +737,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
                         continue;
                     end
                     
-                    [status(k), evtype, evargs] = obnsim_yarp_('runStep', this(k).id_, tWaitfor);  % small timeout is used
+                    [status(k), evtype, evargs] = this(k).obnnode_mexfunc_('runStep', this(k).id_, tWaitfor);  % small timeout is used
                     switch status(k)
                         case 0  % Got an event
                             switch upper(evtype)
@@ -714,10 +786,14 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
     end
     
     properties (Access=private)
+        obnnode_mexfunc_    % The MEX function to call, according to the chosen communication
+        communication_ = 'yarp';    % The chosen communication protocol
         id_     % pointer to the C++ node object
         inputPorts     % map nodes' names to their IDs
         outputPorts     % map nodes' names to their IDs
         nodeName  % Name of the node
+        
+        MaxUpdateID
         
         % These are the callbacks for events receiving from the node object
         % Each callback may receive some arguments, and returns nothing.

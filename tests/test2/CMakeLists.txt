@@ -14,72 +14,51 @@ set (OBN_MAIN_DIR ${PROJECT_SOURCE_DIR}/../../)
 set(OBNSMN_SRC_DIR "${OBN_MAIN_DIR}/smn/src")
 set(OBNSMN_INCLUDE_DIR "${OBN_MAIN_DIR}/smn/include")
 
-## This will set the header and source directories for the node.cpp framework
-set (OBN_NODECPP_INCLUDE_DIR ${OBN_MAIN_DIR}/nodecpp/include)
-set (OBN_NODECPP_SOURCE_DIR ${OBN_MAIN_DIR}/nodecpp/src)
-
-## Include directories for the general OBNSim project
-set (OBNSIM_INCLUDE_DIR ${OBN_MAIN_DIR}/include)
-
-
-## Generate code for the message formats using Google ProtoBuf, see http://www.cmake.org/cmake/help/v3.0/module/FindProtobuf.html
-## The source files and header files are listed in PROTO_SRCS and PROTO_HDRS respectively
-## The libraries and header files of the ProtoBuf framework (not the generated files) are in PROTOBUF_LITE_LIBRARIES and PROTOBUF_INCLUDE_DIRS respectively, because we will generate lite code instead of the full ProtoBuf code.
-
-find_package(Protobuf REQUIRED)
-PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS ../../msg/obnsim_msg.proto ../../msg/obnsim_io.proto)
-
-
-## To use Boost library
-# see http://stackoverflow.com/questions/6646405/how-do-you-add-boost-libraries-in-cmakelists-txt
-# and http://www.cmake.org/cmake/help/v3.0/module/FindBoost.html
-# Because Boost is required, it will be an error if Boost is not found
-
-# set(Boost_USE_STATIC_LIBS OFF) 
-# set(Boost_USE_MULTITHREADED ON)  
-# set(Boost_USE_STATIC_RUNTIME OFF) 
-find_package(Boost 1.55.0 REQUIRED COMPONENTS graph) 
+# Include the common CMake code for node.C++
+INCLUDE(${OBN_MAIN_DIR}/nodecpp/CMakeCommon.txt)
 
 
 ## Find communication libraries and add appropriate source files
 set(OBNSMN_COMM_SRC "")
 set(OBNSMN_COMM_HDR "")
 
-set(OBNNODE_COMM_SRC "")
-set(OBNNODE_COMM_HDR "")
-
 ## To use YARP (optionally)
-find_package(YARP)
-if(YARP_FOUND)
+if(WITH_YARP)
+  find_package(YARP REQUIRED)
   include_directories(${YARP_INCLUDE_DIRS})
   link_libraries(${YARP_LIBRARIES})
   set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${OBNSMN_SRC_DIR}/obnsmn_comm_yarp.cpp)
   set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${OBNSMN_INCLUDE_DIR}/obnsmn_comm_yarp.h)
-  set(OBNNODE_COMM_SRC ${OBN_COMM_SRC}
-	${OBN_NODECPP_SOURCE_DIR}/obnnode_yarpnode.cpp
-	${OBN_NODECPP_SOURCE_DIR}/obnnode_yarpport.cpp
-  )
-  set(OBNNODE_COMM_HDR ${OBN_COMM_HDR}
-	${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpnode.h
-	${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpportbase.h
-	${OBN_NODECPP_INCLUDE_DIR}/obnnode_yarpport.h
-	${OBN_NODECPP_INCLUDE_DIR}/sharedqueue_yarp.h
-  )
   add_definitions(-DOBNSIM_COMM_YARP)
   message("Found YARP library; will build SMN with YARP support.")
-endif()
+endif(WITH_YARP)
 
+
+## To use MQTT (optionally)
+if(WITH_MQTT)
+  find_library(PAHOMQTT3A NAMES paho-mqtt3a)
+  if(PAHOMQTT3A_NOTFOUND)
+    # Use the local source files (submodule)
+    message("Did not find Paho MQTT3 library in the system; will use the local source files. This may bloat your program, so it's best to install Paho into your system before building SMNChai.")
+
+    find_package(OpenSSL REQUIRED)
+    AUX_SOURCE_DIRECTORY(${OBN_MAIN_DIR}/thirdparties/paho/src PAHOMQTT3A_SRC)
+    INCLUDE_DIRECTORIES(${OBN_MAIN_DIR}/thirdparties/paho/src)
+    set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${PAHOMQTT3A_SRC})
+  else()
+    message("Found Paho MQTT3 library in the system; will use this library.")
+    link_libraries(${PAHOMQTT3A})
+  endif()
+
+  add_definitions(-DOBNSIM_COMM_MQTT)
+  set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${OBNSMN_SRC_DIR}/obnsmn_comm_mqtt.cpp)
+  set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${OBNSMN_INCLUDE_DIR}/obnsmn_comm_mqtt.h)
+endif(WITH_MQTT)
 
 ## These are the include directories used by the compiler.
 
 INCLUDE_DIRECTORIES(
-  ${PROJECT_INCLUDE_DIR}
-  ${PROJECT_SOURCE_DIR}
-  ${PROJECT_BINARY_DIR}
   ${OBNSMN_INCLUDE_DIR}
-  ${OBNSMN_SRC_DIR}
-  ${OBN_NODECPP_INCLUDE_DIR}
-  ${OBNSIM_INCLUDE_DIR}
 )
 
 IF(CMAKE_COMPILER_IS_GNUCXX)
@@ -103,28 +82,16 @@ ENDIF(CMAKE_COMPILER_IS_GNUCXX)
 # ENDIF(MSVC)
 
 
-INCLUDE_DIRECTORIES(
-  ${CMAKE_SOURCE_DIR}
-  ${PROTOBUF_INCLUDE_DIRS}
-  ${Boost_INCLUDE_DIRS}
-  ${CMAKE_CURRENT_BINARY_DIR}
-)
-
-
 set(OBNSMN_CORE_SRCFILES
 	${OBNSMN_SRC_DIR}/obnsmn_event.cpp
 	${OBNSMN_SRC_DIR}/obnsmn_node.cpp
 	${OBNSMN_SRC_DIR}/obnsmn_nodegraph.cpp
     	${OBNSMN_SRC_DIR}/obnsmn_gc.cpp
+	${OBNSIM_INCLUDE_DIR}/obnsim_basic.cpp
 	${OBNSMN_COMM_SRC}
 	${PROTO_SRCS}
 )
 
-set(OBNNODE_CORE_SRCFILES
-	${OBNSIM_INCLUDE_DIR}/obnsim_basic.cpp
-	${PROTO_SRCS}
-	${OBNNODE_COMM_SRC}
-)
 
 set(OBNSMN_CORE_HDRFILES
 	${OBNSMN_INCLUDE_DIR}/obnsmn_basic.h
@@ -140,21 +107,11 @@ set(OBNSMN_CORE_HDRFILES
 	${PROTO_HDRS}
 )
 
-set(OBNNODE_CORE_HDRFILES
-	${OBN_NODECPP_INCLUDE_DIR}/obnnode.h
-	${OBN_NODECPP_INCLUDE_DIR}/obnnode_basic.h
-	${OBN_NODECPP_INCLUDE_DIR}/obnnode_exceptions.h
-	${OBNSIM_INCLUDE_DIR}/obnsim_basic.h
-	${PROTO_HDRS}
-	${OBNNODE_COMM_HDR}
-)
-
 
 ## When we generate Xcode projects, we need to include both the C++ and H files so that they will all be included in the projects.
 ## It's unnecessary for Makefile.
 if(CMAKE_GENERATOR STREQUAL Xcode)
     set(OBNSMN_CORE_SRCFILES ${OBNSMN_CORE_SRCFILES} ${OBNSMN_CORE_HDRFILES})
-    set(OBNNODE_CORE_SRCFILES ${OBNNODE_CORE_SRCFILES} ${OBNNODE_CORE_HDRFILES})
 endif()
 
 
@@ -173,6 +130,13 @@ ADD_EXECUTABLE(nodectrl
 	${OBNNODE_CORE_SRCFILES}
 )
 
+if(WITH_MQTT)
+	add_executable(nodectrl_mqtt
+		nodectrl_mqtt.cpp
+		${OBNNODE_CORE_SRCFILES}
+	)
+endif()
+
 ADD_EXECUTABLE(nodesetpoint
 	nodesetpoint.cpp
 	${OBNNODE_CORE_SRCFILES}
@@ -186,27 +150,4 @@ else()
   set_property(TARGET smntest2 nodemotor nodectrl nodesetpoint PROPERTY CXX_STANDARD 11)
   set_property(TARGET smntest2 nodemotor nodectrl nodesetpoint PROPERTY CXX_STANDARD_REQUIRED ON)
 endif()
-
-
-TARGET_LINK_LIBRARIES(smntest2
-  ${PROTOBUF_LITE_LIBRARIES}
-  ${Boost_LIBRARIES}
-)
-
-TARGET_LINK_LIBRARIES(nodemotor
-  ${PROTOBUF_LITE_LIBRARIES}
-)
-
-TARGET_LINK_LIBRARIES(nodectrl
-  ${PROTOBUF_LITE_LIBRARIES}
-)
-
-TARGET_LINK_LIBRARIES(nodesetpoint
-  ${PROTOBUF_LITE_LIBRARIES}
-)
-
-## The auxiliary doxygen files (.dox) should be placed in the 'doc'
-## subdirectory. The next line includes the CMAKE config of that directory.
-
-# ADD_SUBDIRECTORY(doc)
 

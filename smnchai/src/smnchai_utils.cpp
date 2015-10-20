@@ -403,3 +403,12 @@ chaiscript::ModulePtr SMNChai::APIUtils::smnchai_api_utils_fixes(chaiscript::Mod
     
     return m;
 }
+
+
+chaiscript::ModulePtr SMNChai::APIUtils::smnchai_api_utils_misc(chaiscript::ModulePtr m)
+{
+    // Delay the execution by a number of milliseconds
+    m->add(chaiscript::fun([](unsigned long t){ std::this_thread::sleep_for(std::chrono::milliseconds(t)); }), "delay");
+    
+    return m;
+}
