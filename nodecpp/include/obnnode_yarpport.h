@@ -338,266 +338,266 @@ namespace OBNnode {
     
     
     /** Implementation of YarpInput for fixed data type encoded with ProtoBuf (OBN_PB), non-strict reading. */
-    template <typename D>
-    class YarpInput<OBN_PB, D, true>: public YarpPortBase,
-    protected yarp::os::BufferedPort< YARPMsgPB<OBNSimIOMsg::IOAck, typename OBN_DATA_TYPE_CLASS<D>::PB_message_class> >
-    {
-        typedef OBN_DATA_TYPE_CLASS<D> _obn_data_type_class;
-        typedef YARPMsgPB<OBNSimIOMsg::IOAck, typename OBN_DATA_TYPE_CLASS<D>::PB_message_class> _port_content_type;
-        
-    public:
-        typedef typename _obn_data_type_class::input_data_type ValueType;
-        
-    private:
-        
-        typedef std::deque<ValueType> ValueQueueType;
-        ValueQueueType m_value_queue;    ///< The queue of values stored in this port
-        ValueType m_temp_value;         ///< Temporary value object to read from the port before being pushed to the queue
-        typename _obn_data_type_class::PB_message_class _PBMessage;   ///< The ProtoBuf message object to receive the data
-        mutable yarp::os::Mutex _valueMutex;    ///< Mutex for accessing the value queue
-        
-        bool m_generate_events = false;     ///< Whether this port should generate an event everytime it receives new data
-
-        YarpNode::EventCallbackFunction m_callback;     ///< The callback function
-        
-        
-        virtual void onRead(_port_content_type& b) {
-            // printf("Callback[%s]\n", getName().c_str());
-            
-            // This input port may optionally generate events in the main thread to call a given callback function.
-            // The received data are always saved in the queue.
-            
-            // Parse the ProtoBuf message
-            if (!b.getMessage(_PBMessage)) {
-                // Error while parsing the raw message
-                _theNode->onRawMessageError(this);
-                return;
-            }
-            
-            // Read from the ProtoBuf message to the value
-            _valueMutex.lock();
-            bool result = OBN_DATA_TYPE_CLASS<D>::readPBMessage(m_temp_value, _PBMessage);
-            if (result) {
-                m_value_queue.push(m_temp_value);
-            }
-            _valueMutex.unlock();
-            
-            // Optionally add a new event to the main thread
-            if (m_generate_events && result) {
-                _theNode->postEvent(m_callback);
-            }
-            
-            if (!result) {
-                // Error while reading the value, e.g. sizes don't match
-                _theNode->onReadValueError(this);
-            }
-        }
-        
-    public:
-        YarpInput(const std::string& _name): YarpPortBase(_name) { }
-
-        /** Construct a port object that will generate an event in the main thread for each new datum it receives, with a given callback function. */
-        YarpInput(const std::string& _name, const YarpNode::EventCallbackFunction &t_callback): YarpInput(_name) {
-            if (t_callback) {
-                // Only if t_callback is callable (i.e. a valid callback function)
-                m_generate_events = true;
-                m_callback = t_callback;
-            }
-        }
-        
-        
-        /** Get the size of the value queue of the port. */
-        ValueQueueType::size_type size() const {
-            yarp::os::LockGuard mlock(_valueMutex);
-            return m_value_queue.size();
-        }
-        
-        /** Check if the value queue of the port is empty. */
-        bool empty() const {
-            yarp::os::LockGuard mlock(_valueMutex);
-            return m_value_queue.empty();
-        }
-        
-        /** Return a reference to the next value in the queue (the oldest one).
-         If the queue is empty, an exception is usually thrown; use empty() to check the emptiness of the queue.
-         No thread safety is used, but it should be fine because the queue is strictly managed by this object.
-         */
-        ValueQueueType::reference& next() {
-            return _valueMutex
-        }
-        
-        
-        ValueType operator() () {
-            yarp::os::LockGuard mlock(_valueMutex);
-            _pending_value = false; // the value has been read
-            return _cur_value;
-        }
-        
-        /** Get direct read-only access the current value of the port. If no message has been received, the value is undefined.
-         A direct reference to the internal value is returned, so there is no copying, which is more efficient for large data.
-         If the value is a fixed-size Eigen vector/matrix and is going to be accessed many times, it will be a good idea to copy it to a local variable because the internal value variable in the port is not aligned for vectorization.
-         */
-        const ValueType& get() {
-            yarp::os::LockGuard mlock(_valueMutex);
-            _pending_value = false; // the value has been read
-            return _cur_value;
-        }
-        
-        /** Return the full port name in the network. */
-        virtual std::string fullPortName() const {
-            return this->getName();
-        }
-        
-        /** Check if there is a pending input value (that hasn't been read). */
-        bool isValuePending() const {
-            return _pending_value;
-        }
-        
-        
-    protected:
-        virtual yarp::os::Contactable& getYarpPort() {
-            return *this;
-        }
-        
-        virtual bool configure() {
-            // Turn on callback
-            this->useCallback();
-            return true;
-        }
-    };
-    
-    
-    /** Implementation of YarpInput for custom ProtoBuf messages, non-strict reading. */
-    template <typename PBCLS>
-    class YarpInput<OBN_PB_USER, PBCLS, false>: public YarpPortBase,
-    protected yarp::os::BufferedPort< YARPMsgPB<OBNSimIOMsg::IOAck, PBCLS> >
-    {
-        typedef YARPMsgPB<OBNSimIOMsg::IOAck, PBCLS> _port_content_type;
-        
-        PBCLS _cur_message;    ///< The current ProtoBuf data message stored in this port
-        bool _pending_value;    ///< If a new value is pending (hasn't been read)
-        
-        mutable yarp::os::Mutex _valueMutex;    ///< Mutex for accessing the value
-        
-        virtual void onRead(_port_content_type& b) {
-            // printf("Callback[%s]\n", getName().c_str());
-            
-            // This managed input port does not generate events in the main thread
-            // It simply saves the value in the message to the value
-            
-            // Parse the ProtoBuf message
-            _valueMutex.lock();
-            bool result = b.getMessage(_cur_message);
-            if (result) {
-                _pending_value = true;
-            }
-            _valueMutex.unlock();
-            
-            if (!result) {
-                // Error while parsing the raw message
-                _theNode->onRawMessageError(this);
-            }
-        }
-        
-    public:
-        YarpInput(const std::string& _name): YarpPortBase(_name), _pending_value(false) {
-            
-        }
-        
-        /** Get direct read-only access the current message in the port. If no message has been received, the value is undefined.
-         A direct reference to the internal value is returned, so there is no copying, which is more efficient for large data.
-         */
-        const PBCLS& get() {
-            yarp::os::LockGuard mlock(_valueMutex);
-            _pending_value = false; // the value has been read
-            return _cur_message;
-        }
-        
-        /** Return the full port name in the network. */
-        virtual std::string fullPortName() const {
-            return this->getName();
-        }
-        
-        /** Check if there is a pending input value (that hasn't been read). */
-        bool isValuePending() const {
-            return _pending_value;
-        }
-        
-        
-    protected:
-        virtual yarp::os::Contactable& getYarpPort() {
-            return *this;
-        }
-        
-        virtual bool configure() {
-            // Turn on callback
-            this->useCallback();
-            return true;
-        }
-    };
-    
-    
-    /** Implementation of YarpInput for binary data, non-strict reading. */
-    template <typename D>
-    class YarpInput<OBN_BIN, D, false>: public YarpPortBase,
-    protected yarp::os::BufferedPort<YARPMsgBin>
-    {
-        typedef YARPMsgBin _port_content_type;
-        
-        std::string _cur_message;    ///< The current binary data message stored in this port
-        bool _pending_value;    ///< If a new value is pending (hasn't been read)
-        
-        mutable yarp::os::Mutex _valueMutex;    ///< Mutex for accessing the value
-        
-        virtual void onRead(_port_content_type& b) {
-            // printf("Callback[%s]\n", getName().c_str());
-            
-            // This managed input port does not generate events in the main thread
-            // It simply saves the value in the message to the value
-            
-            // Copy the binary data to _cur_message
-            _valueMutex.lock();
-            _cur_message.assign(b.getBinaryData(), b.getBinaryDataSize());
-            _pending_value = true;
-            _valueMutex.unlock();
-        }
-        
-    public:
-        YarpInput(const std::string& _name): YarpPortBase(_name), _pending_value(false) {
-            
-        }
-        
-        /** Get direct read-only access the current binary data in the port, as a std::string. If no message has been received, the value is undefined.
-         A direct reference to the internal value is returned, so there is no copying, which is more efficient for large data.
-         */
-        const std::string& get() {
-            yarp::os::LockGuard mlock(_valueMutex);
-            _pending_value = false; // the value has been read
-            return _cur_message;
-        }
-        
-        /** Return the full port name in the network. */
-        virtual std::string fullPortName() const {
-            return this->getName();
-        }
-        
-        /** Check if there is a pending input value (that hasn't been read). */
-        bool isValuePending() const {
-            return _pending_value;
-        }
-        
-        
-    protected:
-        virtual yarp::os::Contactable& getYarpPort() {
-            return *this;
-        }
-        
-        virtual bool configure() {
-            // Turn on callback
-            this->useCallback();
-            return true;
-        }
-    };
+//    template <typename D>
+//    class YarpInput<OBN_PB, D, true>: public YarpPortBase,
+//    protected yarp::os::BufferedPort< YARPMsgPB<OBNSimIOMsg::IOAck, typename OBN_DATA_TYPE_CLASS<D>::PB_message_class> >
+//    {
+//        typedef OBN_DATA_TYPE_CLASS<D> _obn_data_type_class;
+//        typedef YARPMsgPB<OBNSimIOMsg::IOAck, typename OBN_DATA_TYPE_CLASS<D>::PB_message_class> _port_content_type;
+//        
+//    public:
+//        typedef typename _obn_data_type_class::input_data_type ValueType;
+//        
+//    private:
+//        
+//        typedef std::deque<ValueType> ValueQueueType;
+//        ValueQueueType m_value_queue;    ///< The queue of values stored in this port
+//        ValueType m_temp_value;         ///< Temporary value object to read from the port before being pushed to the queue
+//        typename _obn_data_type_class::PB_message_class _PBMessage;   ///< The ProtoBuf message object to receive the data
+//        mutable yarp::os::Mutex _valueMutex;    ///< Mutex for accessing the value queue
+//        
+//        bool m_generate_events = false;     ///< Whether this port should generate an event everytime it receives new data
+//
+//        YarpNode::EventCallbackFunction m_callback;     ///< The callback function
+//        
+//        
+//        virtual void onRead(_port_content_type& b) {
+//            // printf("Callback[%s]\n", getName().c_str());
+//            
+//            // This input port may optionally generate events in the main thread to call a given callback function.
+//            // The received data are always saved in the queue.
+//            
+//            // Parse the ProtoBuf message
+//            if (!b.getMessage(_PBMessage)) {
+//                // Error while parsing the raw message
+//                _theNode->onRawMessageError(this);
+//                return;
+//            }
+//            
+//            // Read from the ProtoBuf message to the value
+//            _valueMutex.lock();
+//            bool result = OBN_DATA_TYPE_CLASS<D>::readPBMessage(m_temp_value, _PBMessage);
+//            if (result) {
+//                m_value_queue.push(m_temp_value);
+//            }
+//            _valueMutex.unlock();
+//            
+//            // Optionally add a new event to the main thread
+//            if (m_generate_events && result) {
+//                _theNode->postEvent(m_callback);
+//            }
+//            
+//            if (!result) {
+//                // Error while reading the value, e.g. sizes don't match
+//                _theNode->onReadValueError(this);
+//            }
+//        }
+//        
+//    public:
+//        YarpInput(const std::string& _name): YarpPortBase(_name) { }
+//
+//        /** Construct a port object that will generate an event in the main thread for each new datum it receives, with a given callback function. */
+//        YarpInput(const std::string& _name, const YarpNode::EventCallbackFunction &t_callback): YarpInput(_name) {
+//            if (t_callback) {
+//                // Only if t_callback is callable (i.e. a valid callback function)
+//                m_generate_events = true;
+//                m_callback = t_callback;
+//            }
+//        }
+//        
+//        
+//        /** Get the size of the value queue of the port. */
+//        ValueQueueType::size_type size() const {
+//            yarp::os::LockGuard mlock(_valueMutex);
+//            return m_value_queue.size();
+//        }
+//        
+//        /** Check if the value queue of the port is empty. */
+//        bool empty() const {
+//            yarp::os::LockGuard mlock(_valueMutex);
+//            return m_value_queue.empty();
+//        }
+//        
+//        /** Return a reference to the next value in the queue (the oldest one).
+//         If the queue is empty, an exception is usually thrown; use empty() to check the emptiness of the queue.
+//         No thread safety is used, but it should be fine because the queue is strictly managed by this object.
+//         */
+//        ValueQueueType::reference& next() {
+//            return _valueMutex
+//        }
+//        
+//        
+//        ValueType operator() () {
+//            yarp::os::LockGuard mlock(_valueMutex);
+//            _pending_value = false; // the value has been read
+//            return _cur_value;
+//        }
+//        
+//        /** Get direct read-only access the current value of the port. If no message has been received, the value is undefined.
+//         A direct reference to the internal value is returned, so there is no copying, which is more efficient for large data.
+//         If the value is a fixed-size Eigen vector/matrix and is going to be accessed many times, it will be a good idea to copy it to a local variable because the internal value variable in the port is not aligned for vectorization.
+//         */
+//        const ValueType& get() {
+//            yarp::os::LockGuard mlock(_valueMutex);
+//            _pending_value = false; // the value has been read
+//            return _cur_value;
+//        }
+//        
+//        /** Return the full port name in the network. */
+//        virtual std::string fullPortName() const {
+//            return this->getName();
+//        }
+//        
+//        /** Check if there is a pending input value (that hasn't been read). */
+//        bool isValuePending() const {
+//            return _pending_value;
+//        }
+//        
+//        
+//    protected:
+//        virtual yarp::os::Contactable& getYarpPort() {
+//            return *this;
+//        }
+//        
+//        virtual bool configure() {
+//            // Turn on callback
+//            this->useCallback();
+//            return true;
+//        }
+//    };
+//    
+//    
+//    /** Implementation of YarpInput for custom ProtoBuf messages, non-strict reading. */
+//    template <typename PBCLS>
+//    class YarpInput<OBN_PB_USER, PBCLS, false>: public YarpPortBase,
+//    protected yarp::os::BufferedPort< YARPMsgPB<OBNSimIOMsg::IOAck, PBCLS> >
+//    {
+//        typedef YARPMsgPB<OBNSimIOMsg::IOAck, PBCLS> _port_content_type;
+//        
+//        PBCLS _cur_message;    ///< The current ProtoBuf data message stored in this port
+//        bool _pending_value;    ///< If a new value is pending (hasn't been read)
+//        
+//        mutable yarp::os::Mutex _valueMutex;    ///< Mutex for accessing the value
+//        
+//        virtual void onRead(_port_content_type& b) {
+//            // printf("Callback[%s]\n", getName().c_str());
+//            
+//            // This managed input port does not generate events in the main thread
+//            // It simply saves the value in the message to the value
+//            
+//            // Parse the ProtoBuf message
+//            _valueMutex.lock();
+//            bool result = b.getMessage(_cur_message);
+//            if (result) {
+//                _pending_value = true;
+//            }
+//            _valueMutex.unlock();
+//            
+//            if (!result) {
+//                // Error while parsing the raw message
+//                _theNode->onRawMessageError(this);
+//            }
+//        }
+//        
+//    public:
+//        YarpInput(const std::string& _name): YarpPortBase(_name), _pending_value(false) {
+//            
+//        }
+//        
+//        /** Get direct read-only access the current message in the port. If no message has been received, the value is undefined.
+//         A direct reference to the internal value is returned, so there is no copying, which is more efficient for large data.
+//         */
+//        const PBCLS& get() {
+//            yarp::os::LockGuard mlock(_valueMutex);
+//            _pending_value = false; // the value has been read
+//            return _cur_message;
+//        }
+//        
+//        /** Return the full port name in the network. */
+//        virtual std::string fullPortName() const {
+//            return this->getName();
+//        }
+//        
+//        /** Check if there is a pending input value (that hasn't been read). */
+//        bool isValuePending() const {
+//            return _pending_value;
+//        }
+//        
+//        
+//    protected:
+//        virtual yarp::os::Contactable& getYarpPort() {
+//            return *this;
+//        }
+//        
+//        virtual bool configure() {
+//            // Turn on callback
+//            this->useCallback();
+//            return true;
+//        }
+//    };
+//    
+//    
+//    /** Implementation of YarpInput for binary data, non-strict reading. */
+//    template <typename D>
+//    class YarpInput<OBN_BIN, D, false>: public YarpPortBase,
+//    protected yarp::os::BufferedPort<YARPMsgBin>
+//    {
+//        typedef YARPMsgBin _port_content_type;
+//        
+//        std::string _cur_message;    ///< The current binary data message stored in this port
+//        bool _pending_value;    ///< If a new value is pending (hasn't been read)
+//        
+//        mutable yarp::os::Mutex _valueMutex;    ///< Mutex for accessing the value
+//        
+//        virtual void onRead(_port_content_type& b) {
+//            // printf("Callback[%s]\n", getName().c_str());
+//            
+//            // This managed input port does not generate events in the main thread
+//            // It simply saves the value in the message to the value
+//            
+//            // Copy the binary data to _cur_message
+//            _valueMutex.lock();
+//            _cur_message.assign(b.getBinaryData(), b.getBinaryDataSize());
+//            _pending_value = true;
+//            _valueMutex.unlock();
+//        }
+//        
+//    public:
+//        YarpInput(const std::string& _name): YarpPortBase(_name), _pending_value(false) {
+//            
+//        }
+//        
+//        /** Get direct read-only access the current binary data in the port, as a std::string. If no message has been received, the value is undefined.
+//         A direct reference to the internal value is returned, so there is no copying, which is more efficient for large data.
+//         */
+//        const std::string& get() {
+//            yarp::os::LockGuard mlock(_valueMutex);
+//            _pending_value = false; // the value has been read
+//            return _cur_message;
+//        }
+//        
+//        /** Return the full port name in the network. */
+//        virtual std::string fullPortName() const {
+//            return this->getName();
+//        }
+//        
+//        /** Check if there is a pending input value (that hasn't been read). */
+//        bool isValuePending() const {
+//            return _pending_value;
+//        }
+//        
+//        
+//    protected:
+//        virtual yarp::os::Contactable& getYarpPort() {
+//            return *this;
+//        }
+//        
+//        virtual bool configure() {
+//            // Turn on callback
+//            this->useCallback();
+//            return true;
+//        }
+//    };
     
 //    template <typename D>
 //    class YarpInput<OBN_PB, D, true>: public YarpPortBase {

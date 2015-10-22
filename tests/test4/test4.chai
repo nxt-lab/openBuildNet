@@ -1,0 +1,34 @@
+//run_simulation(false);
+settings.time_unit(millisecond);
+settings.final_time(10*second);
+
+settings.default_comm("mqtt");	// Can change the default communication
+
+var source1def = ["name" : "source1",
+		  "inputs" : [],
+		  "outputs" : ["y1"],
+		  "updates" : [["sampling" : 1*second, "outputs" : ["y1"]]
+			       ]
+		  ];
+var source1 = node(source1def);
+
+var source2def = ["name" : "source2",
+		  "inputs" : [],
+		  "outputs" : ["y1", "y2"],
+		  "updates" : [["sampling" : 1*second, "outputs" : ["y1", "y2"]]
+			       ]
+		  ];
+var source2 = node(source2def);
+
+var rcvdef = ["name" : "receiver",
+	       "inputs" : ["u1", "u2"],
+	       "updates" : [["sampling" : 1*second]
+			    ]
+	       ];
+var receiver = node(rcvdef);
+
+connect(source1.port("y1"), receiver.port("u1"));
+connect(source2.port("y1"), receiver.port("u1"));
+connect(source2.port("y2"), receiver.port("u2"));
+
+print_system();

@@ -18,6 +18,7 @@
 #include <forward_list>
 #include <functional>
 #include <vector>
+#include <deque>
 #include <exception>
 
 #include <obnsim_basic.h>
@@ -447,7 +448,7 @@ namespace OBNnode {
     public:
         /** Post a system openBuildNet event to the end of the queue (from an SMN2N message).
          
-         This function is generally called from a callback of the communication library (e.g. Yarp thread or MQTT thread).
+         This function is generally called from a callback of the communication library (e.g. Yarp thread or MQTT thread), so consider thread-safety seriously.
          */
         void postEvent(const OBNSimMsg::SMN2N& msg);
         
@@ -578,6 +579,8 @@ namespace OBNnode {
         UPDATE_CALLBACK y_callback; ///< Callback for UPDATE_Y, initially empty
         UPDATE_CALLBACK x_callback; ///< Callback for UPDATE_X, initially empty
     };
+    
+    const UpdateType::UPDATE_CALLBACK NULL_UPDATE_CALLBACK{};
     
     
     /** \brief Main OBN Node class, with support for specifying updates and __info__ port.
@@ -743,6 +746,16 @@ namespace OBNnode {
             data.v = msg.value();
             return true;
         }
+        
+        /** The type for the queue in strict ports. */
+        using input_queue_elem_type = input_data_type;
+        using input_queue_type = std::deque< input_queue_elem_type >;
+        
+        /** Static function to read data from a ProtoBuf message to queue. */
+        static bool readPBMessageStrict(input_queue_type& data, const PB_message_class& msg) {
+            data.push_back(msg.value());
+            return true;
+        }
     };
     
     
@@ -796,6 +809,25 @@ namespace OBNnode {
             //                    *(itto++) = *(itfrom++);
             //                }
             //            }
+            return true;
+        }
+        
+        /** The type for the queue in strict ports. */
+        using input_queue_elem_type = std::unique_ptr<input_data_type>;
+        using input_queue_type = std::deque<input_queue_elem_type>;
+        
+        /** Static function to read data from a ProtoBuf message to the queue. */
+        static bool readPBMessageStrict(input_queue_type& data, const PB_message_class& msg) {
+            auto sz = msg.value_size();
+            data.emplace_back(new input_data_type(sz, 1));   // create a vector with the right size
+            auto& elem = data.back();
+            if (sz != elem->size()) {
+                data.pop_back();
+                return false;
+            }
+            if (sz > 0) {
+                std::copy_n(msg.value().begin(), sz, elem->data());
+            }
             return true;
         }
     };
@@ -856,6 +888,30 @@ namespace OBNnode {
             //            }
             return true;
         }
+        
+        /** The type for the queue in strict ports. */
+        using input_queue_elem_type = std::unique_ptr<input_data_type>;
+        using input_queue_type = std::deque<input_queue_elem_type>;
+        
+        /** Static function to read data from a ProtoBuf message which really copies the data. */
+        static bool readPBMessageStrict(input_queue_type& data, const PB_message_class& msg) {
+            auto nrows = msg.nrows();
+            auto ncols = msg.ncols();
+            auto sz = nrows * ncols;
+            if (msg.value_size() < sz) return false;
+            
+            data.emplace_back(new input_data_type(nrows, ncols));   // create a matrix of the given size
+            auto& elem = data.back();
+            if (elem->rows() != nrows || elem->cols() != ncols) {
+                data.pop_back();
+                return false;
+            }
+            
+            if (sz > 0) {
+                std::copy_n(msg.value().begin(), sz, elem->data());
+            }
+            return true;
+        }
     };
     
     
@@ -887,6 +943,18 @@ namespace OBNnode {
             auto dest = msg.mutable_value();
             dest->Resize(N, T());    // resize the field in msg to hold the values
             std::copy_n(data.data(), N, dest->begin());
+        }
+        
+        /** The type for the queue in strict ports. */
+        using input_queue_elem_type = std::unique_ptr<input_data_type>;
+        using input_queue_type = std::deque<input_queue_elem_type>;
+        
+        /** Static function to read data from a ProtoBuf message which really copies the data. */
+        static bool readPBMessageStrict(input_queue_type& data, const PB_message_class& msg) {
+            if (msg.value_size() < N) return false;
+            data.emplace_back(new input_data_type());   // Create the vector whose size is fixed
+            std::copy_n(msg.value().begin(), N, data.back()->data());
+            return true;
         }
         
         /** Static function to read data from a ProtoBuf message. */
@@ -931,6 +999,20 @@ namespace OBNnode {
             std::copy_n(data.data(), sz, dest->begin());
         }
         
+        /** The element type for the queue in strict ports. */
+        using input_queue_elem_type = std::unique_ptr<input_data_type>;
+        using input_queue_type = std::deque<input_queue_elem_type>;
+        
+        /** Static function to read data from a ProtoBuf message which really copies the data. */
+        static bool readPBMessageStrict(input_queue_type& data, const PB_message_class& msg) {
+            if (msg.nrows() != NR || msg.ncols() != NC || msg.value_size() < NR*NC) return false;
+            data.emplace_back(new input_data_type());
+            auto& elem = data.back();
+            auto sz = elem->size();
+            std::copy_n(msg.value().begin(), sz, elem->data());
+            return true;
+        }
+        
         /** Static function to read data from a ProtoBuf message. */
         static bool readPBMessage(input_data_container& data, const PB_message_class& msg) {
             if (msg.nrows() != NR || msg.ncols() != NC) return false;
@@ -939,6 +1021,7 @@ namespace OBNnode {
             std::copy_n(msg.value().begin(), sz, data.v.data());
             return true;
         }
+        
     };
     
     

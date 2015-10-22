@@ -22,6 +22,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+
 #include <unordered_map>
 #include <vector>
 
@@ -370,6 +371,10 @@ namespace OBNnode {
     template <typename F, typename D>
     class MQTTOutput;
     
+    /**********************************************************************
+     * Non-strict Input ports (keeping only the most recent value).
+     **********************************************************************/
+    
     /** Implementation of MQTTInput for fixed data type encoded with ProtoBuf (OBN_PB), non-strict reading. */
     template <typename D>
     class MQTTInput<OBN_PB, D, false>: public MQTTInputPortBase {
@@ -552,6 +557,221 @@ namespace OBNnode {
         }
     };
     
+    
+    /**********************************************************************
+     * Strict Input ports (keeping a queue of values).
+     **********************************************************************/
+    
+    /** Implementation of MQTTInput for fixed data type encoded with ProtoBuf (OBN_PB), strict reading. */
+    template <typename D>
+    class MQTTInput<OBN_PB, D, true>: public MQTTInputPortBase {
+    private:
+        typedef OBN_DATA_TYPE_CLASS<D> _obn_data_type_class;
+        typedef typename _obn_data_type_class::PB_message_class _pb_message_class;
+        
+    public:
+        typedef typename _obn_data_type_class::input_queue_elem_type ValueType;
+        
+    private:
+        /** The queue of typed values stored in this port. */
+        typename _obn_data_type_class::input_queue_type m_value_queue;
+        
+        std::mutex m_valueMutex;    ///< Mutex for accessing the value
+        
+        // Number of pending values in the queue, kept separately from the queue for quick access
+        std::atomic_uint m_pending_value_count{0};
+        
+        /** The ProtoBuf message object to receive the data. */
+        _pb_message_class m_PBMessage;
+        
+    public:
+        virtual void parse_message(void* msg, int msglen) override {
+            try {
+                // Parse the ProtoBuf message
+                if (msg == nullptr || msglen < 0 || !m_PBMessage.ParseFromArray(msg, msglen)) {
+                    // Error while parsing the raw message
+                    throw OBNnode::inputport_error(this, OBNnode::inputport_error::ERR_RAWMSG);
+                }
+                
+                // Read from the ProtoBuf message to the value
+                std::unique_lock<std::mutex> mylock(m_valueMutex);
+                bool result = _obn_data_type_class::readPBMessageStrict(m_value_queue, m_PBMessage);
+                mylock.unlock();
+                
+                if (result) {
+                    ++m_pending_value_count;
+                } else {
+                    // Error while reading the value, e.g. sizes don't match
+                    throw OBNnode::inputport_error(this, OBNnode::inputport_error::ERR_READVALUE);
+                }
+                
+            } catch (...) {
+                // Catch everything and pass it to the main thread
+                m_node->postExceptionEvent(std::current_exception());
+            }
+        }
+        
+    public:
+        MQTTInput(const std::string& _name, MQTTClient* t_client): MQTTInputPortBase(_name, t_client) { }
+        
+        /** Pop the top / front value of the port.
+         The value should be moved out: it's a smart std::unique_ptr to the data, unless it's a basic scalar type (e.g. double) then the value is copied.
+         If the queue is empty, a default value is returned (ValueType()).
+         After this, the size of the queue is reduced by 1 if it's non-empty before.
+         */
+        ValueType pop() {
+            if (m_pending_value_count > 0) {
+                std::lock_guard<std::mutex> mylock(m_valueMutex);
+                // move the data to val
+                // For primitive scalar types: the value is copied out, the front element is unchanged.
+                // For unique_ptr of complex types: the data is moved out, the front element losts the ownership.
+                ValueType val(std::move(m_value_queue.front()));
+                m_value_queue.pop_front();
+                --m_pending_value_count;
+                return val;
+            }
+            return ValueType();
+        }
+        
+        /** Check if there is a pending input value (that hasn't been read). */
+        bool isValuePending() const {
+            return m_pending_value_count > 0;
+        }
+        
+        /** Get the number of values in the queue. */
+        std::size_t size() const {
+            return m_pending_value_count;
+        }
+    };
+    
+    
+    /** Implementation of MQTTInput for custom ProtoBuf messages, strict reading. */
+    template <typename PBCLS>
+    class MQTTInput<OBN_PB_USER, PBCLS, true>: public MQTTInputPortBase {
+    public:
+        typedef std::unique_ptr<PBCLS> ValueType;
+        
+    private:
+        /** The queue of typed values stored in this port. */
+        std::deque<ValueType> m_value_queue;
+        
+        std::mutex m_valueMutex;    ///< Mutex for accessing the value
+        
+        // Number of pending values in the queue, kept separately from the queue for quick access
+        std::atomic_uint m_pending_value_count{0};
+        
+    public:
+        virtual void parse_message(void* msg, int msglen) override {
+            try {
+                // Parse the ProtoBuf message into the internal queue
+                bool result = false;
+                if (msg != nullptr && msglen >= 0) {
+                    std::lock_guard<std::mutex> mylock(m_valueMutex);
+                    ValueType elem(new PBCLS());
+                    if ((result = elem->ParseFromArray(msg, msglen))) {
+                        m_value_queue.push_back(std::move(elem));   // move to the queue
+                        ++m_pending_value_count;    // one added
+                    }
+                }
+                
+                if (!result) {
+                    // Error while parsing the raw message
+                    throw OBNnode::inputport_error(this, OBNnode::inputport_error::ERR_RAWMSG);
+                }
+            } catch (...) {
+                // Catch everything and pass it to the main thread
+                m_node->postExceptionEvent(std::current_exception());
+            }
+        }
+        
+        MQTTInput(const std::string& _name, MQTTClient* t_client): MQTTInputPortBase(_name, t_client) { }
+        
+        /** Pop the top / front value of the port.
+         The value should be moved out: it's a smart std::unique_ptr to the data.
+         If the queue is empty, a default value is returned (ValueType()).
+         After this, the size of the queue is reduced by 1 if it's non-empty before.
+         */
+        ValueType pop() {
+            if (m_pending_value_count > 0) {
+                std::lock_guard<std::mutex> mylock(m_valueMutex);
+                // move the data to val
+                ValueType val(std::move(m_value_queue.front()));
+                m_value_queue.pop_front();
+                --m_pending_value_count;
+                return val;
+            }
+            return ValueType();
+        }
+        
+        /** Check if there is a pending input value (that hasn't been read). */
+        bool isValuePending() const {
+            return m_pending_value_count > 0;
+        }
+        
+        /** Get the number of values in the queue. */
+        std::size_t size() const {
+            return m_pending_value_count;
+        }
+    };
+    
+    
+    /** Implementation of MQTTInput for binary data, non-strict reading. */
+    template <typename D>
+    class MQTTInput<OBN_BIN, D, true>: public MQTTInputPortBase {
+    public:
+        typedef std::string ValueType;
+        
+    private:
+        /** The queue of typed values stored in this port. */
+        std::deque<ValueType> m_value_queue;
+        
+        std::mutex m_valueMutex;    ///< Mutex for accessing the value
+        
+        // Number of pending values in the queue, kept separately from the queue for quick access
+        std::atomic_uint m_pending_value_count{0};
+        
+    public:
+        virtual void parse_message(void* msg, int msglen) override {
+            std::lock_guard<std::mutex> mylock(m_valueMutex);
+            m_value_queue.emplace_back(static_cast<char*>(msg), msglen);
+            ++m_pending_value_count;
+        }
+        
+    public:
+        MQTTInput(const std::string& _name, MQTTClient* t_client): MQTTInputPortBase(_name, t_client) { }
+        
+        /** Pop the top / front value of the port.
+         The value should be moved out.
+         If the queue is empty, a default value is returned (ValueType()).
+         After this, the size of the queue is reduced by 1 if it's non-empty before.
+         */
+        ValueType pop() {
+            if (m_pending_value_count > 0) {
+                std::lock_guard<std::mutex> mylock(m_valueMutex);
+                // move the data to val
+                ValueType val(std::move(m_value_queue.front()));
+                m_value_queue.pop_front();
+                --m_pending_value_count;
+                return val;
+            }
+            return ValueType();
+        }
+        
+        /** Check if there is a pending input value (that hasn't been read). */
+        bool isValuePending() const {
+            return m_pending_value_count > 0;
+        }
+        
+        /** Get the number of values in the queue. */
+        std::size_t size() const {
+            return m_pending_value_count;
+        }
+    };
+
+    
+    /**********************************************************************
+     * Output ports
+     **********************************************************************/
     
     /** Implementation of MQTTOutput for fixed data type encoded with ProtoBuf (OBN_PB).
      This class of MQTTOutput is not thread-safe because usually it's accessed in the main thread only.

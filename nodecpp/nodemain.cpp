@@ -47,12 +47,15 @@ class MyNodeClass: public YarpNode {
     
     MQTTInput<OBN_PB, double, false> input3;
     MQTTInput<OBN_PB, obn_vector<double>, false> input4;
+    MQTTInput<OBN_PB, double, true> input5;
+    MQTTInput<OBN_PB, obn_vector<double>, true> input6;
 #endif
 
 public:
     /* ws is the workspace name, useful if you have multiple simulation networks running on the same Yarp network. */
     MyNodeClass(const std::string& name, const std::string& ws = ""): YarpNode(name, ws),
-    input1("u1"), output1("y"), input3("u3", &m_mqtt_client), input4("u4", &m_mqtt_client)
+    input1("u1"), output1("y"), input3("u3", &m_mqtt_client), input4("u4", &m_mqtt_client),
+    input5("u5", &m_mqtt_client), input6("u6", &m_mqtt_client)
     { }
     
     virtual ~MyNodeClass() {
@@ -108,6 +111,14 @@ public:
         if (success && !(success = addInput(&input4))) {
             std::cerr << "Error while adding input " << input4.getPortName() << std::endl;
         }
+        
+        if (success && !(success = addInput(&input5))) {
+            std::cerr << "Error while adding input " << input5.getPortName() << std::endl;
+        }
+        
+        if (success && !(success = addInput(&input6))) {
+            std::cerr << "Error while adding input " << input6.getPortName() << std::endl;
+        }
 #endif
         
         // Add the first update
@@ -152,6 +163,12 @@ public:
         output1 = (*input2)() * input1();
 #ifdef OBNNODE_COMM_MQTT
         output1 = output1() + input4() * input3();
+        while (input5.isValuePending()) {
+            std::cout << input5.pop() << std::endl;
+        }
+        while (input6.isValuePending()) {
+            output1 = output1() + *(input6.pop());
+        }
 #endif
     }
 
