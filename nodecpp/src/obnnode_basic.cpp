@@ -43,6 +43,12 @@ void InputPortBase::setMsgRcvCallback(InputPortBase::MSGRCV_CALLBACK f, bool onM
     m_msgrcv_callback_on_mainthread = onMainThread;
 }
 
+// Clear the message received event callback for an input port.
+void InputPortBase::clearMsgRcvCallback() {
+    std::lock_guard<std::mutex> mylock(m_msgrcv_callback_mutex);
+    m_msgrcv_callback = nullptr;
+}
+
 
 //void InputPortBase::callMsgRcvCallback() {
 //    std::lock_guard<std::mutex> mylock(m_msgrcv_callback_mutex);
@@ -306,6 +312,110 @@ void NodeBase::run(double timeout) {
     
     // This is the end of the simulation
     onReportInfo("[NODE] Node's execution has stopped.");
+}
+
+int NodeBase::runUntil(std::function<bool ()> pred, double timeout) {
+    assert(pred);
+    
+    // Can only be called in RUNNING state
+    if (_node_state != NODE_RUNNING && _node_state != NODE_STARTED) {
+        onReportInfo("[NODE] Node is not running.");
+        return 1;
+    }
+    
+    bool predResult = pred();
+    if (predResult) {
+        return 0;
+    }
+    
+    // Looping to process events until the simulation stops or a timeout occurs or the predicate holds
+    std::shared_ptr<NodeEvent> pEvent;
+    if (timeout <= 0.0) {
+        // Without timeout
+        while (!predResult && (_node_state == NODE_RUNNING || _node_state == NODE_STARTED)) {
+            pEvent = eventqueue_wait_and_pop();
+            assert(pEvent);
+            pEvent->executeMain(this);  // Execute the event
+            pEvent->executePost(this);  // Post-Execute the event
+            
+            predResult = pred();    // Update the predicate, given new event
+        }
+        
+        return predResult?0:1;
+    } else {
+        // With timeout
+        while (!predResult && (_node_state == NODE_RUNNING || _node_state == NODE_STARTED)) {
+            pEvent = eventqueue_wait_and_pop(timeout);
+            if (pEvent) {
+                // Execute the event if not timeout
+                pEvent->executeMain(this);
+                pEvent->executePost(this);
+                
+                predResult = pred();    // Update the predicate, given new event
+            } else {
+                // If timeout then we stop
+                onReportInfo("[NODE] Node's execution has a timeout.");
+                onRunTimeout();
+                return -1;
+            }
+        }
+        
+        return predResult?0:1;
+    }
+}
+
+
+int NodeBase::runUntilMsgRcv(InputPortBase* ports[], std::size_t nPorts, double timeout, std::function<void ()> func) {
+    if (m_runUntilMsgRcv_running) {
+        return -2;
+    }
+    
+    if (nPorts <= 0) {
+        return 0;
+    }
+    
+    m_runUntilMsgRcv_running = true;
+    m_runUntilMsgRcv_counter = nPorts;
+    
+    // Clear the bits
+    m_runUntilMsgRcv_bits.resize(nPorts);
+    std::fill_n(m_runUntilMsgRcv_bits.begin(), nPorts, false);
+    
+    // Set up callbacks for ports
+    for (auto i = 0; i < nPorts; ++i) {
+        auto p = ports[i];
+        assert(p);
+        ports[i]->setMsgRcvCallback(
+                                    [this,i,p]() -> void {
+                                        if (!this->m_runUntilMsgRcv_bits[i]) {
+                                            p->clearMsgRcvCallback();               // turn off the callback
+                                            this->m_runUntilMsgRcv_bits[i] = true;  // mark the event as done
+                                            --(this->m_runUntilMsgRcv_counter);
+                                        }
+                                    },
+                                    true);  // Run on the main thread to ensure thread-safety
+    }
+    
+    // Run func() if provided
+    if (func) {
+        func();
+    }
+    
+    // Run the node
+    auto result = runUntil([this]() -> bool { return this->m_runUntilMsgRcv_counter == 0; }, timeout);
+    
+    // Turn off the waiting
+    m_runUntilMsgRcv_counter = 0;
+    m_runUntilMsgRcv_running = false;
+    
+    // Clear the callbacks if necessary
+    if (result != 0) {
+        for (auto i = 0; i < nPorts; ++i) {
+            ports[i]->clearMsgRcvCallback();
+        }
+    }
+    
+    return result;
 }
 
 

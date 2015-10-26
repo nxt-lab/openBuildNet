@@ -124,14 +124,19 @@ namespace OBNnode {
          */
         void setMsgRcvCallback(MSGRCV_CALLBACK f, bool onMainThread);
         
+        /** \brief Clear the callback function for message received events.
+         */
+        void clearMsgRcvCallback();
+        
         /** \brief Trigger the callback for message received events.
          
-         This method won't trigger the callback if the callback is empty.
+         This method won't trigger the callback if the callback is empty; so it's safe to call this method even if the callback has not been set.
          If the callback is set to run on the main thread and this port is associated with a node, an appropriate event will be posted to the node's main thread; if this port is not associated with any node, the trigger will fail (but does not cause any error).
          Otherwise, the callback will be called immediately (on the caller's thread).
          */
         void triggerMsgRcvCallback();
         
+        InputPortBase(const std::string& t_name): PortBase(t_name) { }
     protected:
         MSGRCV_CALLBACK m_msgrcv_callback{};  ///< The callback function for message received events
         bool m_msgrcv_callback_on_mainthread{true};
@@ -324,6 +329,33 @@ namespace OBNnode {
         /** Check the given message against the list of wait-for conditions. */
         virtual void checkWaitForCondition(const OBNSimMsg::SMN2N&) = 0;
         
+        /** \brief Run the node (simulation) until a predicate is true, or timeout, or the simnulation stops.
+         
+         This method should only be called when the node is already running or started; otherwise it will cause an error.
+         This method should only be used internally in the node, not to be called from outside; use run() to run the node's simulation from outside.
+         
+         \param pred The predicate function, must be valid (i.e. callable).
+         \param timeout The timeout value, non-positive if there is no timeout.
+         \return 0 if the predicate was true; >0 if the simulation stops (because of final simulation time, because of an error...); <0 if timeout occured.
+         */
+        int runUntil(std::function<bool ()> pred, double timeout = -1.0);
+        
+        /** \brief Run the node until messages have been received on each and every ports listed in the given array.
+         
+         At any time, only one instance of this method can be running.
+         This method will replace the callback functions of the given ports, and when the event has happened on a port, it will clear the callback function.
+         
+         \param ports An array of valid pointers to input port objects.
+         \param nPorts The number of ports in the array.
+         \param timeout The timeout value, non-positive if there is no timeout.
+         \param func A optional function to be called after the events have been set up but before the waiting starts, e.g. to send a broadcast message to some nodes.
+         \return 0 if the compound event happened; >0 if the simulation stops (because of final simulation time, because of an error...); <0 if timeout occured (-1) or if this method is already running (-2).
+         */
+        int runUntilMsgRcv(InputPortBase* ports[], std::size_t nPorts, double timeout = -1.0, std::function<void ()> func = nullptr);
+        
+        std::atomic_bool m_runUntilMsgRcv_running{false};
+        std::size_t m_runUntilMsgRcv_counter{0};
+        std::vector<bool> m_runUntilMsgRcv_bits;        ///< Bit set for recording the events, accessed from the main thread so no thread-safety measure is needed.
         
         /* ================== Support for Node Events ================= */
     protected:

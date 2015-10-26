@@ -29,12 +29,13 @@ using namespace OBNnode;
 
 class SourceNode: public MQTTNode {
     MQTTOutput<OBN_PB, double> m_y1;
+    MQTTOutput<OBN_PB, double> m_y2;
     
     std::default_random_engine generator;
     std::uniform_int_distribution<int> distribution;
     
 public:
-    SourceNode(const std::string& name, const std::string& ws = ""): MQTTNode(name, ws), m_y1("y1", &mqtt_client),
+    SourceNode(const std::string& name, const std::string& ws = ""): MQTTNode(name, ws), m_y1("y1", &mqtt_client), m_y2("y2", &mqtt_client),
     generator(std::chrono::system_clock::now().time_since_epoch().count()), distribution(0, 100)
     { }
     
@@ -50,6 +51,11 @@ public:
         // Add the ports to the node
         if (!(success = addOutput(&m_y1))) {
             std::cerr << "Error while adding output:" << m_y1.getPortName() << std::endl;
+        }
+
+        // Add the ports to the node
+        if (success && !(success = addOutput(&m_y2))) {
+            std::cerr << "Error while adding output:" << m_y2.getPortName() << std::endl;
         }
         
         // Add the updates
@@ -73,6 +79,7 @@ public:
     
     void doMainUpdate() {
         m_y1 = distribution(generator) * 1.0;
+        m_y2 = distribution(generator) * 10.0;
     }
     
     /* There are other callbacks for reporting errors, etc. */

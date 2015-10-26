@@ -6,8 +6,8 @@ settings.default_comm("mqtt");	// Can change the default communication
 
 var source1def = ["name" : "source1",
 		  "inputs" : [],
-		  "outputs" : ["y1"],
-		  "updates" : [["sampling" : 1*second, "outputs" : ["y1"]]
+		  "outputs" : ["y1", "y2"],
+		  "updates" : [["sampling" : 1*second, "outputs" : ["y1", "y2"]]
 			       ]
 		  ];
 var source1 = node(source1def);
@@ -21,7 +21,7 @@ var source2def = ["name" : "source2",
 var source2 = node(source2def);
 
 var rcvdef = ["name" : "receiver",
-	       "inputs" : ["u1", "u2"],
+	       "inputs" : ["u1", "u2", "u3"],
 	       "updates" : [["sampling" : 1*second]
 			    ]
 	       ];
@@ -30,5 +30,6 @@ var receiver = node(rcvdef);
 connect(source1.port("y1"), receiver.port("u1"));
 connect(source2.port("y1"), receiver.port("u1"));
 connect(source2.port("y2"), receiver.port("u2"));
+connect(source1.port("y2"), receiver.port("u3"));
 
 print_system();

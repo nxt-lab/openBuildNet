@@ -28,9 +28,10 @@ using namespace OBNnode;
 class ReceiverNode: public MQTTNode {
     MQTTInput<OBN_PB, double, true> m_u1;
     MQTTInput<OBN_PB, obn_vector<double>, true> m_u2;
-
+    MQTTInput<OBN_PB, double, true> m_u3;
 public:
-    ReceiverNode(const std::string& name, const std::string& ws = ""): MQTTNode(name, ws), m_u1("u1", &mqtt_client), m_u2("u2", &mqtt_client)
+    ReceiverNode(const std::string& name, const std::string& ws = ""): MQTTNode(name, ws), m_u1("u1", &mqtt_client), m_u2("u2", &mqtt_client),
+    m_u3("u3", &mqtt_client)
     { }
     
     /* Add ports to node, hardware components may be started, etc. */
@@ -51,8 +52,26 @@ public:
             std::cerr << "Error while adding input:" << m_u2.getPortName() << std::endl;
         }
         
-        // Add the updates
+        if (success && !(success = addInput(&m_u3))) {
+            std::cerr << "Error while adding input:" << m_u3.getPortName() << std::endl;
+        }
+        
+        // Add the update to print u2
         success = success && (this->addUpdate(MAIN_UPDATE, NULL_UPDATE_CALLBACK, std::bind(&ReceiverNode::printInputs, this)) >= 0);
+        
+        // Set up event for u1 to print its input (directly on communication thread)
+        m_u1.setMsgRcvCallback([this](){
+            if (this->m_u1.isValuePending()) {
+                std::cout << "u1:" << this->m_u1.pop() << std::endl;
+            }
+        }, false);
+        
+        // Set up event for u3 to print its input (on the main thread)
+        m_u3.setMsgRcvCallback([this](){
+            if (this->m_u3.isValuePending()) {
+                std::cout << "u3:" << this->m_u3.pop() << std::endl;
+            }
+        }, true);
         
         return success;
     }
@@ -71,17 +90,8 @@ public:
     
     void printInputs() {
         std::cout << "At " << this->currentSimulationTime() << std::endl;
-        auto n = m_u1.size();
-        
-        if (n > 0) {
-            std::cout << "u1: ";
-            while (m_u1.isValuePending()) {
-                std::cout << m_u1.pop() << " ";
-            }
-            std::cout << std::endl;
-        }
-        
-        n = m_u2.size();
+       
+        auto n = m_u2.size();
         
         if (n > 0) {
             std::cout << "u2:\n";

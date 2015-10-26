@@ -122,7 +122,7 @@ namespace OBNnode {
     
     /** \brief Base class for an openBuildNet port, contains name, mode, etc.
      */
-    class YarpPortBase: public PortBase {
+    class YarpPortBase: public InputPortBase {
     protected:
         /** Returns the actual Yarp port. */
         virtual yarp::os::Contactable& getYarpPort() = 0;
@@ -139,7 +139,7 @@ namespace OBNnode {
         }
         
     public:
-        YarpPortBase(const std::string& t_name): PortBase(t_name) { }
+        YarpPortBase(const std::string& t_name): InputPortBase(t_name) { }
         //virtual ~YarpPortBase() { }
         
         virtual std::string fullPortName() const override {

@@ -252,7 +252,7 @@ namespace OBNnode {
     
     /** \brief Base class for an openBuildNet input port in MQTT, contains name, mode, etc.
      */
-    class MQTTInputPortBase: public PortBase, public IMQTTInputPort {
+    class MQTTInputPortBase: public InputPortBase, public IMQTTInputPort {
     protected:
         MQTTClient* m_mqtt_client;  ///< The MQTT Client object that manages the communication of this port
         
@@ -271,7 +271,7 @@ namespace OBNnode {
         }
         
     public:
-        MQTTInputPortBase(const std::string& t_name, MQTTClient* t_client): PortBase(t_name), m_mqtt_client(t_client) {
+        MQTTInputPortBase(const std::string& t_name, MQTTClient* t_client): InputPortBase(t_name), m_mqtt_client(t_client) {
             assert(t_client);
         }
         //virtual ~MQTTPortBase() { }
@@ -414,6 +414,7 @@ namespace OBNnode {
                 
                 if (result) {
                     m_pending_value = true;
+                    triggerMsgRcvCallback();    // Trigger the Message Received Event Callback
                 } else {
                     // Error while reading the value, e.g. sizes don't match
                     throw OBNnode::inputport_error(this, OBNnode::inputport_error::ERR_READVALUE);
@@ -479,6 +480,7 @@ namespace OBNnode {
                 
                 if (result) {
                     m_pending_value = true;
+                    triggerMsgRcvCallback();    // Trigger the Message Received Event Callback
                 } else {
                     // Error while parsing the raw message
                     throw OBNnode::inputport_error(this, OBNnode::inputport_error::ERR_RAWMSG);
@@ -525,12 +527,12 @@ namespace OBNnode {
         
     public:
         virtual void parse_message(void* msg, int msglen) override {
-            // This managed input port does not generate events in the main thread
-            // It simply saves the value in the message to the value
-            
             m_pending_value = true;
-            std::lock_guard<std::mutex> mylock(m_valueMutex);
-            m_cur_message.assign(static_cast<char*>(msg), msglen);
+            {
+                std::lock_guard<std::mutex> mylock(m_valueMutex);
+                m_cur_message.assign(static_cast<char*>(msg), msglen);
+            }
+            triggerMsgRcvCallback();    // Trigger the Message Received Event Callback
         }
         
     public:
@@ -600,6 +602,7 @@ namespace OBNnode {
                 
                 if (result) {
                     ++m_pending_value_count;
+                    triggerMsgRcvCallback();    // Trigger the Message Received Event Callback
                 } else {
                     // Error while reading the value, e.g. sizes don't match
                     throw OBNnode::inputport_error(this, OBNnode::inputport_error::ERR_READVALUE);
@@ -674,7 +677,9 @@ namespace OBNnode {
                     }
                 }
                 
-                if (!result) {
+                if (result) {
+                    triggerMsgRcvCallback();    // Trigger the Message Received Event Callback
+                } else {
                     // Error while parsing the raw message
                     throw OBNnode::inputport_error(this, OBNnode::inputport_error::ERR_RAWMSG);
                 }
@@ -732,9 +737,12 @@ namespace OBNnode {
         
     public:
         virtual void parse_message(void* msg, int msglen) override {
-            std::lock_guard<std::mutex> mylock(m_valueMutex);
-            m_value_queue.emplace_back(static_cast<char*>(msg), msglen);
+            {
+                std::lock_guard<std::mutex> mylock(m_valueMutex);
+                m_value_queue.emplace_back(static_cast<char*>(msg), msglen);
+            }
             ++m_pending_value_count;
+            triggerMsgRcvCallback();    // Trigger the Message Received Event Callback
         }
         
     public:
