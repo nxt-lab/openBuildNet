@@ -108,6 +108,43 @@ namespace OBNnode {
         virtual std::pair<int, std::string> connect_from_port(const std::string& source) = 0;
     };
     
+    /** \brief Base class for an openBuildNet input port.
+     
+     It supports callbacks when receiving messages.
+     */
+    class InputPortBase: public PortBase {
+    public:
+        /** Callback function type for message received events. */
+        typedef std::function<void ()> MSGRCV_CALLBACK;
+        
+        /** \brief Set the callback function for message received events.
+         
+         \param f The callback function (empty function to disable callback).
+         \param onMainThread Set to true if the callback should be called on the main thread (by means of an event posted to the main queue); otherwise, it will be called on the communication thread (hence thread-safety measures must be implemented).
+         */
+        void setMsgRcvCallback(MSGRCV_CALLBACK f, bool onMainThread);
+        
+        /** \brief Trigger the callback for message received events.
+         
+         This method won't trigger the callback if the callback is empty.
+         If the callback is set to run on the main thread and this port is associated with a node, an appropriate event will be posted to the node's main thread; if this port is not associated with any node, the trigger will fail (but does not cause any error).
+         Otherwise, the callback will be called immediately (on the caller's thread).
+         */
+        void triggerMsgRcvCallback();
+        
+    protected:
+        MSGRCV_CALLBACK m_msgrcv_callback{};  ///< The callback function for message received events
+        bool m_msgrcv_callback_on_mainthread{true};
+        std::mutex m_msgrcv_callback_mutex;     ///< Mutex for accessing the callback function
+        
+        /* \brief Call the callback function for message received events.
+         
+         If the callback is empty, it won't be called.
+         This method always locks the access to the callback function before calling it, so it can be called directly on the communication thread.
+         */
+        //void callMsgRcvCallback();
+    };
+    
     /** \brief Base class for an openBuildNet output port.
      */
     class OutputPortBase: public PortBase {
@@ -444,6 +481,16 @@ namespace OBNnode {
             virtual void executeMain(NodeBase*) override;
         };
         
+        /** Event class for a callback, e.g. a communication event callback, to be called on the main thread. */
+        class NodeEventCallback: public NodeEvent {
+            std::function<void ()> m_callback_func;
+        public:
+            NodeEventCallback(std::function<void ()> f): m_callback_func(f) {
+                assert(m_callback_func);    // Must contain a callable target
+            }
+            
+            virtual void executeMain(NodeBase*) override;
+        };
         
     public:
         /** Post a system openBuildNet event to the end of the queue (from an SMN2N message).
@@ -454,8 +501,13 @@ namespace OBNnode {
         
         
         /* Methods for pushing events of other types (node internal events) will be put here */
+        
         void postExceptionEvent(std::exception_ptr e) {
             eventqueue_push_front(new NodeEventException(e));
+        }
+        
+        void postCallbackEvent(std::function<void ()> f) {
+            eventqueue_push_front(new NodeEventCallback(f));
         }
         
     public:

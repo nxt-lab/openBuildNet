@@ -36,6 +36,36 @@ PortBase::~PortBase() {
     }
 }
 
+// Set the message received event callback for an input port.
+void InputPortBase::setMsgRcvCallback(InputPortBase::MSGRCV_CALLBACK f, bool onMainThread) {
+    std::lock_guard<std::mutex> mylock(m_msgrcv_callback_mutex);
+    m_msgrcv_callback = std::move(f);   // Move to the internal function variable
+    m_msgrcv_callback_on_mainthread = onMainThread;
+}
+
+
+//void InputPortBase::callMsgRcvCallback() {
+//    std::lock_guard<std::mutex> mylock(m_msgrcv_callback_mutex);
+//    if (m_msgrcv_callback) {
+//        m_msgrcv_callback();
+//    }
+//}
+
+// Trigger the message received callback, depending on whether it's set to run on the main thread
+void InputPortBase::triggerMsgRcvCallback() {
+    std::lock_guard<std::mutex> mylock(m_msgrcv_callback_mutex);
+    if (m_msgrcv_callback) {
+        if (m_msgrcv_callback_on_mainthread) {
+            if (isValid()) {
+                m_node->postCallbackEvent(m_msgrcv_callback);
+            }
+        } else {
+            // Call it now
+            m_msgrcv_callback();
+        }
+    }
+}
+
 // DO NOT REMOVE THIS DESTRUCTOR: it's important because it helps using the right NodeBase::removePort(OutputPortBase*) for output ports.
 OutputPortBase::~OutputPortBase() {
     //std::cout << "~OutputPortBase" << std::endl;
@@ -562,3 +592,6 @@ void NodeBase::NodeEvent_PORT_CONNECT::executeMain(NodeBase* pnode) {
     pnode->sendN2SMNMsg();
 }
 
+void NodeBase::NodeEventCallback::executeMain(OBNnode::NodeBase *pnode) {
+    m_callback_func();
+}
