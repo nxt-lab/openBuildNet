@@ -60,15 +60,15 @@ using std::string;
  */
 int MQTTNodeMatlab::createInputPort(char container, const std::string &element, const std::string &name, bool strict) {
     MQTTNodeMatlab::PortInfo portinfo;
+    OBNnode::InputPortBase *port;
     portinfo.type = MQTTNodeMatlab::PortInfo::INPUTPORT;
     switch (container) {
         case 's':
         case 'S':
             if (strict) {
-                //portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(PortBase,MQTTInput,obn_scalar,element,true,name,&mqtt_client);
-                portinfo.port = nullptr;
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_scalar,element,true,name,&mqtt_client);
             } else {
-                portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(PortBase,MQTTInput,obn_scalar,element,false,name,&mqtt_client);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_scalar,element,false,name,&mqtt_client);
             }
             portinfo.container = 's';
             break;
@@ -76,10 +76,9 @@ int MQTTNodeMatlab::createInputPort(char container, const std::string &element, 
         case 'v':
         case 'V':
             if (strict) {
-                //portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(PortBase,MQTTInput,obn_vector,element,true,name,&mqtt_client);
-                portinfo.port = nullptr;
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector,element,true,name,&mqtt_client);
             } else {
-                portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(PortBase,MQTTInput,obn_vector,element,false,name,&mqtt_client);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector,element,false,name,&mqtt_client);
             }
             portinfo.container = 'v';
             break;
@@ -87,10 +86,9 @@ int MQTTNodeMatlab::createInputPort(char container, const std::string &element, 
         case 'm':
         case 'M':
             if (strict) {
-                //port = YNM_PORT_CLASS_BY_NAME_STRICT(PortBase,MQTTInput,obn_matrix,element,true,name,&mqtt_client);
-                portinfo.port = nullptr;
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix,element,true,name,&mqtt_client);
             } else {
-                portinfo.port = YNM_PORT_CLASS_BY_NAME_STRICT(PortBase,MQTTInput,obn_matrix,element,false,name,&mqtt_client);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix,element,false,name,&mqtt_client);
             }
             portinfo.container = 'm';
             break;
@@ -98,10 +96,9 @@ int MQTTNodeMatlab::createInputPort(char container, const std::string &element, 
         case 'b':
         case 'B':
             if (strict) {
-                //portinfo.port = new MQTTInput<OBN_BIN,bool,true>(name,&mqtt_client);
-                portinfo.port = nullptr;
+                port = new MQTTInput<OBN_BIN,bool,true>(name,&mqtt_client);
             } else {
-                portinfo.port = new MQTTInput<OBN_BIN,bool,false>(name,&mqtt_client);
+                port = new MQTTInput<OBN_BIN,bool,false>(name,&mqtt_client);
             }
             portinfo.container = 'b';
             break;
@@ -111,22 +108,23 @@ int MQTTNodeMatlab::createInputPort(char container, const std::string &element, 
             return -1;
     }
     
-    if (!portinfo.port) {
+    if (!port) {
         // port is nullptr => error
-        reportError("MQTTNODE:createInputPort", "Unknown element type.");
+        reportError("MQTTNODE:createInputPort", "Unsupported input type.");
         return -2;
     }
     
     // Add the port to the node, which will OWN the port and will delete it
-    bool result = addInput(portinfo.port, true);
+    bool result = addInput(port, true);
     if (!result) {
         // failed to add to node
-        delete portinfo.port;
+        delete port;
         reportError("MQTTNODE:createInputPort", "Could not add new port to node.");
         return -3;
     }
     
     auto id = _all_ports.size();
+    portinfo.port = port;
     portinfo.elementType = YNM_PORT_ELEMENT_TYPE_BY_NAME(element);
     portinfo.strict = strict;
     _all_ports.push_back(portinfo);
@@ -310,56 +308,110 @@ int MQTTNodeMatlab::runStep(double timeout) {
 template class mexplus::Session<MQTTNodeMatlab>;
 template class mexplus::Session<MQTTNode::WaitForCondition>;
 
-#define READ_INPUT_SCALAR_HELPER(A,B,C) \
-  MQTTInput<A,obn_scalar<B>,C> *p = dynamic_cast<MQTTInput<A,obn_scalar<B>,C>*>(portinfo.port); \
+#define READ_INPUT_SCALAR_HELPER(A,B) \
+  MQTTInput<A,obn_scalar<B>,false> *p = dynamic_cast<MQTTInput<A,obn_scalar<B>,false>*>(portinfo.port); \
   if (p) { output.set(0, p->get()); } \
   else { reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type."); }
 
+#define READ_INPUT_SCALAR_HELPER_STRICT(A,B) \
+  MQTTInput<A,obn_scalar<B>,true> *p = dynamic_cast<MQTTInput<A,obn_scalar<B>,true>*>(portinfo.port); \
+  if (p) { output.set(0, p->pop()); } \
+else { reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type."); }
 
 // For vectors, regardless of how vectors are stored in Matlab's mxArray vs. in Eigen, we can simply copy the exact number of values from one to another.
 template <typename ETYPE>
-mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port) {
-    MQTTInput<OBN_PB,obn_vector<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector<ETYPE>,false>*>(port);
-    if (p) {
-        // Get direct access to value
-        auto value_access = p->lock_and_get();
-        const auto& pv = *value_access;
-
-        MxArray ml(FUNC(pv.size(), 1));
-        std::copy(pv.data(), pv.data()+pv.size(), ml.getData<ETYPE>());
-        return ml.release();
+mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port, bool strict)
+{
+    if (strict) {
+        MQTTInput<OBN_PB,obn_vector<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector<ETYPE>,true>*>(port);
+        if (p) {
+            // Get unique_ptr to an Eigen's object
+            auto pv = p->pop();
+            
+            if (pv) {
+                // Copy to MxArray
+                MxArray ml(FUNC(pv->size(), 1));
+                std::copy(pv->data(), pv->data()+pv->size(), ml.getData<ETYPE>());
+                return ml.release();
+            } else {
+                // Empty vector
+                MxArray ml(FUNC(0,0));
+                return ml.release();
+            }
+        }
     } else {
-        reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
-        return nullptr;
+        MQTTInput<OBN_PB,obn_vector<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector<ETYPE>,false>*>(port);
+        if (p) {
+            // Get direct access to value
+            auto value_access = p->lock_and_get();
+            const auto& pv = *value_access;
+            
+            MxArray ml(FUNC(pv.size(), 1));
+            std::copy(pv.data(), pv.data()+pv.size(), ml.getData<ETYPE>());
+            return ml.release();
+        }
     }
+
+    // Reach here only if there is error
+    reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
+    return nullptr;
 }
 
 // For matrices, the order in which Matlab and Eigen store matrices (column-major or row-major) will affect how data can be copied.  Because both Eigen and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.  For completeness, there are commented code lines that safely transfer data by accessing element-by-element, but this would be slower.
 template <typename ETYPE>
-mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port) {
-    MQTTInput<OBN_PB,obn_matrix<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix<ETYPE>,false>*>(port);
-    if (p) {
-        // Get direct access to value
-        auto value_access = p->lock_and_get();
-        const auto& pv = *value_access;
-        
-        auto nr = pv.rows(), nc = pv.cols();
-        MxArray ml(FUNC(nr, nc));
-        
-        // The following lines copy the whole chunk of raw data from Eigen to MEX/Matlab, it's faster but requires that Matlab and Eigen must use the same order type
-        std::copy(pv.data(), pv.data()+nr*nc, ml.getData<ETYPE>());
-        return ml.release();
-        
-// // The following lines copy element-by-element: it's safe but slow.
-//        for (std::size_t c = 0; c < nc; ++c) {
-//            for (std::size_t r = 0; r < nr; ++r) {
-//                ml.set(r, c, pv.coeff(r, c));
-//            }
-//        }
+mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port, bool strict) {
+    if (strict) {
+        MQTTInput<OBN_PB,obn_matrix<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix<ETYPE>,true>*>(port);
+        if (p) {
+            // Get unique_ptr to an Eigen's object
+            auto pv = p->pop();
+            
+            if (pv) {
+                auto nr = pv->rows(), nc = pv->cols();
+                MxArray ml(FUNC(nr, nc));
+                
+                // The following lines copy the whole chunk of raw data from Eigen to MEX/Matlab, it's faster but requires that Matlab and Eigen must use the same order type
+                std::copy(pv->data(), pv->data()+nr*nc, ml.getData<ETYPE>());
+                return ml.release();
+                
+                // // The following lines copy element-by-element: it's safe but slow.
+                //        for (std::size_t c = 0; c < nc; ++c) {
+                //            for (std::size_t r = 0; r < nr; ++r) {
+                //                ml.set(r, c, pv->coeff(r, c));
+                //            }
+                //        }
+            } else {
+                // Empty matrix
+                MxArray ml(FUNC(0,0));
+                return ml.release();
+            }
+        }
     } else {
-        reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
-        return nullptr;
+        MQTTInput<OBN_PB,obn_matrix<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix<ETYPE>,false>*>(port);
+        if (p) {
+            // Get direct access to value
+            auto value_access = p->lock_and_get();
+            const auto& pv = *value_access;
+            
+            auto nr = pv.rows(), nc = pv.cols();
+            MxArray ml(FUNC(nr, nc));
+            
+            // The following lines copy the whole chunk of raw data from Eigen to MEX/Matlab, it's faster but requires that Matlab and Eigen must use the same order type
+            std::copy(pv.data(), pv.data()+nr*nc, ml.getData<ETYPE>());
+            return ml.release();
+            
+            // // The following lines copy element-by-element: it's safe but slow.
+            //        for (std::size_t c = 0; c < nc; ++c) {
+            //            for (std::size_t r = 0; r < nr; ++r) {
+            //                ml.set(r, c, pv.coeff(r, c));
+            //            }
+            //        }
+        }
     }
+
+    // Reach here only if there is error
+    reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
+    return nullptr;
 }
 
 
@@ -427,10 +479,10 @@ void write_output_matrix_helper(const InputArguments &input, OBNnode::PortBase *
 namespace {
     /* === Port interface === */
 
-    // Read the current value of a non-strict physical input port
+    // Read the current value of a non-strict input port, or pop the top/front value of a strict input port.
     // Args: node object pointer, port's ID
     // Returns: value in an appropriate Matlab's type
-    // This function will return an error if the given port is not a non-strict physical input port
+    // For strict ports, if there is no value pending, a default / empty value will be returned.
     // If the port contains binary data, the function will return a string containing the binary data.
     MEX_DEFINE(readInput) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         InputArguments input(nrhs, prhs, 2);
@@ -445,8 +497,8 @@ namespace {
 
         // Obtain the port
         MQTTNodeMatlab::PortInfo portinfo = ynode->_all_ports[id];
-        if (portinfo.type != MQTTNodeMatlab::PortInfo::INPUTPORT || portinfo.strict) {
-            reportError("MQTTNODE:readInput", "Given port is not a non-strict physical input.");
+        if (portinfo.type != MQTTNodeMatlab::PortInfo::INPUTPORT) {
+            reportError("MQTTNODE:readInput", "Given port is not an input.");
             return;
         }
         
@@ -454,35 +506,53 @@ namespace {
         switch (portinfo.container) {
             case 's':
                 switch (portinfo.elementType) {
-                    case MQTTNodeMatlab::PortInfo::DOUBLE: {
-                        READ_INPUT_SCALAR_HELPER(OBN_PB, double, false)
+                    case MQTTNodeMatlab::PortInfo::DOUBLE:
+                        if (portinfo.strict) {
+                            READ_INPUT_SCALAR_HELPER_STRICT(OBN_PB, double)
+                        } else {
+                            READ_INPUT_SCALAR_HELPER(OBN_PB, double)
+                        }
                         break;
-                    }
                         
-                    case MQTTNodeMatlab::PortInfo::LOGICAL: {
-                        READ_INPUT_SCALAR_HELPER(OBN_PB, bool, false)
+                    case MQTTNodeMatlab::PortInfo::LOGICAL:
+                        if (portinfo.strict) {
+                            READ_INPUT_SCALAR_HELPER_STRICT(OBN_PB, bool)
+                        } else {
+                            READ_INPUT_SCALAR_HELPER(OBN_PB, bool)
+                        }
                         break;
-                    }
                         
-                    case MQTTNodeMatlab::PortInfo::INT32: {
-                        READ_INPUT_SCALAR_HELPER(OBN_PB, int32_t, false)
+                    case MQTTNodeMatlab::PortInfo::INT32:
+                        if (portinfo.strict) {
+                            READ_INPUT_SCALAR_HELPER_STRICT(OBN_PB, int32_t)
+                        } else {
+                            READ_INPUT_SCALAR_HELPER(OBN_PB, int32_t)
+                        }
                         break;
-                    }
                         
-                    case MQTTNodeMatlab::PortInfo::INT64: {
-                        READ_INPUT_SCALAR_HELPER(OBN_PB, int64_t, false)
+                    case MQTTNodeMatlab::PortInfo::INT64:
+                        if (portinfo.strict) {
+                            READ_INPUT_SCALAR_HELPER_STRICT(OBN_PB, int64_t)
+                        } else {
+                            READ_INPUT_SCALAR_HELPER(OBN_PB, int64_t)
+                        }
                         break;
-                    }
                         
-                    case MQTTNodeMatlab::PortInfo::UINT32: {
-                        READ_INPUT_SCALAR_HELPER(OBN_PB, uint32_t, false)
+                    case MQTTNodeMatlab::PortInfo::UINT32:
+                        if (portinfo.strict) {
+                            READ_INPUT_SCALAR_HELPER_STRICT(OBN_PB, uint32_t)
+                        } else {
+                            READ_INPUT_SCALAR_HELPER(OBN_PB, uint32_t)
+                        }
                         break;
-                    }
                         
-                    case MQTTNodeMatlab::PortInfo::UINT64: {
-                        READ_INPUT_SCALAR_HELPER(OBN_PB, uint64_t, false)
+                    case MQTTNodeMatlab::PortInfo::UINT64:
+                        if (portinfo.strict) {
+                            READ_INPUT_SCALAR_HELPER_STRICT(OBN_PB, uint64_t)
+                        } else {
+                            READ_INPUT_SCALAR_HELPER(OBN_PB, uint64_t)
+                        }
                         break;
-                    }
                         
                     default:
                         reportError("MQTTNODE:readInput", "Internal error: port's element type is invalid.");
@@ -493,27 +563,27 @@ namespace {
             case 'v':
                 switch (portinfo.elementType) {
                     case MQTTNodeMatlab::PortInfo::DOUBLE:
-                        output.set(0, read_input_vector_helper<double>(MxArray::Numeric<double>, portinfo.port));
+                        output.set(0, read_input_vector_helper<double>(MxArray::Numeric<double>, portinfo.port, portinfo.strict));
                         break;
                         
                     case MQTTNodeMatlab::PortInfo::LOGICAL:
-                        output.set(0, read_input_vector_helper<bool>(MxArray::Logical, portinfo.port));
+                        output.set(0, read_input_vector_helper<bool>(MxArray::Logical, portinfo.port, portinfo.strict));
                         break;
                         
                     case MQTTNodeMatlab::PortInfo::INT32:
-                        output.set(0, read_input_vector_helper<int32_t>(MxArray::Numeric<int32_t>, portinfo.port));
+                        output.set(0, read_input_vector_helper<int32_t>(MxArray::Numeric<int32_t>, portinfo.port, portinfo.strict));
                         break;
                         
                     case MQTTNodeMatlab::PortInfo::INT64:
-                        output.set(0, read_input_vector_helper<int64_t>(MxArray::Numeric<int64_t>, portinfo.port));
+                        output.set(0, read_input_vector_helper<int64_t>(MxArray::Numeric<int64_t>, portinfo.port, portinfo.strict));
                         break;
                         
                     case MQTTNodeMatlab::PortInfo::UINT32:
-                        output.set(0, read_input_vector_helper<uint32_t>(MxArray::Numeric<uint32_t>, portinfo.port));
+                        output.set(0, read_input_vector_helper<uint32_t>(MxArray::Numeric<uint32_t>, portinfo.port, portinfo.strict));
                         break;
                 
                     case MQTTNodeMatlab::PortInfo::UINT64:
-                        output.set(0, read_input_vector_helper<uint64_t>(MxArray::Numeric<uint64_t>, portinfo.port));
+                        output.set(0, read_input_vector_helper<uint64_t>(MxArray::Numeric<uint64_t>, portinfo.port, portinfo.strict));
                         break;
                         
                     default:
@@ -525,27 +595,27 @@ namespace {
             case 'm':
                 switch (portinfo.elementType) {
                     case MQTTNodeMatlab::PortInfo::DOUBLE:
-                        output.set(0, read_input_matrix_helper<double>(MxArray::Numeric<double>, portinfo.port));
+                        output.set(0, read_input_matrix_helper<double>(MxArray::Numeric<double>, portinfo.port, portinfo.strict));
                         break;
                         
                     case MQTTNodeMatlab::PortInfo::LOGICAL:
-                        output.set(0, read_input_matrix_helper<bool>(MxArray::Logical, portinfo.port));
+                        output.set(0, read_input_matrix_helper<bool>(MxArray::Logical, portinfo.port, portinfo.strict));
                         break;
                         
                     case MQTTNodeMatlab::PortInfo::INT32:
-                        output.set(0, read_input_matrix_helper<int32_t>(MxArray::Numeric<int32_t>, portinfo.port));
+                        output.set(0, read_input_matrix_helper<int32_t>(MxArray::Numeric<int32_t>, portinfo.port, portinfo.strict));
                         break;
                         
                     case MQTTNodeMatlab::PortInfo::INT64:
-                        output.set(0, read_input_matrix_helper<int64_t>(MxArray::Numeric<int64_t>, portinfo.port));
+                        output.set(0, read_input_matrix_helper<int64_t>(MxArray::Numeric<int64_t>, portinfo.port, portinfo.strict));
                         break;
                         
                     case MQTTNodeMatlab::PortInfo::UINT32:
-                        output.set(0, read_input_matrix_helper<uint32_t>(MxArray::Numeric<uint32_t>, portinfo.port));
+                        output.set(0, read_input_matrix_helper<uint32_t>(MxArray::Numeric<uint32_t>, portinfo.port, portinfo.strict));
                         break;
                         
                     case MQTTNodeMatlab::PortInfo::UINT64:
-                        output.set(0, read_input_matrix_helper<uint64_t>(MxArray::Numeric<uint64_t>, portinfo.port));
+                        output.set(0, read_input_matrix_helper<uint64_t>(MxArray::Numeric<uint64_t>, portinfo.port, portinfo.strict));
                         break;
                         
                     default:
@@ -554,16 +624,25 @@ namespace {
                 }
                 break;
                 
-            case 'b': {
-                // A binary string is read, the element type is ignored
-                MQTTInput<OBN_BIN,bool,false> *p = dynamic_cast<MQTTInput<OBN_BIN,bool,false>*>(portinfo.port);
-                if (p) {
-                    output.set(0, p->get());
+            case 'b':
+                if (portinfo.strict) {
+                    // A binary string is read, the element type is ignored
+                    MQTTInput<OBN_BIN,bool,true> *p = dynamic_cast<MQTTInput<OBN_BIN,bool,true>*>(portinfo.port);
+                    if (p) {
+                        output.set(0, p->pop());
+                    } else {
+                        reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
+                    }
                 } else {
-                    reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
+                    // A binary string is read, the element type is ignored
+                    MQTTInput<OBN_BIN,bool,false> *p = dynamic_cast<MQTTInput<OBN_BIN,bool,false>*>(portinfo.port);
+                    if (p) {
+                        output.set(0, p->get());
+                    } else {
+                        reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
+                    }
                 }
                 break;
-            }
                 
             default:    // This should never happen
                 reportError("MQTTNODE:readInput", "Internal error: port's container type is invalid.");
@@ -762,6 +841,37 @@ namespace {
         }
     }
     
+    // Is there a value pending at an input port?
+    // Args: node object pointer, port's ID
+    // Returns: true/false
+    MEX_DEFINE(inputPending) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 2);
+        OutputArguments output(nlhs, plhs, 1);
+        
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
+        unsigned int id = input.get<unsigned int>(1);
+        if (id >= ynode->_all_ports.size()) {
+            reportError("MQTTNODE:inputPending", "Invalid port ID.");
+            return;
+        }
+        
+        // Obtain the port
+        MQTTNodeMatlab::PortInfo portinfo = ynode->_all_ports[id];
+        if (portinfo.type != MQTTNodeMatlab::PortInfo::INPUTPORT) {
+            reportError("MQTTNODE:inputPending", "Given port is not an input port.");
+            return;
+        }
+
+        // Cast and query the port
+        OBNnode::InputPortBase *port = dynamic_cast<OBNnode::InputPortBase*>(portinfo.port);
+        if (port) {
+            output.set(0, port->isValuePending());
+        } else {
+            reportError("MQTTNODE:inputPending", "Internal error: port object is not an input port.");
+            return;
+        }
+    }
+
 
 //    // Get full MQTT name of a port
 //    MEX_DEFINE(MQTTName) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
@@ -778,15 +888,7 @@ namespace {
 //        }
 //    }
 //    
-////    // Is there a message pending at a port?
-////    MEX_DEFINE(isPendingMessage) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-////        InputArguments input(nrhs, prhs, 1);
-////        OutputArguments output(nlhs, plhs, 1);
-////        
-////        YPort *yport = Session<YPort>::get(input.get(0));
-////        output.set(0, yport->hasMessage());
-////    }
-//    
+//
 //    // Get the ID of a port by its name
 //    // Returns ID of port; 0 if port doesn't exist
 //    MEX_DEFINE(portID) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {

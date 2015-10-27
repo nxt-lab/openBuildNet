@@ -131,7 +131,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             %   createInputPort(this, portName,
             %                   containerType, elementType, ...)
             %
-            % Create a new physical input port with a given name and type.
+            % Create a new input port with a given name and type.
             % - portName is the port's name inside the node
             % - containerType is a character specifying whether the port
             %   receives a scalar ('s'), a vector ('v'), a matrix ('m'), or
@@ -154,6 +154,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             if nargin < 4 || isempty(elementType)
                 elementType = '';
             end;
+            
             [portName, elementType] = this.checkPortSettings(portName, containerType, elementType);
             
             id = this.obnnode_mexfunc_('createInput', this.id_, containerType, elementType, portName, varargin{:});
@@ -197,28 +198,44 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
         end
         
         function d = input(this, portName)
-           %    d = input(this, portName)
-           % reads from a non-strict physical input port.
-           % portName is the name of the input port
-           % Returns the current value of the port, in an appropriate
-           % Matlab type.
-           % This function will cause an error if the port doesn't exist,
-           % if it's not an appropriate port type.
-           % 
-           % Reading value from an input port can be expensive as it
-           % involves calling a MEX function and transferring data from the
-           % MEX to Matlab. Hence it's a good practice to read from an
-           % input port once to a local variable to use, rather than
-           % reading from the port repeatedly.
-           
-           narginchk(2, 2);
-           assert(isscalar(this));
-           assert(this.isValidIdentifier(portName), 'Port name is invalid.');
-           assert(this.inputPorts.isKey(portName), 'Input port does not exist.');
-           
-           d = this.obnnode_mexfunc_('readInput', this.id_, this.inputPorts(portName));
+            %    d = input(this, portName)
+            % reads from an input port.
+            % portName is the name of the input port.
+            % If the port is non-strict, returns the current value of the
+            % port.
+            % If the port is strict, pops and returns the top / front value
+            % of the port; after this call, that top / front value is
+            % removed from the port.
+            % In any case, the returned value is in an appropriate Matlab
+            % type.
+            % This function will cause an error if the port doesn't exist,
+            % or if it's not an appropriate port type.
+            %
+            % Reading value from an input port can be expensive as it
+            % involves calling a MEX function and transferring data from the
+            % MEX to Matlab. Hence it's a good practice to read from an
+            % input port once to a local variable to use, rather than
+            % reading from the port repeatedly.
+            
+            narginchk(2, 2);
+            assert(isscalar(this));
+            assert(this.isValidIdentifier(portName), 'Port name is invalid.');
+            assert(this.inputPorts.isKey(portName), 'Input port does not exist.');
+            
+            d = this.obnnode_mexfunc_('readInput', this.id_, this.inputPorts(portName));
         end
         
+        function b = inputPending(this, portName)
+            %    b = inputPending(this, portName)
+            % returns true if there is a pending value / message at the
+            % given input port.
+            narginchk(2, 2);
+            assert(isscalar(this));
+            assert(this.isValidIdentifier(portName), 'Port name is invalid.');
+            assert(this.inputPorts.isKey(portName), 'Input port does not exist.');
+            
+            b = this.obnnode_mexfunc_('inputPending', this.id_, this.inputPorts(portName));
+        end
         
         function output(this, portName, d)
            %    output(this, portName, d)

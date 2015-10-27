@@ -136,6 +136,9 @@ namespace OBNnode {
          */
         void triggerMsgRcvCallback();
         
+        /** \brief Check if there is a pending value / message at the port. */
+        virtual bool isValuePending() const = 0;
+        
         InputPortBase(const std::string& t_name): PortBase(t_name) { }
     protected:
         MSGRCV_CALLBACK m_msgrcv_callback{};  ///< The callback function for message received events

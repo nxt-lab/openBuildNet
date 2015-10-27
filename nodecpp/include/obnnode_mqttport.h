@@ -453,7 +453,7 @@ namespace OBNnode {
         }
         
         /** Check if there is a pending input value (that hasn't been read). */
-        bool isValuePending() const {
+        virtual bool isValuePending() const override {
             return m_pending_value;
         }
     };
@@ -511,7 +511,7 @@ namespace OBNnode {
         }
         
         /** Check if there is a pending input value (that hasn't been read). */
-        bool isValuePending() const {
+        virtual bool isValuePending() const override {
             return m_pending_value;
         }
     };
@@ -554,7 +554,7 @@ namespace OBNnode {
         }
         
         /** Check if there is a pending input value (that hasn't been read). */
-        bool isValuePending() const {
+        virtual bool isValuePending() const override {
             return m_pending_value;
         }
     };
@@ -637,7 +637,7 @@ namespace OBNnode {
         }
         
         /** Check if there is a pending input value (that hasn't been read). */
-        bool isValuePending() const {
+        virtual bool isValuePending() const override {
             return m_pending_value_count > 0;
         }
         
@@ -709,7 +709,7 @@ namespace OBNnode {
         }
         
         /** Check if there is a pending input value (that hasn't been read). */
-        bool isValuePending() const {
+        virtual bool isValuePending() const override {
             return m_pending_value_count > 0;
         }
         
@@ -766,7 +766,7 @@ namespace OBNnode {
         }
         
         /** Check if there is a pending input value (that hasn't been read). */
-        bool isValuePending() const {
+        virtual bool isValuePending() const override {
             return m_pending_value_count > 0;
         }
         
