@@ -112,9 +112,14 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
                     this.id_  = obnsim_mqtt_('nodeNew', nodeName, ws, server);
             end
             
-            % Create the maps from nodes' names to their IDs
+            % Create the maps from ports' names to their IDs
             this.inputPorts = containers.Map('KeyType', 'char', 'ValueType', 'int32');
-            this.outputPorts = containers.Map('KeyType', 'char', 'ValueType', 'int32');
+            this.outputPorts = containers.Map('KeyType', 'char', ...
+                                              'ValueType', 'int32');
+            
+            % Create the map from ports' IDs to their callbacks
+            this.callback_portrcvd = containers.Map('KeyType', 'int32', ...
+                                                    'ValueType', 'any');
         end
         
         function delete(this)
@@ -441,6 +446,14 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             %   All of varargin are custom arguments.
             % - 'TERM' : SIM_TERM event when the simulation terminates. All
             %   of varargin are custom arguments.
+            % - 'RCV' : event when an input port receives a new
+            %   message / value. The next argument must be the name
+            %   of the input port (a string). The rest are custom
+            %   arguments.
+            %
+            % For events that don't support multiple callbacks
+            % (e.g. INIT, TERM), when a callback is added, it will
+            % replace any existing callback.
             
             narginchk(3, inf);
             assert(isscalar(this));
@@ -448,39 +461,56 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             assert(ischar(evtype) && ~isempty(evtype), 'Event type must be a non-empty string.');
             
             switch upper(evtype)
-                case {'Y', 'X'}
-                    assert(numel(varargin) >= 1, 'The update type ID must be provided.');
-                    id = varargin{1};
-                    assert(id >= 0 && id <= this.MaxUpdateID && floor(id) == id,...
-                        'The update type ID must be an integer between 0 and %d', this.MaxUpdateID);
-                    if strcmpi(evtype, 'Y')
-                        tmp = this.callbacks_update_y;
-                    else
-                        tmp = this.callbacks_update_x;
-                    end
+              case {'Y', 'X'}
+                assert(numel(varargin) >= 1, 'The update type ID must be provided.');
+                id = varargin{1};
+                assert(id >= 0 && id <= this.MaxUpdateID && floor(id) == id,...
+                       'The update type ID must be an integer between 0 and %d', this.MaxUpdateID);
+                if strcmpi(evtype, 'Y')
+                    tmp = this.callbacks_update_y;
+                else
+                    tmp = this.callbacks_update_x;
+                end
+                
+                % Find the update type in the list already
+                found = find([tmp.id] == id);
+                if ~isempty(found)
+                    % Remove it from the list
+                    tmp(found) = [];
+                end
+                
+                % Add the new callback to the end
+                if strcmpi(evtype, 'Y')
+                    this.callbacks_update_y = [tmp, struct('id', id, 'func', func, 'args', {varargin(2:end)})];
+                else
+                    this.callbacks_update_x = [tmp, struct('id', id, 'func', func, 'args', {varargin(2:end)})];
+                end
+                
+              case 'INIT'
+                this.callback_init = struct('func', func, 'args', {varargin});
+                
+              case 'TERM'
+                this.callback_term = struct('func', func, 'args', {varargin});
                     
-                    % Find the update type in the list already
-                    found = find([tmp.id] == id);
-                    if ~isempty(found)
-                        % Remove it from the list
-                        tmp(found) = [];
-                    end
-                    
-                    % Add the new callback to the end
-                    if strcmpi(evtype, 'Y')
-                        this.callbacks_update_y = [tmp, struct('id', id, 'func', func, 'args', {varargin(2:end)})];
-                    else
-                        this.callbacks_update_x = [tmp, struct('id', id, 'func', func, 'args', {varargin(2:end)})];
-                    end
-                    
-                case 'INIT'
-                    this.callback_init = struct('func', func, 'args', {varargin});
-                    
-                case 'TERM'
-                    this.callback_term = struct('func', func, 'args', {varargin});
-                                        
-                otherwise
-                    error('OBNNode:addCallback', 'Unrecognized event type: %s.', evtype);
+              case 'RCV'
+                % The next argument must be a valid input port name
+                % (already exists)
+                assert(numel(varargin) >= 1 && ischar(varargin{1}) && ~isempty(varargin{1}),...
+                       'The input port name must be provided.');
+                assert(this.inputPorts.isKey(varargin{1}),...
+                       'The given input port does not exist.');
+                % Store the callback and arguments as a cell array
+                this.callback_portrcvd(this.inputPorts(varargin{1})) = [{func}, ...
+                                    varargin(2:end)];
+                % Register the event at the input port
+                if ~this.obnnode_mexfunc_('enableRcvEvent', this.id_, ...
+                                          this.inputPorts(varargin{1}))
+                    error('OBNNode:addCallback',...
+                          'Error setting the RCV event callback.');
+                end
+              
+              otherwise
+                error('OBNNode:addCallback', 'Unrecognized event type: %s.', evtype);
             end
         end
         
@@ -766,6 +796,12 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
                                     this(k).onSimInit();
                                 case 'TERM'
                                     this(k).onSimTerm();
+                                case 'RCV'
+                                    assert(this(k).callback_portrcvd.isKey(evargs),...
+                                           ['Internal error: input port id %d does not exist for RCV ' ...
+                                            'event.'], evargs);
+                                    thecallback = this(k).callback_portrcvd(evargs);
+                                    feval(thecallback{:});
                                 otherwise
                                     error('OBNNode:runSimulation', 'Internal error: Unknown event type %s returned from MEX for node %s.', evtype, this(k).nodeName);
                             end
@@ -806,8 +842,8 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
         obnnode_mexfunc_    % The MEX function to call, according to the chosen communication
         communication_ = 'yarp';    % The chosen communication protocol
         id_     % pointer to the C++ node object
-        inputPorts     % map nodes' names to their IDs
-        outputPorts     % map nodes' names to their IDs
+        inputPorts     % map ports' names to their IDs
+        outputPorts     % map ports' names to their IDs
         nodeName  % Name of the node
         
         MaxUpdateID
@@ -829,6 +865,10 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
         %       func(args{:})
         callback_init = struct('func', {}, 'args', {});
         callback_term = struct('func', {}, 'args', {});
+        
+        % Callbacks for input ports' message received events
+        % map ports' names to  callback functions
+        callback_portrcvd
     end
     
     methods (Static)

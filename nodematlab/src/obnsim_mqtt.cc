@@ -921,29 +921,34 @@ namespace {
         output.set(0, result);
         if (ynode->_ml_pending_event) {
             switch (ynode->_ml_current_event.type) {
-                case OBNnode::MQTTNodeMatlab::MLE_Y:
-                    output.set(1, "Y");
-                    output.set(2, ynode->_ml_current_event.arg.mask);
-                    break;
+            case OBNnode::MQTTNodeMatlab::MLE_Y:
+                output.set(1, "Y");
+                output.set(2, ynode->_ml_current_event.arg.mask);
+                break;
                     
-                case OBNnode::MQTTNodeMatlab::MLE_X:
-                    output.set(1, "X");
-                    output.set(2, ynode->_ml_current_event.arg.mask);   // This mask is set to the current update mask
-                    break;
+            case OBNnode::MQTTNodeMatlab::MLE_X:
+                output.set(1, "X");
+                output.set(2, ynode->_ml_current_event.arg.mask);   // This mask is set to the current update mask
+                break;
                     
-                case OBNnode::MQTTNodeMatlab::MLE_INIT:
-                    output.set(1, "INIT");
-                    output.set(2, 0);
-                    break;
+            case OBNnode::MQTTNodeMatlab::MLE_INIT:
+                output.set(1, "INIT");
+                output.set(2, 0);
+                break;
                     
-                case OBNnode::MQTTNodeMatlab::MLE_TERM:
-                    output.set(1, "TERM");
-                    output.set(2, 0);
-                    break;
+            case OBNnode::MQTTNodeMatlab::MLE_TERM:
+                output.set(1, "TERM");
+                output.set(2, 0);
+                break;
+
+            case OBNnode::MQTTNodeMatlab::MLE_RCV:
+                output.set(1, "RCV");
+                output.set(2, ynode->_ml_current_event.arg.index);
+                break;
                     
-                default:
-                    reportError("MQTTNODE:runStep", "Internal error: unrecognized Matlab event type.");
-                    break;
+            default:
+                reportError("MQTTNODE:runStep", "Internal error: unrecognized Matlab event type.");
+                break;
             }
         } else {
             output.set(1, "");
@@ -1162,6 +1167,40 @@ namespace {
                 break;
         }
         output.set(3, portinfo.strict);
+    }
+
+    // Enable the message received event at an input port
+    // Args: node object pointer, port's ID
+    // Returns: true if successful; false otherwise
+    MEX_DEFINE(enableRcvEvent) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 2);
+        OutputArguments output(nlhs, plhs, 1);
+        output.set(0, false);
+
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
+        unsigned int id = input.get<unsigned int>(1);
+        if (id >= ynode->_all_ports.size()) {
+            reportError("MQTTNODE:enableRcvEvent", "Invalid port ID.");
+            return;
+        }
+
+        // Obtain the port
+        MQTTNodeMatlab::PortInfo portinfo = ynode->_all_ports[id];
+        if (portinfo.type != MQTTNodeMatlab::PortInfo::INPUTPORT) {
+            reportError("MQTTNODE:enableRcvEvent", "Given port is not an input.");
+            return;
+        }
+
+        // Cast the port to input port
+        InputPortBase* p = dynamic_cast<InputPortBase*>(portinfo.port);
+        if (p) {
+            // Set the callback for the port
+            p->setMsgRcvCallback(std::bind(&MQTTNodeMatlab::matlab_inputport_msgrcvd_callback, ynode, id), true);
+            output.set(0, true);
+        } else {
+            reportError("MQTTNODE:enableRcvEvent", "Internal error: port object is not an input.");
+            return;            
+        }
     }
     
     

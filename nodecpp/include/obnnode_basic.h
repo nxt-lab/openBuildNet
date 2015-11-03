@@ -362,7 +362,7 @@ namespace OBNnode {
         
         /* ================== Support for Node Events ================= */
     protected:
-        /** Event abstract class.
+        /** Event parent class.
          An event object is just an executable object (by calling execute()).
          A child class is created for each type of events, with the appropriate implementation of execute() and data.
          Any specialized event class should be declared as a friend of the node class.
@@ -372,7 +372,7 @@ namespace OBNnode {
         class NodeEvent {
         public:
             virtual ~NodeEvent() { }                    // VERY IMPORTANT because NodeEvent will be derived; this is to make sure child classes will be destroyed cleanly
-            virtual void executeMain(NodeBase*) = 0;    ///< Main Execution of the event
+            virtual void executeMain(NodeBase*) { }     ///< Main Execution of the event
             virtual void executePost(NodeBase*) { }     ///< Post-Execution of the event
         };
         
@@ -537,12 +537,19 @@ namespace OBNnode {
         
         /* Methods for pushing events of other types (node internal events) will be put here */
         
+        /** Create an event of an exception / error at the front of the queue. */
         void postExceptionEvent(std::exception_ptr e) {
             eventqueue_push_front(new NodeEventException(e));
         }
         
+        /** Create a callback event, which will call a given function when it's processed, at the front of the queue. */
         void postCallbackEvent(std::function<void ()> f) {
             eventqueue_push_front(new NodeEventCallback(f));
+        }
+        
+        /** Post an empty event in order to wake up the thread. */
+        void postWakeupEvent() {
+            eventqueue_push(new NodeEvent());
         }
         
     public:

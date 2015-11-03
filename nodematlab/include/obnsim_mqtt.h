@@ -75,6 +75,7 @@ namespace OBNnode {
         /** Type to pass arguments of an event */
         union MLEventArg {
             OBNnode::updatemask_t mask;
+            std::size_t index;
         };
         
         /** The event type */
@@ -82,7 +83,8 @@ namespace OBNnode {
             MLE_INIT = OBNSimMsg::SMN2N_MSGTYPE_SIM_INIT,
             MLE_Y = OBNSimMsg::SMN2N_MSGTYPE_SIM_Y,
             MLE_X = OBNSimMsg::SMN2N_MSGTYPE_SIM_X,
-            MLE_TERM = OBNSimMsg::SMN2N_MSGTYPE_SIM_TERM
+            MLE_TERM = OBNSimMsg::SMN2N_MSGTYPE_SIM_TERM,
+            MLE_RCV             // A port has received a message
         };
         
         /** The current event (returned by runStep) */
@@ -144,6 +146,18 @@ namespace OBNnode {
             _ml_pending_event = true;
             _node_is_stopping = true;
         }
+
+        /* =========== Callbacks for other events ============ */
+
+        /** Callback function for message received event at input ports.
+            This callback simply creates a new Matlab event c.t. the port event.
+            It is run on the main thread of the OBN node. */
+        void matlab_inputport_msgrcvd_callback(const std::size_t idx) {
+            _ml_current_event.type = MLE_RCV;
+            _ml_current_event.arg.index = idx;
+            _ml_pending_event = true;
+        }
+        
         
         /* =========== Callback Methods for errors ============= */
         
