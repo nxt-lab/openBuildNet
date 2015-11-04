@@ -25,8 +25,9 @@
 def update(string name, uint32_t id, double sampling, inputs, outputs) {
   var myinputs;
   var myoutputs;
-  if (inputs.is_type("string")) { myinputs = [inputs]; } else { myinputs = inputs; }
-  if (outputs.is_type("string")) { myoutputs = [outputs]; } else { myoutputs = outputs; }
+  if (inputs.is_type("string")) { myinputs := [inputs]; } else { myinputs := inputs; }
+  if (outputs.is_type("string")) { myoutputs := [outputs]; } else { myoutputs := outputs; }
+  // The dictionary construction always copies data, so we can use references above
   return ["name": name, "id": id, "sampling": sampling, "inputs": myinputs, "outputs": myoutputs];
 }
 
@@ -73,25 +74,25 @@ def node(Map tnodedef, bool addnow) {
     }
   }
 
-  var theNode = new_node(nodedef["name"]);
+  var theNode := new_node(nodedef["name"]);
 
   if (hasInputs && !nodedef["inputs"].empty()) {
-    var li = nodedef["inputs"];
+    var li := nodedef["inputs"];
     for (auto i=0; i < li.size(); ++i) { theNode.add_input(li[i]); }
   }
 
   if (hasOutputs && !nodedef["outputs"].empty()) {
-    var li = nodedef["outputs"];
+    var li := nodedef["outputs"];
     for (auto i=0; i < li.size(); ++i) { theNode.add_output(li[i]); }
   }
 
   if (hasDataports && !nodedef["dataports"].empty()) {
-    var li = nodedef["dataports"];
+    var li := nodedef["dataports"];
     for (auto i=0; i < li.size(); ++i) { theNode.add_dataport(li[i]); }
   }
 
   if (hasUpdates && !nodedef["updates"].empty()) {
-    var li = nodedef["updates"];
+    var li := nodedef["updates"];
     for (auto i=0; i < li.size(); ++i) {
       var id = i;
       if (li[i].count("id") > 0) { id = li[i]["id"]; }
@@ -99,28 +100,28 @@ def node(Map tnodedef, bool addnow) {
 
       // Add inputs
       if (li[i].count("inputs") > 0) {
-	var inputs = li[i]["inputs"];	  
-	if (inputs.is_type("Map")) {
-	  var myinputs = inputs.range();
-	  while (!myinputs.empty()) {
-	    theNode.input_to_update(id, myinputs.front().first(), myinputs.front().second());
-	    myinputs.pop_front();
-	  }
-	} else if (inputs.is_type("Vector")) {
-	  for (auto j=0; j < inputs.size(); ++j) {
-	    theNode.input_to_update(id, inputs[j], true);
-	  }
-	} else { throw ("In definition of node " + nodedef["name"] + " update #" + to_string(i) + " has invalid input list."); }
+		var inputs := li[i]["inputs"];	  
+		if (inputs.is_type("Map")) {
+		  var myinputs := inputs.range();
+          while (!myinputs.empty()) {
+			theNode.input_to_update(id, myinputs.front().first(), myinputs.front().second());
+			myinputs.pop_front();
+		  }
+		} else if (inputs.is_type("Vector")) {
+		  for (auto j=0; j < inputs.size(); ++j) {
+			  theNode.input_to_update(id, inputs[j], true);
+		  }
+		} else { throw ("In definition of node " + nodedef["name"] + " update #" + to_string(i) + " has invalid input list."); }
       }
 
       // Add outputs
       if (li[i].count("outputs") > 0) {
-	var outputs = li[i]["outputs"];
-	if (outputs.is_type("Vector")) {
-	  for (auto j=0; j < outputs.size(); ++j) {
-	    theNode.output_from_update(id, outputs[j]);
-	  }
-	} else { throw ("In definition of node " + nodedef["name"] + " update #" + to_string(i) + " has invalid output list."); }
+		var outputs := li[i]["outputs"];
+		if (outputs.is_type("Vector")) {
+		  for (auto j=0; j < outputs.size(); ++j) {
+			theNode.output_from_update(id, outputs[j]);
+		  }
+		} else { throw ("In definition of node " + nodedef["name"] + " update #" + to_string(i) + " has invalid output list."); }
       }
     }
   }
@@ -147,7 +148,7 @@ def add_nodes_from_collection(coll, bool t_recursive) {
       }
     }
   } else if (coll.is_type("Map")) {
-    var rng = coll.range();
+    var rng := coll.range();
     while (!rng.empty()) {
       var theElem := rng.front().second();
       if (call_exists(add_node, theElem)) {
@@ -230,10 +231,10 @@ class VNode {
   // Specify that this virtual node is implemented by a given node, which has all the virtual ports with optional name mapping
   // Map m = ["virtual port name" : "actual port name on node"]
   def implemented_by(Node n, Map m) {
-    var r = this.m_ports.range();
+    var r := this.m_ports.range();
     var mcopy = m;  // hack: if m is constant, we can't access its elements
     while (!r.empty()) {
-      var vportname = r.front().first();
+      var vportname := r.front().first();
       if (m.count(vportname) > 0) {
 	this.assign(vportname, n.port(mcopy[vportname]));
       } else {

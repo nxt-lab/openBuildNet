@@ -46,7 +46,7 @@ def POWERNET_subnetwork(Vector busdef, double timeStep, bool addNow, string dist
   var mBuses = Map();
 
   // Create distribution node
-  var distNode = new_node(distName);
+  var distNode := new_node(distName);
   distNode.add_update(0, timeStep);
 
   var thisBusName = "";  // Name of the current bus
@@ -62,7 +62,7 @@ def POWERNET_subnetwork(Vector busdef, double timeStep, bool addNow, string dist
     if (mBuses.count(thisBusName) > 0) { throw("Bus name ${thisBusName} has already existed. Bus names must be unique."); }
 
     // Create the virtual bus node
-    var thisBusNode = VNode();
+    var thisBusNode := VNode();
 
     // Create the ports between the bus node and the distribution node and connect them
     var busInName = "VfromGrid";
@@ -123,7 +123,7 @@ class POWERNET_BusNode {
   attr m_added;   // if the bus node has already been added (hence can't be changed anymore)
   attr m_vnode;   // the virtual node which this bus node will implement
   attr m_node;    // the actual node's full name, after this bus node has been added
-  attr m_noderef; // teh actual node object, after it has been added
+  attr m_noderef; // the actual node object, after it has been added
   
   def POWERNET_BusNode(string name, double period, int nUsers, Vector values, VNode vnode): nUsers >= 0 && period > 0.0 {
     this.m_name = name;
@@ -148,7 +148,7 @@ class POWERNET_BusNode {
       throw("This bus node has already been added; hence can't be added again.");
     }
 
-    var mybus = new_node(this.m_name);
+    var mybus := new_node(this.m_name);
     if (this.m_nUsers > 0) {
       // Generic bus with users
       mybus.add_update(0, this.m_period);  // from users to grid
@@ -245,7 +245,7 @@ class POWERNET_BusNode {
 // - If return_map = true: a Map object with two fields: "dist" is the grid/distribution node, "buses" is a Map object of the bus nodes whose keys are the bus names.
 def POWERNET_network_from_csv(string filename, double timeStep, string distName, bool return_map): !filename.empty() && timeStep > 0.0 && !distName.empty() {
   // Load the CSV file
-  var busdefs = load_csv_into_chai(filename, "sidddd", ",", false);
+  var busdefs := load_csv_into_chai(filename, "sidddd", ",", false);
   if (!busdefs.is_type("Vector")) {
     throw("Error: the data read from the CSV file is invalid.");
   }
@@ -256,7 +256,7 @@ def POWERNET_network_from_csv(string filename, double timeStep, string distName,
   }
 
   // Create distribution node
-  var distNode = new_node(distName);
+  var distNode := new_node(distName);
   distNode.add_update(0, timeStep);
 
   var mBuses;
@@ -280,7 +280,7 @@ def POWERNET_network_from_csv(string filename, double timeStep, string distName,
     if (thisBusName.empty()) { throw("Bus name ${busIdx} is empty."); }
 
     // Create the virtual bus node and connect it
-    var thisBusNode = VNode();
+    var thisBusNode := VNode();
 
     // Create the ports between the bus node and the distribution node and connect them
     var busInName = "VfromGrid";
@@ -354,7 +354,7 @@ def POWERNET_network_from_csv(string filename, double timeStep, string distName)
 // Returns: a vector of three elements: the first is the Grid node, the second is the multi-bus node, and the last is the number of buses.
 def POWERNET_network_from_csv_multibus(string filename, double timeStep, string distName, string busName): !filename.empty() && timeStep > 0.0 && !distName.empty() && !busName.empty() {
   // Load the CSV file
-  var busdefs = load_csv_into_chai(filename, "sidddd", ",", false);
+  var busdefs := load_csv_into_chai(filename, "sidddd", ",", false);
   if (!busdefs.is_type("Vector")) {
     throw("Error: the data read from the CSV file is invalid.");
   }
@@ -365,11 +365,11 @@ def POWERNET_network_from_csv_multibus(string filename, double timeStep, string 
   }
 
   // Create distribution node
-  var distNode = new_node(distName);
+  var distNode := new_node(distName);
   distNode.add_update(0, timeStep);
 
   // Create multi-bus node
-  var busNode = new_node(busName);
+  var busNode := new_node(busName);
   busNode.add_update(0, timeStep);  // From users -> grid
   busNode.add_update(1, timeStep);  // From grid -> users
   busNode.need_updateX(false);

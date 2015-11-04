@@ -25,7 +25,7 @@ def DISTOPT_admm (int nNodes, string masterName, string localPrefix, double time
   var vPlants = Vector();
   
   // We will build the aggregator node gradually
-  var aggregator = new_node(masterName);
+  var aggregator := new_node(masterName);
   aggregator.need_updateX(false);
   aggregator.add_output("cmd");  // command port to control the local nodes
   aggregator.add_update(0, timeStep);
@@ -35,7 +35,7 @@ def DISTOPT_admm (int nNodes, string masterName, string localPrefix, double time
 
   for (auto i = 1; i <= nNodes; ++i) {
     // Create the local controller node
-    var ctrl = node(["name" : localPrefix + to_string(i),
+    var ctrl := node(["name" : localPrefix + to_string(i),
 		     "inputs" : ["cmd", "Gamma", "delta", "x"],
 		     "outputs" : ["u", "U"],
 		     "updates" : [["sampling": timeStep,
