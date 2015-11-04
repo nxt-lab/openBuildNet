@@ -48,16 +48,39 @@ set(OBNSMN_COMM_HDR "")
 
 
 ## To use YARP (optionally)
-find_package(YARP)
-if(YARP_FOUND)
+option(WITH_YARP "Build SMNChai with YARP support for communication." ON)
+if(WITH_YARP)
+  find_package(YARP REQUIRED)
   include_directories(${YARP_INCLUDE_DIRS})
   link_libraries(${YARP_LIBRARIES})
   set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${OBNSMN_SRC_DIR}/obnsmn_comm_yarp.cpp)
   set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${OBNSMN_INCLUDE_DIR}/obnsmn_comm_yarp.h)
   add_definitions(-DOBNSIM_COMM_YARP)
   message("Found YARP library; will build SMN with YARP support.")
-endif()
+endif(WITH_YARP)
 
+
+## To use MQTT (optionally)
+option(WITH_PAHOMQTT "Build SMNChai with Paho MQTT support for communication." OFF)
+if(WITH_PAHOMQTT)
+  find_library(PAHOMQTT3A NAMES paho-mqtt3a)
+  if(PAHOMQTT3A_NOTFOUND)
+    # Use the local source files (submodule)
+    message("Did not find Paho MQTT3 library in the system; will use the local source files. This may bloat your program, so it's best to install Paho into your system before building SMNChai.")
+
+    find_package(OpenSSL REQUIRED)
+    AUX_SOURCE_DIRECTORY(${OBN_MAIN_DIR}/thirdparties/paho/src PAHOMQTT3A_SRC)
+    INCLUDE_DIRECTORIES(${OBN_MAIN_DIR}/thirdparties/paho/src)
+    set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${PAHOMQTT3A_SRC})
+  else()
+    message("Found Paho MQTT3 library in the system; will use this library.")
+    link_libraries(${PAHOMQTT3A})
+  endif()
+
+  add_definitions(-DOBNSIM_COMM_MQTT)
+  set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${OBNSMN_SRC_DIR}/obnsmn_comm_mqtt.cpp)
+  set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${OBNSMN_INCLUDE_DIR}/obnsmn_comm_mqtt.h)
+endif(WITH_PAHOMQTT)
 
 ## These are the include directories used by the compiler.
 
@@ -104,7 +127,7 @@ set(OBNSMN_CORE_SRCFILES
 	${OBNSMN_SRC_DIR}/obnsmn_node.cpp
 	${OBNSMN_SRC_DIR}/obnsmn_nodegraph.cpp
     	${OBNSMN_SRC_DIR}/obnsmn_gc.cpp
-	${OBNSIM_INCLUDE_DIR}/obnsim_basic.cpp	
+	${OBNSIM_INCLUDE_DIR}/obnsim_basic.cpp
 	${OBNSMN_COMM_SRC}
 	${PROTO_SRCS}
 )
@@ -114,6 +137,7 @@ set(OBNSMN_CORE_HDRFILES
 	${OBNSMN_INCLUDE_DIR}/obnsmn_basic.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_event.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_gc.h
+	${OBNSMN_INCLUDE_DIR}/obnsmn_gc_inline.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_node.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_nodegraph.h
 	${OBNSMN_INCLUDE_DIR}/sharedqueue.h
@@ -127,12 +151,18 @@ set(OBNSMN_CORE_HDRFILES
 set(SMNCHAI_SRCFILES
 	src/smnchai_api.cpp
 	src/smnchai_export.cpp
+	src/csvparser.c
+	src/smnchai_utils.cpp
+	src/smnchai_loadscript.cpp	
 	src/main.cpp
 )
 
 
 set(SMNCHAI_HDRFILES
 	include/smnchai_api.h
+	include/csvparser.h
+	include/smnchai_utils.h
+	include/smnchai.h
 )
 
 
@@ -175,7 +205,6 @@ elseif(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX OR (CMAKE_CXX_COMPILE
   # Update if necessary
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wshadow -Wnon-virtual-dtor -pedantic")  # -Wextra
 endif()
-
 
 TARGET_LINK_LIBRARIES(smnchai
   ${PROTOBUF_LITE_LIBRARIES}

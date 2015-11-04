@@ -14,23 +14,21 @@
 
 using namespace OBNnode;
 
-
-YarpPortBase::~YarpPortBase() {
-    //std::cout << "~YarpPortBase" << std::endl;
-    if (isValid()) {
-        // Notify the node to remove me
-        _theNode->removePort(this);
-        _theNode = nullptr;
-        //std::cout << "Calling removePort." << std::endl;
+std::pair<int, std::string> YarpPortBase::connect_from_port(const std::string& source) {
+    assert(!source.empty());
+    
+    std::string srcport = '/' + source, tgtport = getYarpPort().getName();
+    
+    // Check that the source port exists
+    if (!yarp::os::Network::exists(srcport)) {
+        return std::make_pair(-2, "");
     }
-}
-
-YarpOutputPortBase::~YarpOutputPortBase() {
-    //std::cout << "~YarpOutputPortBase" << std::endl;
-    if (isValid()) {
-        // Notify the node to remove me
-        _theNode->removePort(this);
-        _theNode = nullptr;
-        //std::cout << "Calling removePort for output." << std::endl;
+    
+    // Check if the connection already exists
+    if (yarp::os::Network::isConnected(srcport, tgtport)) {
+        return std::make_pair(1, "");
     }
+    
+    // Try to establish the connection
+    return std::make_pair(yarp::os::Network::connect(srcport, tgtport)?0:-2, "");
 }

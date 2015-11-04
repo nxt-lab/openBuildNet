@@ -7,7 +7,8 @@
 % the SMN/GC
 %
 % To run this example:
-% - Create an object of this class: mynode = test1class('node1');
+% - Create an object of this class: mynode = test1class('node1', 'test1');
+%   For more options, see OBNNode.
 % - Run it: mynode.runSimulation(20) (where 20 is the timeout in seconds)
 %
 % This file is part of the openBuildNet simulation framework developed at
@@ -23,8 +24,8 @@ classdef test1class < OBNNode
     end
     
     methods
-        function obj = test1class(name)
-            obj = obj@OBNNode(name, 'test1');
+        function obj = test1class(varargin)
+            obj = obj@OBNNode(varargin{:});
             
             % Register callbacks
             obj.addCallback(@obj.simple_callback, 'X', test1class.MAIN_UPDATE, 'UPDATE_X for MAIN_UPDATE');

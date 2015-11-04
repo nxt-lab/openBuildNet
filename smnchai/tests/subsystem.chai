@@ -1,5 +1,6 @@
 // Test SubSystem in SMNChai
 run_simulation(false);
+workspace("test_subsystem");
 
 // This function creates a new node and adds it to the workspace.
 // It doesn't support subsystem.
@@ -39,6 +40,8 @@ createANode();  // A node is created at the global space
 set_current_subsystem(sub11);
 createANode();
 clear_current_subsystem();
+
+print("The workspace's name is set to ${workspace()}");
 
 print_system();
 // The following nodes should be available:

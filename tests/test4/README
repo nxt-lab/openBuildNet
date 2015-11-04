@@ -1,0 +1,5 @@
+Test data port implementation and event triggering mechanism.
+
+Two source nodes and one sink node are created. The source nodes send messages to data input ports in the sink node, which will print out the values and may trigger different behaviors depending on the events.
+
+Matlab implementations of the nodes are also provided.

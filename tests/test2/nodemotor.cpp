@@ -2,7 +2,7 @@
 /** \file
  * \brief Node that implements a simple motor model.
  *
- * Requires YARP.
+ * Requires YARP for communication with SMN, but will use MQTT for ports if it's available.
  *
  * This file is part of the openBuildNet simulation framework
  * (OBN-Sim) developed at EPFL.
@@ -10,31 +10,43 @@
  * \author Truong X. Nghiem (xuan.nghiem@epfl.ch)
  */
 
-#include <fstream>
 #include <obnnode.h>
 
-#ifndef OBNSIM_COMM_YARP
+/** The following macros are defined by CMake to indicate which libraries this SMN build supports:
+ - OBNNODE_COMM_YARP: if YARP is supported for communication.
+ - OBNNODE_SMN_COMM_MQTT: if MQTT is supported for communication.
+ */
+
+#ifndef OBNNODE_COMM_YARP
 #error This test requires YARP to run
 #endif
 
-
-/** The following macros are defined by CMake to indicate which libraries this SMN build supports:
- - OBNSIM_COMM_YARP: if YARP is supported for communication.
- - OBNSIM_SMN_COMM_MQTT: if MQTT is supported for communication.
- */
-
 using namespace OBNnode;
+
+#ifdef OBNNODE_COMM_MQTT
+#define MQTT_SERVER_ADDRESS "tcp://localhost:1883"
+typedef MQTTInput<OBN_PB, double> INPUT_PORT_CLASS;
+typedef MQTTOutput<OBN_PB, double> OUTPUT_PORT_CLASS;
+MQTTClient mqtt_client;     // The MQTT client of this node (used for all communications)
+#else
+typedef YarpInput<OBN_PB, double> INPUT_PORT_CLASS;
+typedef YarpOutput<OBN_PB, double> OUTPUT_PORT_CLASS;
+#endif
 
 #define MAIN_UPDATE 0
 
 /* The controller node class */
 class Motor: public YarpNode {
     /* One input: voltage */
-    YarpInput<OBN_PB, double> voltage;
-    
     /* Output: velocity */
-    YarpOutput<OBN_PB, double> velocity;
     
+#ifdef OBNNODE_COMM_MQTT
+    INPUT_PORT_CLASS voltage{"vol", &mqtt_client};
+    OUTPUT_PORT_CLASS velocity{"v", &mqtt_client};
+#else
+    INPUT_PORT_CLASS voltage{"vol"};
+    OUTPUT_PORT_CLASS velocity{"v"};
+#endif
     /* The state variable */
     Eigen::Vector2d x;
     
@@ -45,8 +57,7 @@ class Motor: public YarpNode {
     Eigen::RowVector2d C;
     
 public:
-    Motor(const std::string& name, const std::string& ws = ""): YarpNode(name, ws),
-    voltage("vol"), velocity("v")
+    Motor(const std::string& name, const std::string& ws = ""): YarpNode(name, ws)
     { }
     
     /* Add ports to node, hardware components may be started, etc. */
@@ -116,6 +127,16 @@ public:
 int main() {
     std::cout << "This is motor node." << std::endl;
     
+    // Initialize the MQTT client
+#ifdef OBNNODE_COMM_MQTT
+    mqtt_client.setServerAddress(MQTT_SERVER_ADDRESS);
+    mqtt_client.setClientID("test2_motor");
+    if (!mqtt_client.start()) {
+        std::cerr << "Error while connecting to MQTT" << std::endl;
+        return 10;
+    }
+#endif
+    
     Motor motor("motor", "test2");      // Node "motor" inside workspace "test2"
     if (!motor.initialize()) {
         return 1;
@@ -132,6 +153,10 @@ int main() {
     //////////////////////
     // Clean up before exiting
     //////////////////////
+    if (mqtt_client.isRunning()) {
+        mqtt_client.stop();
+    }
+    
     google::protobuf::ShutdownProtobufLibrary();
     
     return motor.hasError()?3:0;

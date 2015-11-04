@@ -20,6 +20,11 @@
  */
 
 
+/** The following macros are defined by CMake to indicate which libraries this build supports:
+ - OBNNODE_COMM_YARP: if YARP is supported for communication.
+ - OBNNODE_COMM_MQTT: if MQTT is supported for communication.
+ */
+
 #include <obnnode.h>
 
 using namespace OBNnode;
@@ -32,19 +37,33 @@ class MyNodeClass: public YarpNode {
     /* All ports should be defined as members of the node class.
      They can be defined as member objects which must be initialized in the node's constructor, or pointers to objects which can be dynamically initialized later. */
     YarpInput<OBN_PB, double, false> input1;
-    YarpInput<OBN_PB, obn_vector_fixed<double, 3>, false> *input2 = nullptr;  // input2 is dynamically allocated
-    
+    YarpInput<OBN_PB, obn_vector<double>, false> *input2 = nullptr;  // input2 is dynamically allocated
     YarpOutput<OBN_PB, obn_vector_fixed<double, 3> > output1;
+    
+#ifdef OBNNODE_COMM_MQTT
+#define MQTT_SERVER_ADDRESS "tcp://localhost:1883"
+    
+    MQTTClient m_mqtt_client;   ///< The MQTT Client object for communication.
+    
+    MQTTInput<OBN_PB, double, false> input3;
+    MQTTInput<OBN_PB, obn_vector<double>, false> input4;
+    MQTTInput<OBN_PB, double, true> input5;
+    MQTTInput<OBN_PB, obn_vector<double>, true> input6;
+#endif
 
 public:
     /* ws is the workspace name, useful if you have multiple simulation networks running on the same Yarp network. */
     MyNodeClass(const std::string& name, const std::string& ws = ""): YarpNode(name, ws),
-    input1("u1"), output1("y")
+    input1("u1"), output1("y"), input3("u3", &m_mqtt_client), input4("u4", &m_mqtt_client),
+    input5("u5", &m_mqtt_client), input6("u6", &m_mqtt_client)
     { }
     
     virtual ~MyNodeClass() {
         if (input2) {
             delete input2;
+        }
+        if (m_mqtt_client.isRunning()) {
+            m_mqtt_client.stop();
         }
     }
     
@@ -53,12 +72,26 @@ public:
      */
     bool initialize() {
         // Dynamically create input2
-        input2 = new YarpInput<OBN_PB, obn_vector_fixed<double, 3>, false>("u2");
+        input2 = new YarpInput<OBN_PB, obn_vector<double>, false>("u2");
         
         bool success;
+
+#ifdef OBNNODE_COMM_MQTT
+        /** Start the MQTT Client. */
+        m_mqtt_client.setClientID(full_name());
+        m_mqtt_client.setServerAddress(MQTT_SERVER_ADDRESS);
+        if (!(success = m_mqtt_client.start())) {
+            std::cerr << "Error while connecting to MQTT" << std::endl;
+        }
+#endif
         
+        // Open the SMN port
+        if (success && !(success = openSMNPort())) {
+            std::cerr << "Error while opening the GC port.\n";
+        }
+
         // Add the ports to the node
-        if (!(success = addInput(&input1))) {
+        if (success && !(success = addInput(&input1))) {
             std::cerr << "Error while adding input " << input1.getPortName() << std::endl;
         }
         
@@ -70,12 +103,35 @@ public:
             std::cerr << "Error while adding output " << output1.getPortName() << std::endl;
         }
         
+#ifdef OBNNODE_COMM_MQTT
+        if (success && !(success = addInput(&input3))) {
+            std::cerr << "Error while adding input " << input3.getPortName() << std::endl;
+        }
+        
+        if (success && !(success = addInput(&input4))) {
+            std::cerr << "Error while adding input " << input4.getPortName() << std::endl;
+        }
+        
+        if (success && !(success = addInput(&input5))) {
+            std::cerr << "Error while adding input " << input5.getPortName() << std::endl;
+        }
+        
+        if (success && !(success = addInput(&input6))) {
+            std::cerr << "Error while adding input " << input6.getPortName() << std::endl;
+        }
+#endif
+        
         // Add the first update
         if (success) {
             // These details of the update are optional, but they are useful later on
             
             // List of inputs to this update, the first is the port name, the second specifies whether this input has direct feedthrough to this update.
             UpdateType::INPUT_LIST inputs{ {"u1", true}, {"u2", true}};
+            
+#ifdef OBNNODE_COMM_MQTT
+            inputs.emplace_back("u3", true);
+            inputs.emplace_back("u4", true);
+#endif
             
             // List of outputs of this update
             UpdateType::OUTPUT_LIST outputs{"y"};
@@ -98,9 +154,6 @@ public:
             }
         }
         
-        // Open the SMN port
-        success = success && openSMNPort();
-        
         return success;
     }
     
@@ -108,6 +161,15 @@ public:
     void onFirstUpdateY() {
         std::cout << "UPDATE_Y(1)" << std::endl;
         output1 = (*input2)() * input1();
+#ifdef OBNNODE_COMM_MQTT
+        output1 = output1() + input4() * input3();
+        while (input5.isValuePending()) {
+            std::cout << input5.pop() << std::endl;
+        }
+        while (input6.isValuePending()) {
+            output1 = output1() + *(input6.pop());
+        }
+#endif
     }
 
     /* UPDATE_X of first update */
@@ -135,6 +197,9 @@ public:
 
 
 int main() {
+    // Set verbosity level
+    yarp::os::Network::setVerbosity(-1);
+    
     MyNodeClass mynode("mynode", "myexperiment");   // Node named "mynode" in the workspace "myexperiment"
     
     if (!mynode.initialize()) {
@@ -152,6 +217,10 @@ int main() {
 
     // It's a good practice to clean up the ProtoBuf library, though not required
     google::protobuf::ShutdownProtobufLibrary();
+    
+    // It's a good practice to delay the termination of the node by a small amount of time
+    // to avoid overloading the nameserver
+    mynode.delayBeforeShutdown();
     
     // If the node has error (and terminated due to that) we can detect it here
     return mynode.hasError()?3:0;

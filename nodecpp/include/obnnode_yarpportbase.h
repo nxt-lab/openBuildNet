@@ -15,6 +15,7 @@
 
 #include <cassert>
 #include <string>
+#include <obnnode_basic.h>
 #include <yarp/os/all.h>
 
 namespace OBNnode {
@@ -29,10 +30,13 @@ namespace OBNnode {
      It manages the allocated size (_allocsize) and the actual size of the current message (_size).
      */
     class YARPMsgBin : public yarp::os::Portable {
+    protected:
+        OBNsim::ResizableBuffer m_buffer;   ///< The buffer to store data
+
     public:
         virtual bool write(yarp::os::ConnectionWriter& connection) {
-            connection.appendInt(_size);
-            connection.appendExternalBlock(_data, _size);
+            connection.appendInt(m_buffer.size());
+            connection.appendExternalBlock(m_buffer.data(), m_buffer.size());
             return true;
         }
         virtual bool read(yarp::os::ConnectionReader& connection) {
@@ -42,13 +46,13 @@ namespace OBNnode {
             
             int newsize = connection.expectInt();
             if (newsize <= 0) {
-                _size = 0;
+                m_buffer.allocateData(0);
                 return newsize<0?false:true;
             }
             
-            allocateData(newsize);
+            m_buffer.allocateData(newsize);
             
-            return connection.expectBlock(_data, _size);
+            return connection.expectBlock(m_buffer.data(), m_buffer.size());
         }
         
         /** \brief Set the contents of the message by a byte string.
@@ -57,8 +61,8 @@ namespace OBNnode {
          \param len Length of the binary data, in bytes.
          */
         void setBinaryData(const void* msg, size_t len) {
-            allocateData(len);
-            memcpy(_data, msg, len);
+            m_buffer.allocateData(len);
+            memcpy(m_buffer.data(), msg, len);
         }
         
         /** \brief Set the contents of the message by a std::string.
@@ -66,57 +70,18 @@ namespace OBNnode {
          \param s The std::string to copy from.
          */
         void setBinaryData(const std::string &s) {
-            allocateData(s.length());
-            s.copy(_data, s.length());
+            m_buffer.allocateData(s.length());
+            s.copy(m_buffer.data(), s.length());
         }
         
         /** \brief Get the pointer to the binary contents of the message. */
         const char* getBinaryData() const {
-            return _data;
+            return m_buffer.data();
         }
         
         /** \brief Return the size in bytes of the current binary data. */
         size_t getBinaryDataSize() const {
-            return _size;
-        }
-        
-        virtual ~YARPMsgBin() {
-            if (_data) {
-                delete [] _data;
-            }
-        }
-        
-    protected:
-        /** The binary data of the message */
-        char* _data = nullptr;
-        
-        /** The actual size of the message, not exceeding the allocated size. */
-        size_t _size;
-        
-        /** The size of the allocated memory buffer (_data). */
-        size_t _allocsize = 0;
-        
-        /** Allocate the memory block _data given the new size. It will reuse memory if possible. It will change _size. */
-        void allocateData(size_t newsize) {
-            assert(newsize >= 0);
-            
-            _size = newsize;
-            
-            if (_data) {
-                // If _allocsize >= _size, we reuse the memory block
-                if (_allocsize < _size) {
-                    delete [] _data;
-                }
-            }
-            else {
-                _allocsize = 0;  // Make sure that _allocsize < _size
-            }
-            
-            if (_allocsize < _size) {
-                _allocsize = (_size & 0x0F)?(((_size >> 4)+1) << 4):_size;
-                assert(_allocsize >= _size);
-                _data = new char[_allocsize];
-            }
+            return m_buffer.size();
         }
     };
     
@@ -141,94 +106,73 @@ namespace OBNnode {
         
         /** \brief Set the binary contents of the message from a ProtoBuf message object, to be sent over Yarp. */
         bool setMessage(const TW &msg) {
-            allocateData(msg.ByteSize());
-            return msg.SerializeToArray(_data, _size);
+            m_buffer.allocateData(msg.ByteSize());
+            return msg.SerializeToArray(m_buffer.data(), m_buffer.size());
         }
         
         /** \brief Get the ProtoBuf message object from the binary contents of the message received from Yarp. */
         bool getMessage(TR &msg) const {
-            if (!_data) {
+            if (!m_buffer.data()) {
                 return false;
             }
-            return msg.ParseFromArray(_data, _size);
+            return msg.ParseFromArray(m_buffer.data(), m_buffer.size());
         }
     };
     
     
     /** \brief Base class for an openBuildNet port, contains name, mode, etc.
      */
-    class YarpPortBase {
+    class YarpPortBase: public InputPortBase {
     protected:
-        std::string _nameInNode;       ///< The name of the port in the node (i.e. without the node name prefix
-        YarpNodeBase* _theNode;  ///< The node managing/owning this port (where event queue and callback interface are handled)
-
-        ///< Returns the actual Yarp port
+        /** Returns the actual Yarp port. */
         virtual yarp::os::Contactable& getYarpPort() = 0;
+        virtual const yarp::os::Contactable& getYarpPort() const = 0;
         
-        /** Attach the port to make it a valid port */
-        virtual bool attach(YarpNodeBase* node) {
-            assert(node != nullptr);
-            _theNode = node;
-            return true;
+        /** Close the port. */
+        virtual void close() override {
+            getYarpPort().close();
         }
         
-        /** Detach the port from its current node, making it invalid. Close the port if necessary. */
-        virtual void detach() {
-            if (isValid()) {
-                getYarpPort().close();
-                _theNode = nullptr;
-            }
+        /** Open the port given a full network name. */
+        virtual bool open(const std::string& full_name) {
+            return getYarpPort().open(full_name[0]=='/'?full_name:('/'+full_name));
         }
-        
-        /** Configure the port (e.g. to set its callback, type of communication, etc.) */
-        virtual bool configure() {
-            return true;
-        }
-        
-        friend class YarpNodeBase;
         
     public:
-        YarpPortBase(const std::string& _name): _nameInNode(_name), _theNode(nullptr) { }
+        YarpPortBase(const std::string& t_name): InputPortBase(t_name) { }
+        //virtual ~YarpPortBase() { }
         
-        virtual ~YarpPortBase();
-        
-        const std::string& getPortName() const {
-            return _nameInNode;
+        virtual std::string fullPortName() const override {
+            return getYarpPort().getName();
         }
         
-        /** \brief Whether the port is valid (i.e. attached to a node and can be used properly)
-         */
-        bool isValid() const {
-            return (_theNode != nullptr);
-        }
-        
-        /** \brief Returns the full port name in the Yarp network (not the name inside the ndoe). */
-        virtual std::string fullPortName() const = 0;
+        virtual std::pair<int, std::string> connect_from_port(const std::string& source) override;
     };
     
     /** \brief Base class for an openBuildNet output port.
      */
-    class YarpOutputPortBase: public YarpPortBase {
-        // Properties and methods will be defined here for ACKs, asynchronous/synchronous writing, etc.
+    class YarpOutputPortBase: public OutputPortBase {
     protected:
-        /** Whether the value of this output has been changed (and not yet sent out).
-         The subclass should set this variable to true whenever a value is assigned, and set this variable to false whenever it sends the value out.
-         */
-        bool _isChanged;
-    public:
-        YarpOutputPortBase(const std::string& _name): YarpPortBase(_name), _isChanged(false) { }
-        virtual ~YarpOutputPortBase();
+        /** Returns the actual Yarp port. */
+        virtual yarp::os::Contactable& getYarpPort() = 0;
+        virtual const yarp::os::Contactable& getYarpPort() const = 0;
         
-        bool isChanged() const {
-            return _isChanged;
+        /** Close the port. */
+        virtual void close() override {
+            getYarpPort().close();
         }
         
-        /** Send the data out in a synchronous manner.
-         The function should wait until the data has been sent out successfully and, if ACK is required, all ACKs have been received.
-         For asynchronous sending (does not wait until writing is complete and/or all ACKs have been received), \see sendAsync().
-         The method does not return the status of the sending (successful or failed), but it may call the error handlers of the node object (which centralize the error handling of each node).
-         */
-        virtual void sendSync() = 0;
+        /** Open the port given a full network name. */
+        virtual bool open(const std::string& full_name) {
+            return getYarpPort().open(full_name[0]=='/'?full_name:('/'+full_name));
+        }
+    public:
+        YarpOutputPortBase(const std::string& t_name): OutputPortBase(t_name) { }
+        //virtual ~YarpOutputPortBase() { }
+        
+        virtual std::string fullPortName() const override {
+            return getYarpPort().getName();
+        }
     };
 }
 
