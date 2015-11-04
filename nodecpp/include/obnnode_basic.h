@@ -226,9 +226,23 @@ namespace OBNnode {
             return _workspace + _nodeName + '/' + portName;
         }
         
-        /** Return the current simulation time. */
+        /** Return the current simulation time.
+         This is an integer number of clock ticks from the start of the simulation.
+         One clock tick is equivalent to one time unit.
+         For example if time unit is 1 millisecond, then a simulation time of 1000 is 1 second.
+         See the template   version of this method for a more convenient access to the simulation time using a desired time unit.
+         */
         simtime_t currentSimulationTime() const {
             return _current_sim_time;
+        }
+        
+        /** Return the current simulation time as a real value in the given unit.
+         The template argument must be a duration type, e.g. std::chrono:seconds.
+         Example: currentSimulationTime<std::chrono::seconds>() returns the current simulation time as a real value in seconds.
+         */
+        template <typename U>
+        double currentSimulationTime() const {
+            return 1.0e-6 * _current_sim_time * _timeunit * U::period::den / U::period::num;
         }
         
         /** Return the current wallclock time, as std::time_t value, rounded downward to a second. */
@@ -317,7 +331,8 @@ namespace OBNnode {
         /** The ID of the node in the network (assigned by the GC in its messages to the node) */
         int32_t _node_id;
         
-        /** Current simulation time. */
+        /** Current simulation time, an integer number of clock ticks from the start.
+         One tick is equivalent to one time unit (see below). */
         simtime_t _current_sim_time;
         
         /** The initial wallclock time. */

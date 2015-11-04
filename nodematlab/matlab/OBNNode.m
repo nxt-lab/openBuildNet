@@ -564,13 +564,49 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             r = this.obnnode_mexfunc_('futureUpdate', this.id_, int64(futureT), mask, timeout);
         end
 
-        function t = currentSimTime(this)
-            %   t = node.currentSimTime()
-            %returns the current simulation time as an integer number of
-            %micro-seconds from the beginning of the simulation (when
+        function t = currentSimTime(this, timeunit)
+            %   t = node.currentSimTime(timeunit)
+            %returns the current simulation time as a real number in the
+            %given time unit, from the beginning of the simulation (when
             %simulation time is 0).
+            %Allowed time units are:
+            % - 'second' or 's' [default if timeunit is omitted]
+            % - 'minute' or 'm'
+            % - 'hour' or 'h'
+            % - 'millisecond' or 'ms'
+            % - 'microsecond' or 'us'
+            % - 'day' or 'd'
             assert(isscalar(this));
-            t = this.obnnode_mexfunc_('simTime', this.id_);
+            
+            scale = 1;  % scale of the time value returned from OBN
+            
+            if nargin < 2
+                % default case
+                obntu = 0;
+            else
+                switch lower(timeunit)
+                    case {'s', 'second'}
+                        obntu = 0;
+                    case {'m', 'minute'}
+                        obntu = 1;
+                    case {'h', 'hour'} 
+                        obntu = 2;
+                    case {'ms', 'millisecond'}
+                        obntu = -1;
+                    case {'us', 'microsecond'}
+                        obntu = -2;
+                    case {'d', 'day'}
+                        % OBN does not support this time unit, so we get
+                        % the hour value and convert it to days
+                        obntu = 2;
+                        scale = 1/24;
+                    otherwise
+                        error('OBNNode:currentSimTime',...
+                            'Unknown time unit %s', timeunit);
+                end
+            end
+            
+            t = this.obnnode_mexfunc_('simTime', this.id_, int16(obntu)) * scale;
         end
         
         function t = currentWallclockTime(this)

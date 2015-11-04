@@ -957,15 +957,47 @@ namespace {
     }
     
     
-    // Returns the current simulation time of the node.
-    // Args: node object pointer
-    // Returns: current simulation time as an integer
+    // Returns the current simulation time of the node with a desired time unit.
+    // Args: node object pointer, the time unit
+    // Returns: current simulation time as a double (real number)
+    // The time unit is an integer specifying the desired time unit. The allowed values are:
+    // 0 = second, -1 = millisecond, -2 = microsecond, 1 = minute, 2 = hour
     MEX_DEFINE(simTime) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-        InputArguments input(nrhs, prhs, 1);
+        InputArguments input(nrhs, prhs, 2);
         OutputArguments output(nlhs, plhs, 1);
-        
+
+        int timeunit = input.get<int>(1);
         MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
-        output.set(0, ynode->currentSimulationTime());
+
+        double timevalue;
+        
+        switch (timeunit) {
+        case 0:
+            timevalue = ynode->currentSimulationTime<std::chrono::seconds>();
+            break;
+
+        case 1:
+            timevalue = ynode->currentSimulationTime<std::chrono::minutes>();
+            break;
+
+        case 2:
+            timevalue = ynode->currentSimulationTime<std::chrono::hours>();
+            break;
+
+        case -1:
+            timevalue = ynode->currentSimulationTime<std::chrono::milliseconds>();
+            break;
+
+        case -2:
+            timevalue = ynode->currentSimulationTime<std::chrono::microseconds>();
+            break;
+            
+        default:
+            reportError("MQTTNODE:simTime", "Internal error: Unrecognized time unit argument.");
+            break;
+        }
+
+        output.set(0, timevalue);
     }
     
     // Returns the current wallclock time of the node.
