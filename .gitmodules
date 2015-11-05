@@ -1,3 +1,6 @@
 [submodule "thirdparties/paho"]
 	path = thirdparties/paho
 	url = https://git.eclipse.org/r/paho/org.eclipse.paho.mqtt.c
+[submodule "thirdparties/chaiscript"]
+	path = thirdparties/chaiscript
+	url = https://github.com/ChaiScript/ChaiScript.git

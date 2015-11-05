@@ -91,6 +91,8 @@ INCLUDE_DIRECTORIES(
   include
   ${OBNSMN_INCLUDE_DIR}
   ${OBNSIM_INCLUDE_DIR}
+  ${OBN_MAIN_DIR}/thirdparties
+  ${OBN_MAIN_DIR}/thirdparties/chaiscript/include
 )
 
 IF(CMAKE_COMPILER_IS_GNUCXX)
@@ -126,7 +128,7 @@ set(OBNSMN_CORE_SRCFILES
 	${OBNSMN_SRC_DIR}/obnsmn_event.cpp
 	${OBNSMN_SRC_DIR}/obnsmn_node.cpp
 	${OBNSMN_SRC_DIR}/obnsmn_nodegraph.cpp
-    	${OBNSMN_SRC_DIR}/obnsmn_gc.cpp
+    ${OBNSMN_SRC_DIR}/obnsmn_gc.cpp
 	${OBNSIM_INCLUDE_DIR}/obnsim_basic.cpp
 	${OBNSMN_COMM_SRC}
 	${PROTO_SRCS}
