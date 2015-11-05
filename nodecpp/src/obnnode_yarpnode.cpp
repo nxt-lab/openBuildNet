@@ -83,63 +83,63 @@ void YarpNodeBase::onPermanentCommunicationLost(CommProtocol comm) {
  ============================================================================= */
 
 /** Callback of the GC port on the node, which posts SMN events to the node's queue. */
-void InfoPort::onRead(YARPInfoPortMsg& b) {
-    // Parse the ProtoBuf message
-    if (!b.getMessage(m_query_message)) {
-        // Error while parsing the raw message
-        _the_node->onOBNError("Error while parsing an info query message.");
-        return;
-    }
-    
-    // Find the callback function for this query
-    auto it = m_responders.find(static_cast<int>(m_query_message.query()));
-    if (it != m_responders.end()) {
-        // Found the responder --> call it
-        auto& m = prepare();
-        if (it->second(m)) {
-            // Successful -> send the response message
-            write();
-        } else {
-            // Failed -> return the prepared message object
-            unprepare();
-        }
-    }
-}
-
-
-bool InfoPort::registerQueryCallback(OBNSimMsg::INFO_QUERY::QUERYCMD t_query, InfoPort::TQueryCallback t_callback) {
-    auto p = m_responders.emplace(static_cast<int>(t_query), t_callback);
-    return p.second;
-}
-
-bool InfoPort::querySupportCallback(YARPInfoPortMsg& m) const {
-    return true;
-}
-
-bool YarpNodeBase::enableInfoPort() {
-    if (!m_info_port) {
-        // Port not yet created -> create the object
-        m_info_port.reset(new InfoPort(this));
-    }
-    
-    assert(m_info_port);
-    
-    // If the port is not yet open, we open it now
-    bool success = m_info_port->isClosed()?(m_info_port->open(_workspace + _nodeName + "/_info_")):true;
-    if (success) {
-        m_info_port->useCallback();        // Always use callback
-        m_info_port->setStrict();          // Make sure that no messages are dropped
-    }
-    return success;
-}
-
-bool YarpNodeBase::disableInfoPort() {
-    if (m_info_port && !m_info_port->isClosed()) {
-        m_info_port->close();
-        return true;
-    }
-    return false;
-}
+//void InfoPort::onRead(YARPInfoPortMsg& b) {
+//    // Parse the ProtoBuf message
+//    if (!b.getMessage(m_query_message)) {
+//        // Error while parsing the raw message
+//        _the_node->onOBNError("Error while parsing an info query message.");
+//        return;
+//    }
+//    
+//    // Find the callback function for this query
+//    auto it = m_responders.find(static_cast<int>(m_query_message.query()));
+//    if (it != m_responders.end()) {
+//        // Found the responder --> call it
+//        auto& m = prepare();
+//        if (it->second(m)) {
+//            // Successful -> send the response message
+//            write();
+//        } else {
+//            // Failed -> return the prepared message object
+//            unprepare();
+//        }
+//    }
+//}
+//
+//
+//bool InfoPort::registerQueryCallback(OBNSimMsg::INFO_QUERY::QUERYCMD t_query, InfoPort::TQueryCallback t_callback) {
+//    auto p = m_responders.emplace(static_cast<int>(t_query), t_callback);
+//    return p.second;
+//}
+//
+//bool InfoPort::querySupportCallback(YARPInfoPortMsg& m) const {
+//    return true;
+//}
+//
+//bool YarpNodeBase::enableInfoPort() {
+//    if (!m_info_port) {
+//        // Port not yet created -> create the object
+//        m_info_port.reset(new InfoPort(this));
+//    }
+//    
+//    assert(m_info_port);
+//    
+//    // If the port is not yet open, we open it now
+//    bool success = m_info_port->isClosed()?(m_info_port->open(_workspace + _nodeName + "/_info_")):true;
+//    if (success) {
+//        m_info_port->useCallback();        // Always use callback
+//        m_info_port->setStrict();          // Make sure that no messages are dropped
+//    }
+//    return success;
+//}
+//
+//bool YarpNodeBase::disableInfoPort() {
+//    if (m_info_port && !m_info_port->isClosed()) {
+//        m_info_port->close();
+//        return true;
+//    }
+//    return false;
+//}
 
 
 /** This method requests a future update from the Global Clock by sending a request to the SMN.
