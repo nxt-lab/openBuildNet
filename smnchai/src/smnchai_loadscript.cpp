@@ -12,12 +12,14 @@
 
 #include <boost/filesystem.hpp>     // manipulate paths
 
-#include <smnchai.h>        // Common defs
-#include <smnchai_api.h>    // Chaiscript API for SMN
+#include "smnchai.h"        // Common defs
+#include "smnchai_api.h"    // Chaiscript API for SMN
+
+#include <chaiscript/chaiscript.hpp>
 
 // Load the static Chaiscript library if needed
 #ifdef SMNCHAI_CHAISCRIPT_STATIC
-#include <chaiscript/chaiscript_stdlib.hpp>
+#include "chaiscript_stdlib.h"
 #endif
 
 
@@ -75,7 +77,7 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
 #ifndef SMNCHAI_CHAISCRIPT_STATIC
     chaiscript::ChaiScript chai(std::vector<std::string>(), chai_usepath);  // Dynamic standard library + search path
 #else
-    chaiscript::ChaiScript chai(chaiscript::Std_Lib::library(), std::vector<std::string>(), chai_usepath);  // Static standard library + search path
+    chaiscript::ChaiScript chai(SMNChai::create_chaiscript_stdlib(), std::vector<std::string>(), chai_usepath);  // Static standard library + search path
 #endif
     
     SMNChai::WorkSpace ws(default_workspace, comm, gc);  // default workspace name is the name of the script file

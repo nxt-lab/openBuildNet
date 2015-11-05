@@ -13,6 +13,8 @@
 #include <csvparser.h>  // Read CSV files
 #include <smnchai_utils.h>
 
+#include <chaiscriptextras/math.hpp>
+
 using namespace SMNChai;
 
 SMNChai::APIUtils::TChaiVector SMNChai::APIUtils::load_csv_into_chai(const std::string& t_file,
@@ -409,6 +411,14 @@ chaiscript::ModulePtr SMNChai::APIUtils::smnchai_api_utils_misc(chaiscript::Modu
 {
     // Delay the execution by a number of milliseconds
     m->add(chaiscript::fun([](unsigned long t){ std::this_thread::sleep_for(std::chrono::milliseconds(t)); }), "delay");
+    
+    return m;
+}
+
+chaiscript::ModulePtr SMNChai::APIUtils::smnchai_api_utils_io(chaiscript::ModulePtr m) {
+    // chaiscript::ModulePtr m(new chaiscript::Module());
+    
+    m->add(chaiscript::fun(&SMNChai::APIUtils::load_csv_into_chai), "load_csv_into_chai");
     
     return m;
 }

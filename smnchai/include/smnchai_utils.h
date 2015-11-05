@@ -11,9 +11,9 @@
 #ifndef smnchai_smnchai_utils_h
 #define smnchai_smnchai_utils_h
 
+#include <vector>
+
 #include <chaiscript/chaiscript.hpp>
-#include <chaiscript/dispatchkit/bootstrap.hpp>
-#include <chaiscriptextras/math.hpp>
 
 namespace SMNChai {
     namespace APIUtils {
@@ -33,13 +33,7 @@ namespace SMNChai {
         
         
         /** Create a Chaiscript module of utility API for IO. */
-        inline chaiscript::ModulePtr smnchai_api_utils_io(chaiscript::ModulePtr m = std::make_shared<chaiscript::Module>()) {
-            // chaiscript::ModulePtr m(new chaiscript::Module());
-            
-            m->add(chaiscript::fun(&load_csv_into_chai), "load_csv_into_chai");
-            
-            return m;
-        }
+        chaiscript::ModulePtr smnchai_api_utils_io(chaiscript::ModulePtr m = std::make_shared<chaiscript::Module>());
         
         /** Load the extra math functions into Chaiscript. */
         chaiscript::ModulePtr smnchai_api_utils_math(chaiscript::ModulePtr m = std::make_shared<chaiscript::Module>());

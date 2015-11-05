@@ -11,6 +11,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cmath>
+#include <fstream>
 
 #include <obnsim_basic.h>
 #include <obnsmn_report.h>

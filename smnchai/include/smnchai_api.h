@@ -32,7 +32,9 @@
 
 #include <smnchai.h>
 
-#include <chaiscript/chaiscript.hpp>
+namespace chaiscript {
+    class ChaiScript;
+}
 
 
 /** \file
