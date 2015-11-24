@@ -27,14 +27,6 @@ bool PortBase::open() {
     }
 }
 
-PortBase::~PortBase() {
-    //std::cout << "~PortBase" << std::endl;
-    if (isValid()) {
-        // Notify the node to remove me
-        m_node->removePort(this);
-        m_node = nullptr;
-    }
-}
 
 // Set the message received event callback for an input port.
 void InputPortBase::setMsgRcvCallback(InputPortBase::MSGRCV_CALLBACK f, bool onMainThread) {
@@ -69,6 +61,15 @@ void InputPortBase::triggerMsgRcvCallback() {
             // Call it now
             m_msgrcv_callback();
         }
+    }
+}
+
+// DO NOT REMOVE THIS DESTRUCTOR: it's important because it helps using the right NodeBase::removePort(InputPortBase*) for input ports.
+InputPortBase::~InputPortBase() {
+    if (isValid()) {
+        // Notify the node to remove me
+        m_node->removePort(this);
+        m_node = nullptr;
     }
 }
 
@@ -108,7 +109,7 @@ bool NodeBase::attachAndOpenPort(PortBase * port) {
  \param owned True if this node owns the port object and will delete it; false by default.
  \return true if successful; false if error.
  */
-bool NodeBase::addInput(PortBase* port, bool owned) {
+bool NodeBase::addInput(InputPortBase* port, bool owned) {
     bool result = attachAndOpenPort(port);
     if (result) {
         // Add this port to the list of inputs
@@ -164,6 +165,7 @@ NodeBase::NodeBase(const std::string& _name, const std::string& ws) {
 
 NodeBase::~NodeBase() {
     // Tell all input ports to detach from this node
+    //std::cout << "~NodeBase\n";
     for (auto port : _input_ports) {
         port.first->detach();
         
@@ -189,7 +191,7 @@ NodeBase::~NodeBase() {
  The detach() method of the port won't be called. The port object won't be deleted even if this node owns the port object.
  \param port Pointer to the port object (must be valid).
  */
-void NodeBase::removePort(PortBase* port) {
+void NodeBase::removePort(InputPortBase* port) {
     assert(port);
     
     _input_ports.remove_if([port](decltype(_input_ports)::const_reference pair){ return pair.first == port; });
@@ -478,7 +480,7 @@ void NodeBase::postEvent(const OBNSimMsg::SMN2N& msg) {
             
         case SMN2N_MSGTYPE_SIM_TERM:
             // Stop the simulation (often at the end of the simulation time, or requested by the user, but not because of a system error
-            eventqueue_push(new NodeEvent_TERMINATE(msg));
+            eventqueue_push_front(new NodeEvent_TERMINATE(msg));
             break;
             
         case SMN2N_MSGTYPE_SIM_INIT:
@@ -608,7 +610,7 @@ void NodeBase::NodeEvent_INITIALIZE::executePost(NodeBase* pnode) {
 /** Handle Termination: Main. */
 void NodeBase::NodeEvent_TERMINATE::executeMain(NodeBase* pnode) {
     // Skip if the node is not RUNNING
-    if (pnode->_node_state != NodeBase::NODE_RUNNING) {
+    if (pnode->_node_state != NodeBase::NODE_RUNNING && pnode->_node_state != NodeBase::NODE_STARTED) {
         return;
     }
     
@@ -616,9 +618,9 @@ void NodeBase::NodeEvent_TERMINATE::executeMain(NodeBase* pnode) {
     
     // Set the node's state to STOPPED
     // We change the node's state before calling the callback onTermination() because this system message means that simulation is definitely going to terminate immediately.
-    if (pnode->_node_state == NodeBase::NODE_RUNNING) {
-        pnode->_node_state = NodeBase::NODE_STOPPED;
-    }
+    //if (pnode->_node_state == NodeBase::NODE_RUNNING) {
+    pnode->_node_state = NodeBase::NODE_STOPPED;
+    //}
     
     pnode->onTermination();
 }

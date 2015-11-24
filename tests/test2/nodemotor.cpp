@@ -40,13 +40,9 @@ class Motor: public YarpNode {
     /* One input: voltage */
     /* Output: velocity */
     
-#ifdef OBNNODE_COMM_MQTT
-    INPUT_PORT_CLASS voltage{"vol", &mqtt_client};
-    OUTPUT_PORT_CLASS velocity{"v", &mqtt_client};
-#else
     INPUT_PORT_CLASS voltage{"vol"};
     OUTPUT_PORT_CLASS velocity{"v"};
-#endif
+
     /* The state variable */
     Eigen::Vector2d x;
     

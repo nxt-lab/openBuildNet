@@ -30,7 +30,7 @@
 
 #include "obnnode_exceptions.h"
 #include "obnnode_basic.h"
-
+//#include "obnnode_mqttnode.h"
 
 namespace OBNnode {
     /** \brief Interface of an MQTT input port
@@ -114,6 +114,7 @@ namespace OBNnode {
         //virtual
         ~MQTTClient() {
             // Close the client, shutdown thread, close the port
+            //std::cout << "~MQTTClient\n";
             stop();
         }
         
@@ -153,7 +154,7 @@ namespace OBNnode {
         /** \brief Remove a given port from all subscriptions.
          */
         void removeSubscription(IMQTTInputPort* port);
-        
+               
         /** \brief Send data to a given topic.
          \param data Pointer to the data to be sent.
          \param size The number of bytes of the data.
@@ -254,12 +255,13 @@ namespace OBNnode {
      */
     class MQTTInputPortBase: public InputPortBase, public IMQTTInputPort {
     protected:
-        MQTTClient* m_mqtt_client;  ///< The MQTT Client object that manages the communication of this port
+        friend class MQTTNodeBase;
         
-        /** Close the port. */
+        MQTTClient* m_mqtt_client{nullptr};  ///< The MQTT Client object that manages the communication of this port
+        
+        /** Close the port. This simply sets the mqtt client to null. It does not need to unsubscribe because that's the task of MQTTNodeBase::removePort(). Unsubscribing should be done by the caller of this method. */
         virtual void close() override {
-            // Remove itself from the managing client
-            m_mqtt_client->removeSubscription(this);
+            m_mqtt_client = nullptr;
         }
         
         /** Open the port given a full network name.
@@ -271,10 +273,8 @@ namespace OBNnode {
         }
         
     public:
-        MQTTInputPortBase(const std::string& t_name, MQTTClient* t_client): InputPortBase(t_name), m_mqtt_client(t_client) {
-            assert(t_client);
-        }
-        //virtual ~MQTTPortBase() { }
+        MQTTInputPortBase(const std::string& t_name): InputPortBase(t_name) { }
+        //virtual ~MQTTInputPortBase() { }
         
         virtual std::string fullPortName() const override {
             return isValid()?m_node->fullPortName(m_name):"";
@@ -288,10 +288,13 @@ namespace OBNnode {
      */
     class MQTTOutputPortBase: public OutputPortBase {
     protected:
-        MQTTClient* m_mqtt_client;  ///< The MQTT Client object that manages the communication of this port
+        friend class MQTTNodeBase;
         
-        /** Close the port. For an MQTT output port, this does nothing. */
+        MQTTClient* m_mqtt_client{nullptr};  ///< The MQTT Client object that manages the communication of this port
+        
+        /** Close the port. For an MQTT output port, this simply sets the mqtt client to null. */
         virtual void close() override {
+            m_mqtt_client = nullptr;
         }
         
         /** Open the port given a full network name.
@@ -302,10 +305,7 @@ namespace OBNnode {
         
         std::string m_topicName{};    ///< The MQTT topic of this port
     public:
-        MQTTOutputPortBase(const std::string& t_name, MQTTClient* t_client): OutputPortBase(t_name), m_mqtt_client(t_client)
-        {
-            assert(t_client);
-        }
+        MQTTOutputPortBase(const std::string& t_name): OutputPortBase(t_name) { }
         //virtual ~MQTTOutputPortBase() { }
         
         /** \brief Returns the full path of the output port.
@@ -427,7 +427,7 @@ namespace OBNnode {
         }
         
     public:
-        MQTTInput(const std::string& _name, MQTTClient* t_client): MQTTInputPortBase(_name, t_client) { }
+        MQTTInput(const std::string& _name): MQTTInputPortBase(_name) { }
         
         /** Get the current value of the port. If no message has been received, the value is undefined.
          The value is copied out, which may be inefficient for large data (e.g. a large vector or matrix).
@@ -491,7 +491,7 @@ namespace OBNnode {
             }
         }
         
-        MQTTInput(const std::string& _name, MQTTClient* t_client): MQTTInputPortBase(_name, t_client) { }
+        MQTTInput(const std::string& _name): MQTTInputPortBase(_name) { }
         
         /** Returns a copy of the current message.
          To get direct access to the current message (without copying) see lock_and_get().
@@ -536,7 +536,7 @@ namespace OBNnode {
         }
         
     public:
-        MQTTInput(const std::string& _name, MQTTClient* t_client): MQTTInputPortBase(_name, t_client) { }
+        MQTTInput(const std::string& _name): MQTTInputPortBase(_name) { }
         
         /** Returns a copy of the current binary content, as a string. */
         std::string get() {
@@ -615,7 +615,7 @@ namespace OBNnode {
         }
         
     public:
-        MQTTInput(const std::string& _name, MQTTClient* t_client): MQTTInputPortBase(_name, t_client) { }
+        MQTTInput(const std::string& _name): MQTTInputPortBase(_name) { }
         
         /** Pop the top / front value of the port.
          The value should be moved out: it's a smart std::unique_ptr to the data, unless it's a basic scalar type (e.g. double) then the value is copied.
@@ -689,7 +689,7 @@ namespace OBNnode {
             }
         }
         
-        MQTTInput(const std::string& _name, MQTTClient* t_client): MQTTInputPortBase(_name, t_client) { }
+        MQTTInput(const std::string& _name): MQTTInputPortBase(_name) { }
         
         /** Pop the top / front value of the port.
          The value should be moved out: it's a smart std::unique_ptr to the data.
@@ -746,7 +746,7 @@ namespace OBNnode {
         }
         
     public:
-        MQTTInput(const std::string& _name, MQTTClient* t_client): MQTTInputPortBase(_name, t_client) { }
+        MQTTInput(const std::string& _name): MQTTInputPortBase(_name) { }
         
         /** Pop the top / front value of the port.
          The value should be moved out.
@@ -797,7 +797,7 @@ namespace OBNnode {
 
         OBNsim::ResizableBuffer m_buffer;   ///< The buffer to store data
     public:
-        MQTTOutput(const std::string& _name, MQTTClient* t_client): MQTTOutputPortBase(_name, t_client) { }
+        MQTTOutput(const std::string& _name): MQTTOutputPortBase(_name) { }
         
         /** Get the current (read-only) value of the port.
          The value is copied out, which may be inefficient for large data (e.g. a large vector or matrix).
@@ -833,6 +833,10 @@ namespace OBNnode {
         /** Send data synchronously */
         virtual void sendSync() override {
             try {
+                if (!m_mqtt_client) {
+                    throw std::runtime_error("Internal error: MQTTClient is null.");
+                }
+                
                 // Convert data to message
                 OBN_DATA_TYPE_CLASS<D>::writePBMessage(m_cur_value, m_PBMessage);
                 
@@ -867,7 +871,7 @@ namespace OBNnode {
         OBNsim::ResizableBuffer m_buffer;   ///< The buffer to store data
         
     public:
-        MQTTOutput(const std::string& _name, MQTTClient* t_client): MQTTOutputPortBase(_name, t_client) { }
+        MQTTOutput(const std::string& _name): MQTTOutputPortBase(_name) { }
         
         /** Directly access the ProtoBuf message stored in this port; can change it (so it'll be marked as changed). */
         PBCLS& message() {
@@ -889,6 +893,10 @@ namespace OBNnode {
         /** Send data synchronously */
         virtual void sendSync() override {
             try {
+                if (!m_mqtt_client) {
+                    throw std::runtime_error("Internal error: MQTTClient is null.");
+                }
+                
                 // Generate the binary content
                 m_buffer.allocateData(m_cur_message.ByteSize());
                 if (!m_cur_message.SerializeToArray(m_buffer.data(), m_buffer.size())) {
@@ -919,7 +927,7 @@ namespace OBNnode {
         OBNsim::ResizableBuffer m_cur_message;  ///< The binary data message stored in this port
         
     public:
-        MQTTOutput(const std::string& _name, MQTTClient* t_client): MQTTOutputPortBase(_name, t_client) { }
+        MQTTOutput(const std::string& _name): MQTTOutputPortBase(_name) { }
         
         /** Access the message buffer as read-only. */
         const char* message() const {
@@ -943,6 +951,10 @@ namespace OBNnode {
         /** Send data synchronously */
         virtual void sendSync() {
             try {
+                if (!m_mqtt_client) {
+                    throw std::runtime_error("Internal error: MQTTClient is null.");
+                }
+                
                 // Send the MQTT message
                 if (!m_mqtt_client->sendData(m_cur_message.data(), m_cur_message.size(), portTopicName())) {
                     // Error while sending the message

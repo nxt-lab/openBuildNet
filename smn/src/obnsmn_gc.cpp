@@ -88,6 +88,8 @@ void GCThread::GCThreadMain() {
     //  even without sending TERM signals, but still does necessary cleanups.
     bool noCriticalError;
     
+    bool continueSimulation = true; // whether the simulation continues
+    
     // Send the SIM_INIT message to all nodes to start the simulation
     {
         OBNSimMsg::MSGDATA *pMsgData = new OBNSimMsg::MSGDATA();
@@ -109,10 +111,12 @@ void GCThread::GCThreadMain() {
     }
     
     // Wait for ACKs from all nodes, checking for initialization errors
-    noCriticalError = noCriticalError && gc_wait_for_ack();
+    if (noCriticalError) {
+        continueSimulation = gc_wait_for_ack();
+    }
     
     // Running while the current state is not STOPPED
-    while (noCriticalError && gc_exec_state != GCSTATE_TERMINATING) {
+    while (continueSimulation && noCriticalError && gc_exec_state != GCSTATE_TERMINATING) {
         if (!startNextUpdate()) {
             // Error, can't continue simulation
             break;

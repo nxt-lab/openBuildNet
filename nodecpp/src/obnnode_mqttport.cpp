@@ -159,6 +159,9 @@ void MQTTClient::removeSubscription(IMQTTInputPort* port) {
     if (port == nullptr) {
         return;
     }
+    
+    std::unique_lock<std::mutex> lock(m_topics_mutex);
+    
     // Find the given port in all topics and remove it
     for (auto topic = m_topics.begin(); topic != m_topics.end(); ++topic) {
         auto found = std::find(topic->second.begin(), topic->second.end(), port);
@@ -462,6 +465,10 @@ void MQTTGCPort::parse_message(void *msg, int msglen) {
 
 std::pair<int, std::string> MQTTInputPortBase::connect_from_port(const std::string& source) {
     assert(!source.empty());
+
+    if (!m_mqtt_client) {
+        return std::make_pair(-2, "Internal error of MQTT port: MQTTClient is null.");
+    }
     
     // Add the subscription to the client
     return std::make_pair(m_mqtt_client->addSubscription(this, source), "");

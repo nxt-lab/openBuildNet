@@ -35,8 +35,8 @@ typedef MQTTOutput<OBN_PB, double> OUTPUT_PORT_CLASS;
 class Controller: public MQTTNode {
     /* Two inputs: velocity and setpoint */
     /* Output: the control value */
-    INPUT_PORT_CLASS velocity{"v", &mqtt_client}, setpoint{"sp", &mqtt_client};
-    OUTPUT_PORT_CLASS command{"u", &mqtt_client};
+    INPUT_PORT_CLASS velocity{"v"}, setpoint{"sp"};
+    OUTPUT_PORT_CLASS command{"u"};
     
     /* The state variable */
     Eigen::Vector3d x;

@@ -13,6 +13,7 @@
 #include <chrono>
 #include <thread>
 #include <obnnode_MQTTnode.h>
+#include <obnnode_MQTTport.h>
 #include <obnnode_exceptions.h>
 
 using namespace OBNnode;
@@ -34,6 +35,41 @@ bool MQTTNodeBase::startMQTT() {
     }
 }
 
+bool MQTTNodeBase::addInput(InputPortBase* port, bool owned) {
+    // actually add the port
+    if (NodeBase::addInput(port, owned)) {
+        MQTTInputPortBase* mqttport = dynamic_cast<MQTTInputPortBase*>(port);
+        if (mqttport) {
+            // Assign the MQTT client
+            mqttport->m_mqtt_client = &mqtt_client;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool MQTTNodeBase::addOutput(OutputPortBase* port, bool owned) {
+    // actually add the port
+    if (NodeBase::addOutput(port, owned)) {
+        MQTTOutputPortBase* mqttport = dynamic_cast<MQTTOutputPortBase*>(port);
+        if (mqttport) {
+            // Assign the MQTT client
+            mqttport->m_mqtt_client = &mqtt_client;
+        }
+        return true;
+    }
+    return false;
+}
+
+void MQTTNodeBase::removePort(InputPortBase* port) {
+    // remove all associated subscriptions if this is an MQTT input port
+    MQTTInputPortBase* mqttport = dynamic_cast<MQTTInputPortBase*>(port);
+    if (mqttport) {
+        mqtt_client.removeSubscription(mqttport);
+    }
+    
+    NodeBase::removePort(port); // actually remove the port
+}
 
 void MQTTNodeBase::sendN2SMNMsg() {
     // OBNsim::clockStart = chrono::steady_clock::now();

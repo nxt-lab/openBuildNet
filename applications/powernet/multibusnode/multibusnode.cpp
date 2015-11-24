@@ -39,6 +39,7 @@ class Bus {
     std::string m_name;  // The name of the bus
 public:
     Bus(const std::string &t_name): m_name(t_name) { }
+    virtual ~Bus() { }  // This virtual destructor is IMPORTANT to make member variables destroyed properly.
     
     std::string get_name() const { return m_name; }
     
@@ -980,13 +981,19 @@ int main(int argc, char **argv) {
             p->setServerAddress(mqtt_server);
         }
         
+        success = p->loadCSV(csv_file); // Load the bus definitions
+        if (!success) {
+            std::cout << "Could not load the CSV file of bus definitions, or the file is empty/invalid." << std::endl;
+            show_usage(argv[0]);
+            return 1;
+        }
+        
         success = p->initialize();
         if (!success) {
             std::cout << "There was/were error(s) while initializing the node.\n";
             return 2;
         }
         
-        success = p->loadCSV(csv_file);
         numBuses = p->numBuses();
 #else
         std::cerr << "MQTT communication is specified but not supported by this node.\n";
@@ -1001,26 +1008,25 @@ int main(int argc, char **argv) {
         auto *p = new MultiBus<MultiBusYarp>(node_name, workspace_name);
         pbus.reset(p);
         
+        success = p->loadCSV(csv_file); // Load the bus definitions
+        if (!success) {
+            std::cout << "Could not load the CSV file of bus definitions, or the file is empty/invalid." << std::endl;
+            show_usage(argv[0]);
+            return 1;
+        }
+        
         success = p->initialize();
         if (!success) {
             std::cout << "There was/were error(s) while initializing the node.\n";
             return 2;
         }
         
-        success = p->loadCSV(csv_file);
         numBuses = p->numBuses();
 #else
         std::cerr << "YARP communication is specified but not supported by this node.\n";
         return 1;
 #endif
     }
-    
-    if (!success) {
-        std::cout << "Could not load the CSV file of bus definitions, or the file is empty/invalid." << std::endl;
-        show_usage(argv[0]);
-        return 1;
-    }
-    
     
     // Display info
     std::cout << "This is a multi-bus node named \"" << node_name

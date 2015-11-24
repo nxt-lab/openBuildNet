@@ -140,7 +140,7 @@ namespace OBNnode {
         
     public:
         YarpPortBase(const std::string& t_name): InputPortBase(t_name) { }
-        //virtual ~YarpPortBase() { }
+        virtual ~YarpPortBase() { close(); }
         
         virtual std::string fullPortName() const override {
             return getYarpPort().getName();

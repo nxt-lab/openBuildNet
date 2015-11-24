@@ -35,7 +35,7 @@ class SourceNode: public MQTTNode {
     std::uniform_int_distribution<int> distribution;
     
 public:
-    SourceNode(const std::string& name, const std::string& ws = ""): MQTTNode(name, ws), m_y1("y1", &mqtt_client), m_y2("y2", &mqtt_client),
+    SourceNode(const std::string& name, const std::string& ws = ""): MQTTNode(name, ws), m_y1("y1"), m_y2("y2"),
     generator(std::chrono::system_clock::now().time_since_epoch().count()), distribution(-100, 0)
     { }
     

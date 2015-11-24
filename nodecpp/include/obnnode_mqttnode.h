@@ -63,6 +63,13 @@ namespace OBNnode {
         
         //virtual ~MQTTNodeBase();
         
+        // Override these methods to also set the MQTT client of the new port
+        virtual bool addInput(InputPortBase* port, bool owned=false) override;
+        virtual bool addOutput(OutputPortBase* port, bool owned=false) override;
+        
+        // This method removes the port and also unsubscribes from the associated topics of the port
+        virtual void removePort(InputPortBase* port) override;
+        
         /** Opens the port on this node to communication with the SMN, if it hasn't been opened.
          \return true if successful.
          */

@@ -7,13 +7,16 @@ SET(PROJECT_NAME "test3")
 
 PROJECT(${PROJECT_NAME})
 
+## Change OBN_MAIN_DIR to the path to the main directory of openBuildNet
+set (OBN_MAIN_DIR ${PROJECT_SOURCE_DIR}/../../)
+
 ## Directories of the SMN source
-set(OBNSMN_SRC_DIR "${PROJECT_SOURCE_DIR}/../../smn/src")
-set(OBNSMN_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/../../smn/include")
+set(OBNSMN_SRC_DIR "${OBN_MAIN_DIR}/smn/src")
+set(OBNSMN_INCLUDE_DIR "${OBN_MAIN_DIR}/smn/include")
 
 ## Directories of the node-cpp source
-set(OBNNODE_SRC_DIR "${PROJECT_SOURCE_DIR}/../../nodecpp/src")
-set(OBNNODE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/../../nodecpp/include")
+set(OBNNODE_SRC_DIR "${OBN_MAIN_DIR}/nodecpp/src")
+set(OBNNODE_INCLUDE_DIR "${OBN_MAIN_DIR}/nodecpp/include")
 
 ## Include directories for the general OBNSim project
 set (OBNSIM_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
@@ -52,8 +55,16 @@ if(YARP_FOUND)
   link_libraries(${YARP_LIBRARIES})
   set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${OBNSMN_SRC_DIR}/obnsmn_comm_yarp.cpp)
   set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${OBNSMN_INCLUDE_DIR}/obnsmn_comm_yarp.h)
-  set(OBNNODE_COMM_SRC ${OBNNODE_COMM_SRC} ${OBNNODE_SRC_DIR}/obnnode_comm_yarp.cpp)
-  set(OBNNODE_COMM_HDR ${OBNNODE_COMM_HDR} ${OBNNODE_INCLUDE_DIR}/obnnode_comm_yarp.h)  
+  set(OBNNODE_COMM_SRC ${OBN_COMM_SRC}
+	${OBNNODE_SRC_DIR}/obnnode_yarpnode.cpp
+	${OBNNODE_SRC_DIR}/obnnode_yarpport.cpp
+  )
+  set(OBNNODE_COMM_HDR ${OBN_COMM_HDR}
+	${OBNNODE_INCLUDE_DIR}/obnnode_yarpnode.h
+	${OBNNODE_INCLUDE_DIR}/obnnode_yarpportbase.h
+	${OBNNODE_INCLUDE_DIR}/obnnode_yarpport.h
+	${OBNNODE_INCLUDE_DIR}/sharedqueue_yarp.h
+  )
   add_definitions(-DOBNSIM_COMM_YARP)
   message("Found YARP library; will build SMN with YARP support.")
 endif()
@@ -110,6 +121,8 @@ set(OBNSMN_CORE_SRCFILES
 )
 
 set(OBNNODE_CORE_SRCFILES
+	${OBNSIM_INCLUDE_DIR}/obnsim_basic.cpp
+	${PROTO_SRCS}
 	${OBNNODE_COMM_SRC}
 )
 
@@ -117,6 +130,7 @@ set(OBNSMN_CORE_HDRFILES
 	${OBNSMN_INCLUDE_DIR}/obnsmn_basic.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_event.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_gc.h
+	${OBNSMN_INCLUDE_DIR}/obnsmn_gc_inline.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_node.h
 	${OBNSMN_INCLUDE_DIR}/obnsmn_nodegraph.h
 	${OBNSMN_INCLUDE_DIR}/sharedqueue.h
@@ -143,27 +157,24 @@ endif()
 ADD_EXECUTABLE(smntest3
 	smntest3.cpp
 	${OBNSMN_CORE_SRCFILES}
-	${PROTO_SRCS}
 )
 
 ADD_EXECUTABLE(nodeadmm
 	nodeadmm.cpp
 	${OBNNODE_CORE_SRCFILES}
-	${PROTO_SRCS}
 )
 
 ADD_EXECUTABLE(nodeslave
 	nodeslave.cpp
 	${OBNNODE_CORE_SRCFILES}
-	${PROTO_SRCS}
 )
 
 ## Make sure that C++ 11 is used (for thread, mutex...)
 if(APPLE)
   list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
 else()
-  set_property(TARGET smntest2 nodemotor nodectrl nodesetpoint PROPERTY CXX_STANDARD 11)
-  set_property(TARGET smntest2 nodemotor nodectrl nodesetpoint PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_property(TARGET smntest3 nodeadmm nodeslave PROPERTY CXX_STANDARD 11)
+  set_property(TARGET smntest3 nodeadmm nodeslave PROPERTY CXX_STANDARD_REQUIRED ON)
 endif()
 
 

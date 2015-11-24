@@ -54,8 +54,7 @@ class MyNodeClass: public YarpNode {
 public:
     /* ws is the workspace name, useful if you have multiple simulation networks running on the same Yarp network. */
     MyNodeClass(const std::string& name, const std::string& ws = ""): YarpNode(name, ws),
-    input1("u1"), output1("y"), input3("u3", &m_mqtt_client), input4("u4", &m_mqtt_client),
-    input5("u5", &m_mqtt_client), input6("u6", &m_mqtt_client)
+    input1("u1"), output1("y"), input3("u3"), input4("u4"), input5("u5"), input6("u6")
     { }
     
     virtual ~MyNodeClass() {

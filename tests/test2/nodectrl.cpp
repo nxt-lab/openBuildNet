@@ -41,13 +41,8 @@ typedef YarpOutput<OBN_PB, double> OUTPUT_PORT_CLASS;
 class Controller: public YarpNode {
     /* Two inputs: velocity and setpoint */
     /* Output: the control value */
-#ifdef OBNNODE_COMM_MQTT
-    INPUT_PORT_CLASS velocity{"v", &mqtt_client}, setpoint{"sp", &mqtt_client};
-    OUTPUT_PORT_CLASS command{"u", &mqtt_client};
-#else
     INPUT_PORT_CLASS velocity{"v"}, setpoint{"sp"};
     OUTPUT_PORT_CLASS command{"u"};
-#endif
     
     /* The state variable */
     Eigen::Vector3d x;

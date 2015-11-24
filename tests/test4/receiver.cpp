@@ -30,8 +30,7 @@ class ReceiverNode: public MQTTNode {
     MQTTInput<OBN_PB, obn_vector<double>, true> m_u2;
     MQTTInput<OBN_PB, double, true> m_u3;
 public:
-    ReceiverNode(const std::string& name, const std::string& ws = ""): MQTTNode(name, ws), m_u1("u1", &mqtt_client), m_u2("u2", &mqtt_client),
-    m_u3("u3", &mqtt_client)
+    ReceiverNode(const std::string& name, const std::string& ws = ""): MQTTNode(name, ws), m_u1("u1"), m_u2("u2"), m_u3("u3")
     { }
     
     /* Add ports to node, hardware components may be started, etc. */

@@ -223,6 +223,15 @@ void SMNChai::WorkSpace::waitfor_all_nodes_online(double timeout) {
             dur = std::chrono::steady_clock::now() - start;
             if (dur.count() > timeout) {
                 // Timeout occurs
+                
+                // DEBUG: print nodes that are not online yet
+                std::cout << "Unavailable nodes:\n";
+                for (auto it = m_nodes.begin(); it != m_nodes.end(); ++it) {
+                    if (!is_node_online(it->second.node)) {
+                        std::cout << it->first << " ";
+                    }
+                }
+                
                 throw smnchai_exception("Waiting for all nodes to go online but timeout occurred.");
             }
         }

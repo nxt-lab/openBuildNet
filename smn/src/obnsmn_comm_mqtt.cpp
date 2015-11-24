@@ -275,7 +275,13 @@ int MQTTClient::on_message_arrived(void *context, char *topicName, int topicLen,
                     // Send an empty retained message to the topic to delete the retained message on the broker
                     client->sendMessage(nullptr, 0, theTopic, 1);
                 }
+//                else {
+//                    std::cout << "Arrival topic does not match name, got: " << m.str(2) << std::endl;
+//                }
             }
+//            else {
+//                std::cout << "Arrival topic does not match regex\n";
+//            }
         }
     }
     

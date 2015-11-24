@@ -14,6 +14,7 @@
 #include <cmath>
 #include <iostream>
 #include <memory>               // shared_ptr
+#include <atomic>
 //#include <unordered_map>         // std::unordered_map
 #include <forward_list>
 #include <functional>
@@ -68,7 +69,7 @@ namespace OBNnode {
         }
 
         /** Close the port. */
-        virtual void close() = 0;
+        virtual void close() { }
 
         /** Open the port given a full network name. */
         virtual bool open(const std::string& full_name) = 0;
@@ -83,7 +84,10 @@ namespace OBNnode {
     public:
         PortBase(const std::string& t_name): m_name(t_name), m_node(nullptr) { }
         
-        virtual ~PortBase();
+        // Important that this base class has a virtual destructor for its descendents to be destroyed properly
+        virtual ~PortBase() {
+            //std::cout << "~PortBase:" << m_name << std::endl;
+        }
         
         const std::string& getPortName() const {
             return m_name;
@@ -140,6 +144,8 @@ namespace OBNnode {
         virtual bool isValuePending() const = 0;
         
         InputPortBase(const std::string& t_name): PortBase(t_name) { }
+        virtual ~InputPortBase();
+        
     protected:
         MSGRCV_CALLBACK m_msgrcv_callback{};  ///< The callback function for message received events
         bool m_msgrcv_callback_on_mainthread{true};
@@ -272,16 +278,16 @@ namespace OBNnode {
         /* ========== Methods to add ports ============ */
         
         /** \brief Add an existing (physical) input port to the node. */
-        bool addInput(PortBase* port, bool owned=false);
+        virtual bool addInput(InputPortBase* port, bool owned=false);
         
         /** \brief Add an existing (physical) output port to the node. */
-        bool addOutput(OutputPortBase* port, bool owned=false);
+        virtual bool addOutput(OutputPortBase* port, bool owned=false);
         
         /** \brief Remove a non-output port from this node, i.e. detach it, without deleting it. */
-        void removePort(PortBase* port);
+        virtual void removePort(InputPortBase* port);
         
         /** \brief Remove an output port from this node, i.e. detach it, without deleting it. */
-        void removePort(OutputPortBase* port);  // Do not remove this method as it's required to remove output ports.
+        virtual void removePort(OutputPortBase* port);  // Do not remove this method as it's required to remove output ports.
         
         /** \brief Delay by a short amount of time before shutting down the node.
          
@@ -317,7 +323,7 @@ namespace OBNnode {
         std::string _workspace;
         
         /** List of physical input ports: the second bool field specifies if the node owns the port object and should delete it when done. */
-        std::forward_list< std::pair<PortBase*, bool> > _input_ports;
+        std::forward_list< std::pair<InputPortBase*, bool> > _input_ports;
         
         /** List of physical output ports: the second bool field specifies if the node owns the port object and should delete it when done. */
         std::forward_list< std::pair<OutputPortBase*, bool> > _output_ports;
@@ -326,7 +332,7 @@ namespace OBNnode {
         bool attachAndOpenPort(PortBase * port);
         
         /** Current state of the node. */
-        NODE_STATE _node_state;
+        std::atomic<NODE_STATE> _node_state;
         
         /** The ID of the node in the network (assigned by the GC in its messages to the node) */
         int32_t _node_id;
@@ -716,11 +722,11 @@ namespace OBNnode {
         OBNNodeBase(const std::string& _name, const std::string& ws = ""): NB(_name, ws) { }
         
         /** Add a new update to the node. */
-        int addUpdate(UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), double t_T = -1.0, const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
+        int addUpdate(const UpdateType::UPDATE_CALLBACK& t_ycallback = UpdateType::UPDATE_CALLBACK(), const UpdateType::UPDATE_CALLBACK& t_xcallback = UpdateType::UPDATE_CALLBACK(), double t_T = -1.0, const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
         
         /** Add a new update to the node with given index. */
-        int addUpdate(int t_idx, UpdateType::UPDATE_CALLBACK t_ycallback = UpdateType::UPDATE_CALLBACK(), UpdateType::UPDATE_CALLBACK t_xcallback = UpdateType::UPDATE_CALLBACK(), double t_T = -1.0, const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
-        
+        int addUpdate(int t_idx, const UpdateType::UPDATE_CALLBACK& t_ycallback = UpdateType::UPDATE_CALLBACK(), const UpdateType::UPDATE_CALLBACK& t_xcallback = UpdateType::UPDATE_CALLBACK(), double t_T = -1.0, const UpdateType::INPUT_LIST& t_inputs = UpdateType::INPUT_LIST(), const UpdateType::OUTPUT_LIST& t_outputs = UpdateType::OUTPUT_LIST(), const std::string& t_name = "");
+
         /** Add a new update to the node. */
         int addUpdate(const UpdateType& t_update) {
             return addUpdate(t_update.y_callback, t_update.x_callback,
@@ -1183,8 +1189,8 @@ namespace OBNnode {
  */
 template <typename NB>
 int OBNnode::OBNNodeBase<NB>::addUpdate(int t_idx,
-                                    OBNnode::UpdateType::UPDATE_CALLBACK t_ycallback,
-                                    OBNnode::UpdateType::UPDATE_CALLBACK t_xcallback,
+                                    const OBNnode::UpdateType::UPDATE_CALLBACK& t_ycallback,
+                                    const OBNnode::UpdateType::UPDATE_CALLBACK& t_xcallback,
                                     double t_T,
                                     const OBNnode::UpdateType::INPUT_LIST& t_inputs,
                                     const OBNnode::UpdateType::OUTPUT_LIST& t_outputs,
@@ -1237,8 +1243,8 @@ int OBNnode::OBNNodeBase<NB>::addUpdate(int t_idx,
  \return The index of this update, or an error code: -1 if no more updates could be added (the node runs out of allowed number of updates), -3 if an input port does not exist, -4 if an output port does not exist.
  */
 template <typename NB>
-int OBNnode::OBNNodeBase<NB>::addUpdate(OBNnode::UpdateType::UPDATE_CALLBACK t_ycallback,
-                                        OBNnode::UpdateType::UPDATE_CALLBACK t_xcallback,
+int OBNnode::OBNNodeBase<NB>::addUpdate(const OBNnode::UpdateType::UPDATE_CALLBACK& t_ycallback,
+                                        const OBNnode::UpdateType::UPDATE_CALLBACK& t_xcallback,
                                         double t_T,
                                         const OBNnode::UpdateType::INPUT_LIST& t_inputs,
                                         const OBNnode::UpdateType::OUTPUT_LIST& t_outputs,

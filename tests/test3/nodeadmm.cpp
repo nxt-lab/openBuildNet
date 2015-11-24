@@ -33,7 +33,7 @@
 #error This test requires YARP to run
 #endif
 
-#include <obnnode_comm_yarp.h>
+#include <obnnode_yarpnode.h>
 #include <obnsim_io.pb.h>
 
 // Implement reporting functions for the SMN

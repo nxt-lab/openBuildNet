@@ -33,3 +33,5 @@ connect(source2.port("y2"), receiver.port("u2"));
 connect(source1.port("y2"), receiver.port("u3"));
 
 print_system();
+
+waitfor_all_nodes(30);

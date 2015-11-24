@@ -41,9 +41,9 @@ typedef YarpOutput<OBN_PB, double> OUTPUT_PORT_CLASS;
 class SetPoint: public YarpNode {
     /* Output: setpoint */
 #ifdef OBNNODE_COMM_MQTT
-    OUTPUT_PORT_CLASS setpoint{"sp", &mqtt_client};
+    OUTPUT_PORT_CLASS setpoint{"sp"};
 #else
-        OUTPUT_PORT_CLASS setpoint{"sp");
+    OUTPUT_PORT_CLASS setpoint{"sp");
 #endif
     
     std::default_random_engine generator;
