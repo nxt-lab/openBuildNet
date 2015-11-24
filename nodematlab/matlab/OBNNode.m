@@ -224,7 +224,7 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             
             narginchk(2, 2);
             assert(isscalar(this));
-            assert(this.isValidIdentifier(portName), 'Port name is invalid.');
+            % assert(this.isValidIdentifier(portName), 'Port name is invalid.');
             assert(this.inputPorts.isKey(portName), 'Input port does not exist.');
             
             d = this.obnnode_mexfunc_('readInput', this.id_, this.inputPorts(portName));
@@ -265,8 +265,8 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
            
            narginchk(3, 3);
            assert(isscalar(this));
-           assert(this.isValidIdentifier(portName), 'Port name is invalid.');
-           assert(this.outputPorts.isKey(portName), 'Output port does not exist.');
+           % assert(this.isValidIdentifier(portName), 'Port name is invalid.');
+           % assert(this.outputPorts.isKey(portName), 'Output port does not exist.');
            
            this.obnnode_mexfunc_('writeOutput', this.id_, this.outputPorts(portName), d);
         end
@@ -808,12 +808,13 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             nRemaining = nObjs;
             b = true(size(this));
             timeoutStart = tic;
+            drawnowStart = timeoutStart;    % to allow drawnow() every now and then, not too often
             
             while nRemaining > 0
                 if nRemaining < 2
                     tWaitfor = 1.0;
                 else
-                    tWaitfor = max(min(1.0/nRemaining, 0.02), 0.01);
+                    tWaitfor = max(min(1.0/nRemaining, 0.005), 0.002);
                 end
                 for k = 1:nObjs
                     if status(k) ~= 0
@@ -868,7 +869,12 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
                         nRemaining = nRemaining - 1;
                     end
                 end
-                drawnow;    % give Matlab a chance to update its GUI and process callbacks
+                % give Matlab a chance to update its GUI and process
+                % callbacks, every 1 second
+                if toc(drawnowStart) > 1
+                    drawnow;
+                    drawnowStart = tic;
+                end
             end
         end
         
