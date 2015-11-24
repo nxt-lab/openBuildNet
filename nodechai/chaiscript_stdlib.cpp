@@ -12,7 +12,7 @@
 #include "chaiscript_stdlib.h"
 
 #ifdef NODECHAI_CHAISCRIPT_STATIC
-namespace SMNChai {
+namespace NodeChai {
   std::shared_ptr<chaiscript::Module> create_chaiscript_stdlib()
   {
     return chaiscript::Std_Lib::library();

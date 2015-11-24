@@ -63,13 +63,29 @@ ENDIF(CMAKE_COMPILER_IS_GNUCXX)
 set(NODECHAI_SRCFILES
 	chaiscript_stdlib.cpp
 	chaiscript_bindings.cpp
+	nodechai.cpp
 	main.cpp
 )
 
 set(NODECHAI_HDRFILES
 	chaiscript_stdlib.h
 	chaiscript_bindings.h
+	nodechai.h
 )
+
+if (WITH_MQTT)
+  set(NODECHAI_SRCFILES
+	${NODECHAI_SRCFILES}
+	nodechai_mqtt.cpp
+  )
+  set(NODECHAI_HDRFILES
+    ${NODECHAI_HDRFILES}
+	nodechai_mqtt.h
+  )
+endif()
+
+if (WITH_YARP)
+endif()
 
 
 if(CMAKE_GENERATOR STREQUAL Xcode)

@@ -15,7 +15,7 @@ namespace chaiscript {
   class Module;
 }
 
-namespace SMNChai {
+namespace NodeChai {
   std::shared_ptr<chaiscript::Module> create_chaiscript_stdlib();
 }
 

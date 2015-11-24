@@ -11,6 +11,16 @@
 #ifndef NODECHAI_CHAISCRIPT_BINDINGS_H
 #define NODECHAI_CHAISCRIPT_BINDINGS_H
 
+namespace chaiscript {
+    class Module;
+    class ChaiScript;
+}
 
+namespace NodeChai {
+    struct NodeFactory;
+    
+    /** Create the API bindings before a node is created. */
+    std::shared_ptr<chaiscript::Module> create_bindings_before_node(std::shared_ptr<chaiscript::Module> m = std::make_shared<chaiscript::Module>());
+}
 
 #endif /* CHAISCRIPT_BINDINGS_H */
