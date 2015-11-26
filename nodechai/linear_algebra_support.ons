@@ -1,0 +1,80 @@
+// This script demonstrates the linear algebra support in openBuildNet's scriptable node.
+// The scripting language is based on Chaiscript (http://chaiscript.com/).
+
+// Real-valued matrices are supported by class MatrixD
+// ===================================================
+
+// Create a matrix of size 2-by-1, whose entries are specified row-wise by a vector.
+// Any missing entries will be unspecified.
+// The vector must contain REAL numbers (so write 1.0 instead of 1).
+var v = MatrixD(2,1, [1.0, 2.0]);
+print(v);						// Of course you can print it
+var s = v.to_string();			// or get its textual representation (Matlab format)
+
+// An empty matrix
+var v1 = MatrixD();
+v1.resize(2,1);					// Resize it
+v1[0] = 1.5;					// Assign values to entries (index is linear)
+v1[1] = 2.5;
+
+var m = MatrixD(2, 2,
+				[1.0, 2.0,
+				 3.0, 4.0]);
+print(m);
+m.coeff(0,1) = -3.0;			// Access an entry by row and column indices
+
+print(m.size());				// Number of elements / coefficients
+print(m.rows());				// Number of rows
+print(m.cols());				// Number of columns
+
+// Linear Algebra operations
+// =========================
+
+// Most common linear algebra operations are supported
+
+print(v1 + v);
+print(v - v1);
+
+v += v1;
+print(-v);
+
+print(m + 1.5);  // Add a scalar to every coefficient; not 1.5 + m
+print(m - 1.5);  // Substract a scalar from every coefficient; not 1.5 - m
+
+// scalar multiplication & division
+print(m * 0.5);
+print(m / 1.3);
+print(2 * m);
+
+m *= 2;
+
+print(m.transpose());			// transpose
+m.transposeInPlace();			// transpose the matrix in-place
+print(m);
+
+// matrix multiplication
+print(m * v);
+print(m * v1);
+
+// Arithmetic reduction
+print(m.sum());		   // sum of all coefficients; same as sum(m)
+print(m.prod());	   // product of all coefficients; same as prod(m)
+print(m.mean());	   // mean of all coefficients; same as mean(m)
+print(m.min());		   // min of all coefficients; same as min(m)
+print(m.max());		   // max of all coefficients; same as max(m)
+print(m.trace());	   // trace of the matrix; same as trace(m)
+
+// Coefficient-wise operations
+m = abs(m);						// m.abs()
+print(m);
+print(abs2(m));					// m.abs2()
+print(sqrt(m));					// m.sqrt()
+print(log(m));					// m.log()
+print(exp(m));					// m.exp()
+print(pow(m,3));				// m.pow(3)
+print(square(m));				// m.square()
+print(sin(m));					// m.sin()
+//print(asin(m));  // m.asin()
+print(cos(m));					// m.cos()
+//print(acos(m));  // m.acos()
+print(tan(m));					// m.tan()

@@ -63,6 +63,7 @@ ENDIF(CMAKE_COMPILER_IS_GNUCXX)
 set(NODECHAI_SRCFILES
 	chaiscript_stdlib.cpp
 	chaiscript_bindings.cpp
+	chaiscript_bindings_eigen.cpp
 	nodechai.cpp
 	main.cpp
 )

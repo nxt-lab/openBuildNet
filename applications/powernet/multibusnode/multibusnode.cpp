@@ -715,13 +715,13 @@ public:
     using UserInputType = MQTTInput< OBN_PB, obn_vector<double> >;
     
     UserInputType* createUserInput(const std::string& t_name) {
-        return new UserInputType(t_name, &mqtt_client);
+        return new UserInputType(t_name);
     }
     
     using UserOutputType = MQTTOutput< OBN_PB, obn_vector_fixed<double, 4> >;
 
     UserOutputType* createUserOutput(const std::string& t_name) {
-        return new UserOutputType(t_name, &mqtt_client);
+        return new UserOutputType(t_name);
     }
     
     // Information about a bus
@@ -729,7 +729,7 @@ public:
         std::unique_ptr<BusType> m_bus;
         InputFromGridPort m_input;
         Output2GridPort m_output;
-        BusInfo(BusType* pbus, MultiBusMQTT* pnode): m_bus(pbus), m_input("VfG" + pbus->get_name(), &pnode->mqtt_client), m_output("VtG" + pbus->get_name(), &pnode->mqtt_client)
+        BusInfo(BusType* pbus, MultiBusMQTT* pnode): m_bus(pbus), m_input("VfG" + pbus->get_name()), m_output("VtG" + pbus->get_name())
         { }
     };
     
@@ -1043,9 +1043,10 @@ int main(int argc, char **argv) {
     //////////////////////
     // Clean up before exiting
     //////////////////////
-    google::protobuf::ShutdownProtobufLibrary();
     
     pbus->delayBeforeShutdown();
+    
+    google::protobuf::ShutdownProtobufLibrary();
     
     return pbus->hasError()?3:0;
 }

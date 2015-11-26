@@ -1,0 +1,52 @@
+// source2 node in ONS (OBN Node Script), to be run with the OBN scriptable node program
+
+// IMPORTANT:
+// A function can't access top-level variables unless they are global variables.
+// A function can only access its local variables, its arguments (considered local), and global variables.
+// So for all top-level variables that need to be accessed inside callback functions (e.g. ports), use one or both of the following solutions:
+// 1. Make a variable global by declaring it as: GLOBAL var = ...; then it can be accessed directly inside any function.
+// 2. Define a non-global top-level variable as usual, then bind it to an argument of the function that needs to access it, e.g.
+//     var a = 1.0;
+//     var output = new_output_double("y");
+//     def myfunc(y, my_a) { print(my_a); y.set(my_a); }
+//     callback_updatey(0, bind(myfunc,output,a));
+//
+// Solution (1) is easier to use but less elegant.
+// The general syntax for bind in Chaiscript is: bind(func,arg1,arg2,...) where arg* is either an object or _; the latter causes the corresponding argument in func to be an argument in the new function.
+
+set_comm_mqtt("tcp://localhost:1883");
+set_node_name("source2");
+set_workspace("test4");
+// set_timeout(10);	// you can set timeout for the node (in seconds)
+create_node();
+
+// The ports
+var y1 = new_output_double("y1");
+var y2 = new_output_double_vector("y2");
+
+var v = MatrixD(2,1, [1.0, 2.0]);
+print(v);
+
+// Define the callback functions
+// Here we use the second solution to allow functions to use top-level variables, i.e. function binding
+def my_updatey(y1, y2, v) {
+	y1.set(-2.0);
+	y2.set(v);
+}
+
+def my_init() {
+	print("Init");
+}
+
+def my_term() {
+	print("Term");
+	print(current_time_s());
+	print(current_wallclock());
+}
+
+// Set the callbacks
+callback_init(my_init);
+callback_term(my_term);
+callback_y(0, bind(my_updatey,y1,y2,v));
+
+// After the script file ends, if the node was created (by create_node()), the node will be run

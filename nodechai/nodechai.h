@@ -84,6 +84,7 @@ namespace NodeChai {
         std::string mqtt_server{"tcp://localhost:1883"};
         std::string node_name{""};
         std::string workspace{""};
+        double timeout{-1.0}; // The timeout value for the node
         
         // The Chaiscript object to run the script.
         // It's a pointer to the real object, which should be created and destroyed by the main program.

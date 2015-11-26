@@ -88,14 +88,14 @@ protected:
     MQTTOutput<OBN_PB, obn_vector<double> > m_output_grid;
     
 public:
-    ConstBusMQTT(const std::string& _name, const std::string& ws): MQTTNode(_name, ws), m_input_grid("VfromGrid", &mqtt_client), m_output_grid("VtoGrid", &mqtt_client) { }
+    ConstBusMQTT(const std::string& _name, const std::string& ws): MQTTNode(_name, ws), m_input_grid("VfromGrid"), m_output_grid("VtoGrid") { }
 };
 
 class GenericBusMQTT: public MQTTNode {
 protected:
     using UserInputType = MQTTInput< OBN_PB, obn_vector<double> >;
     UserInputType* new_user_input_port(const std::string& t_name) {
-        return new UserInputType(t_name, &mqtt_client);
+        return new UserInputType(t_name);
     }
     
     // Vector of inputs from user nodes.
@@ -109,14 +109,14 @@ protected:
     
     using UserOutputType = MQTTOutput< OBN_PB, obn_vector_fixed<double, 4> >;
     UserOutputType* new_user_output_port(const std::string& t_name) {
-        return new UserOutputType(t_name, &mqtt_client);
+        return new UserOutputType(t_name);
     }
     
     // Vector of outputs to user nodes.
     std::vector< std::unique_ptr<UserOutputType> > m_output_users;
     
 public:
-    GenericBusMQTT(const std::string& t_name, const std::string& ws): MQTTNode(t_name, ws), m_output_grid("VtoGrid", &mqtt_client), m_input_grid("VfromGrid", &mqtt_client)
+    GenericBusMQTT(const std::string& t_name, const std::string& ws): MQTTNode(t_name, ws), m_output_grid("VtoGrid"), m_input_grid("VfromGrid")
     {
     }
     
@@ -980,9 +980,9 @@ int main(int argc, char **argv) {
     //////////////////////
     // Clean up before exiting
     //////////////////////
-    google::protobuf::ShutdownProtobufLibrary();
-    
     pbus->delayBeforeShutdown();
+    
+    google::protobuf::ShutdownProtobufLibrary();
     
     return pbus->hasError()?3:0;
 }
