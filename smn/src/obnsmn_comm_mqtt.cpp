@@ -173,8 +173,6 @@ bool MQTTClient::startListeningForArrivals(const std::string& t_workspace) {
     m_listening_for_arrivals = (m_notify_result == 0);
     m_online_nodes_topic = topic_name;
     
-    //std::cout << "Start listening for arrivals: " << topic_name << std::endl;
-    
     return m_listening_for_arrivals;
 }
 
@@ -190,6 +188,8 @@ void MQTTClient::stopListeningForArrivals() {
         {
             OBNsmn::report_error(0, "MQTT error: failed to unsubscribe for nodes' arrival announcements with error code = " + std::to_string(rc));
         }
+        
+        m_listening_for_arrivals = false;
         
         //std::cout << "Stop listening for arrivals\n";
     }
@@ -259,7 +259,7 @@ int MQTTClient::on_message_arrived(void *context, char *topicName, int topicLen,
                 theTopic.assign(topicName, topicLen);
             }
             
-            //std::cout << "Arrival: " << theTopic << "(" << std::string((const char*)message->payload, message->payloadlen) << ")" << std::endl;
+            //std::cout << "Arrival: " << theTopic << "(" << std::string((const char*)message->payload, message->payloadlen) << ") [retained=" << message->retained << "]" << std::endl;
             
             std::smatch m;
             bool isArrivalTopic = std::regex_match(theTopic, m, MQTTClient::online_nodes_topic_regex);

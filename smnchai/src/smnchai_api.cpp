@@ -86,6 +86,7 @@ bool SMNChai::WorkSpace::is_node_online(const SMNChai::Node &t_node) {
         // We should check the list of online nodes, then ping the node's GC port;
         // for now we only check the list and assume it's still online.
         if (!m_tracking_mqtt_online_nodes) {
+            // std::cout << "Start tracking MQTT nodes\n";
             // Start tracking
             if (start_mqtt_client()) {
                 if (m_comm.mqttClient->startListeningForArrivals(m_name.empty()?"":(m_name+'/'))) {

@@ -210,9 +210,10 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
 #endif
 
 #ifdef OBNSIM_COMM_MQTT
-    if (comm.mqttClient) {
+    if (comm.mqttClient && ws.m_tracking_mqtt_online_nodes) {
         // The MQTT client is running and may be tracking nodes' availability -> stop tracking
         comm.mqttClient->stopListeningForArrivals();
+        ws.m_tracking_mqtt_online_nodes = false;
     }
 #endif
     

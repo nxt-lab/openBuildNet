@@ -356,11 +356,11 @@ namespace SMNChai {
         SMNChai::SMNChaiComm& m_comm;   // reference to the comm structure of the main SMN
         OBNsmn::GCThread& m_gcthread;   // the GC thread object
         
+    public:
 #ifdef OBNSIM_COMM_MQTT
         bool m_tracking_mqtt_online_nodes = false;  // am I tracking online nodes in MQTT using m_comm->mqttclient;
 #endif
         
-    public:
         /** Class that contains the settings of a workspace/simulation. */
         struct Settings {
             int m_ack_timeout = 0;        ///< Timeout for ACK, in milliseconds.

@@ -80,7 +80,7 @@ namespace OBNsmn {
             /** List of nodes that have announced their availability. */
             std::unordered_set<std::string> m_online_nodes;
             std::string m_online_nodes_topic;
-            bool m_listening_for_arrivals;
+            bool m_listening_for_arrivals{false};
             std::mutex m_online_nodes_mutex;
             static std::regex online_nodes_topic_regex;
             
