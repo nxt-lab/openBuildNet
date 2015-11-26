@@ -66,9 +66,9 @@ int MQTTNodeMatlab::createInputPort(char container, const std::string &element, 
         case 's':
         case 'S':
             if (strict) {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_scalar,element,true,name,&mqtt_client);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_scalar,element,true,name);
             } else {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_scalar,element,false,name,&mqtt_client);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_scalar,element,false,name);
             }
             portinfo.container = 's';
             break;
@@ -76,9 +76,9 @@ int MQTTNodeMatlab::createInputPort(char container, const std::string &element, 
         case 'v':
         case 'V':
             if (strict) {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector,element,true,name,&mqtt_client);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector,element,true,name);
             } else {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector,element,false,name,&mqtt_client);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector,element,false,name);
             }
             portinfo.container = 'v';
             break;
@@ -86,9 +86,9 @@ int MQTTNodeMatlab::createInputPort(char container, const std::string &element, 
         case 'm':
         case 'M':
             if (strict) {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix,element,true,name,&mqtt_client);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix,element,true,name);
             } else {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix,element,false,name,&mqtt_client);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix,element,false,name);
             }
             portinfo.container = 'm';
             break;
@@ -96,9 +96,9 @@ int MQTTNodeMatlab::createInputPort(char container, const std::string &element, 
         case 'b':
         case 'B':
             if (strict) {
-                port = new MQTTInput<OBN_BIN,bool,true>(name,&mqtt_client);
+                port = new MQTTInput<OBN_BIN,bool,true>(name);
             } else {
-                port = new MQTTInput<OBN_BIN,bool,false>(name,&mqtt_client);
+                port = new MQTTInput<OBN_BIN,bool,false>(name);
             }
             portinfo.container = 'b';
             break;
@@ -139,25 +139,25 @@ int MQTTNodeMatlab::createOutputPort(char container, const std::string &element,
     switch (container) {
         case 's':
         case 'S':
-            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_scalar,element,name,&mqtt_client);
+            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_scalar,element,name);
             portinfo.container = 's';
             break;
             
         case 'v':
         case 'V':
-            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_vector,element,name,&mqtt_client);
+            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_vector,element,name);
             portinfo.container = 'v';
             break;
             
         case 'm':
         case 'M':
-            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_matrix,element,name,&mqtt_client);
+            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_matrix,element,name);
             portinfo.container = 'm';
             break;
             
         case 'b':
         case 'B':
-            port = new MQTTOutput<OBN_BIN,bool>(name,&mqtt_client);
+            port = new MQTTOutput<OBN_BIN,bool>(name);
             portinfo.container = 'b';
             break;
             
@@ -220,7 +220,8 @@ int MQTTNodeMatlab::runStep(double timeout) {
 
     // Run until there is a pending ML event
     while (!_ml_pending_event) {
-        switch (_node_state) {
+        NODE_STATE state = _node_state;
+        switch (state) {
             case NODE_RUNNING:  // Node is running normally, so keep running it until the next event
             case NODE_STARTED:
                 // Wait for the next event and process it
