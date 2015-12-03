@@ -126,7 +126,7 @@ namespace OBNnode {
          \param f The callback function (empty function to disable callback).
          \param onMainThread Set to true if the callback should be called on the main thread (by means of an event posted to the main queue); otherwise, it will be called on the communication thread (hence thread-safety measures must be implemented).
          */
-        void setMsgRcvCallback(MSGRCV_CALLBACK f, bool onMainThread);
+        void setMsgRcvCallback(const MSGRCV_CALLBACK& f, bool onMainThread);
         
         /** \brief Clear the callback function for message received events.
          */

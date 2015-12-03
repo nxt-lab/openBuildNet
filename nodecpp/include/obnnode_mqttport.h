@@ -281,6 +281,15 @@ namespace OBNnode {
         }
         
         virtual std::pair<int, std::string> connect_from_port(const std::string& source) override;
+        
+        /** Set the MQTT client of this node, only if the client has not been set. Returns true if successful. */
+        bool set_mqtt_client(MQTTClient* p) {
+            if (!m_mqtt_client && p) {
+                m_mqtt_client = p;
+                return true;
+            }
+            return false;
+        }
     };
     
     /** \brief Base class for an openBuildNet (strictly) output port in MQTT.
@@ -323,6 +332,15 @@ namespace OBNnode {
                 m_topicName = fullPortName();
             }
             return m_topicName;
+        }
+        
+        /** Set the MQTT client of this node, only if the client has not been set. Returns true if successful. */
+        bool set_mqtt_client(MQTTClient* p) {
+            if (!m_mqtt_client && p) {
+                m_mqtt_client = p;
+                return true;
+            }
+            return false;
         }
     };
             

@@ -29,9 +29,9 @@ bool PortBase::open() {
 
 
 // Set the message received event callback for an input port.
-void InputPortBase::setMsgRcvCallback(InputPortBase::MSGRCV_CALLBACK f, bool onMainThread) {
+void InputPortBase::setMsgRcvCallback(const InputPortBase::MSGRCV_CALLBACK& f, bool onMainThread) {
     std::lock_guard<std::mutex> mylock(m_msgrcv_callback_mutex);
-    m_msgrcv_callback = std::move(f);   // Move to the internal function variable
+    m_msgrcv_callback = f;
     m_msgrcv_callback_on_mainthread = onMainThread;
 }
 

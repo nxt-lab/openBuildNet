@@ -476,33 +476,44 @@ namespace NodeChai {
     
     
 #ifdef OBNNODE_COMM_MQTT
+    template <typename T>
+    void bindings_for_nonstrict_input(const char* TNAME, std::shared_ptr<chaiscript::Module> m) {
+        m->add(user_type<T>(), TNAME);
+        m->add(fun(&T::isValuePending), "pending");
+        m->add(fun([](T& p, const std::function<void ()>& f) { p.setMsgRcvCallback(f, true); }), "callback_msgrcv");
+        m->add(fun(&T::clearMsgRcvCallback), "clear_callback_msgrcv");
+    }
+    
+    template <typename T>
+    void bindings_for_strict_input(const char* TNAME, std::shared_ptr<chaiscript::Module> m) {
+        m->add(user_type<T>(), TNAME);
+        m->add(fun(&T::size), "size");
+        m->add(fun(&T::isValuePending), "pending");
+        m->add(fun([](T& p, const std::function<void ()>& f) { p.setMsgRcvCallback(f, true); }), "callback_msgrcv");
+        m->add(fun(&T::clearMsgRcvCallback), "clear_callback_msgrcv");
+    }
+    
     std::shared_ptr<chaiscript::Module> NodeFactoryMQTT::create_bindings(std::shared_ptr<chaiscript::Module> m) {
         
         ////////////////////////////////////////////////////////////////
         // Add the input port types and their methods to access
         ////////////////////////////////////////////////////////////////
         
-        m->add(user_type<NodeFactoryMQTT::InputScalarDouble>(), "InputScalarDouble");
+        bindings_for_nonstrict_input<NodeFactoryMQTT::InputScalarDouble>("InputScalarDouble", m);
         m->add(fun(&NodeFactoryMQTT::InputScalarDouble::get), "get");
-        m->add(fun(&NodeFactoryMQTT::InputScalarDouble::isValuePending), "pending");
         
-        m->add(user_type<NodeFactoryMQTT::InputScalarDoubleStrict>(), "InputScalarDoubleStrict");
+        bindings_for_strict_input<NodeFactoryMQTT::InputScalarDoubleStrict>("InputScalarDoubleStrict", m);
         m->add(fun(&NodeFactoryMQTT::InputScalarDoubleStrict::pop), "pop");
-        m->add(fun(&NodeFactoryMQTT::InputScalarDoubleStrict::size), "size");
-        m->add(fun(&NodeFactoryMQTT::InputScalarDoubleStrict::isValuePending), "pending");
         
         m->add(user_type<NodeFactoryMQTT::OutputScalarDouble>(), "OutputScalarDouble");
         m->add(fun(&NodeFactoryMQTT::OutputScalarDouble::operator()), "get");
         m->add(fun([](NodeFactoryMQTT::OutputScalarDouble& p, const double v) { p = v; }), "set");
         
-        m->add(user_type<NodeFactoryMQTT::InputVectorDouble>(), "InputVectorDouble");
+        bindings_for_nonstrict_input<NodeFactoryMQTT::InputVectorDouble>("InputVectorDouble", m);
         m->add(fun([](NodeFactoryMQTT::InputVectorDouble& p) { return Eigen::MatrixXd(p.get()); }), "get");
-        m->add(fun(&NodeFactoryMQTT::InputVectorDouble::isValuePending), "pending");
         
-        m->add(user_type<NodeFactoryMQTT::InputVectorDoubleStrict>(), "InputVectorDoubleStrict");
+        bindings_for_strict_input<NodeFactoryMQTT::InputVectorDoubleStrict>("InputVectorDoubleStrict", m);
         m->add(fun([](NodeFactoryMQTT::InputVectorDoubleStrict& p) { return Eigen::MatrixXd(*p.pop()); }), "pop");
-        m->add(fun(&NodeFactoryMQTT::InputVectorDoubleStrict::size), "size");
-        m->add(fun(&NodeFactoryMQTT::InputVectorDoubleStrict::isValuePending), "pending");
         
         m->add(user_type<NodeFactoryMQTT::OutputVectorDouble>(), "OutputVectorDouble");
         m->add(fun([](NodeFactoryMQTT::OutputVectorDouble& p) { return Eigen::MatrixXd(p()); }), "get");
@@ -517,15 +528,12 @@ namespace NodeChai {
             }
         }), "set");
         
-        m->add(user_type<NodeFactoryMQTT::InputMatrixDouble>(), "InputMatrixDouble");
+        bindings_for_nonstrict_input<NodeFactoryMQTT::InputMatrixDouble>("InputMatrixDouble", m);
         m->add(fun(&NodeFactoryMQTT::InputMatrixDouble::get), "get");
-        m->add(fun(&NodeFactoryMQTT::InputMatrixDouble::isValuePending), "pending");
         
-        m->add(user_type<NodeFactoryMQTT::InputMatrixDoubleStrict>(), "InputMatrixDoubleStrict");
+        bindings_for_strict_input<NodeFactoryMQTT::InputMatrixDoubleStrict>("InputMatrixDoubleStrict", m);
         m->add(fun([](NodeFactoryMQTT::InputMatrixDoubleStrict& p) { return *p.pop(); }), "pop");
-        m->add(fun(&NodeFactoryMQTT::InputMatrixDoubleStrict::size), "size");
-        m->add(fun(&NodeFactoryMQTT::InputMatrixDoubleStrict::isValuePending), "pending");
-        
+
         m->add(user_type<NodeFactoryMQTT::OutputMatrixDouble>(), "OutputMatrixDouble");
         m->add(fun([](NodeFactoryMQTT::OutputMatrixDouble& p) { return p(); }), "get");
         m->add(fun([](NodeFactoryMQTT::OutputMatrixDouble& p, const Eigen::MatrixXd& v) { p = v; }), "set");
