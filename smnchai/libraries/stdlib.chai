@@ -9,37 +9,39 @@
 // Convenient functions to create nodes
 // ====================================================
 
-// To define an update type, we use a Map object of the following form:
-// [ "name" : "name of update", "id" : id-of-update, "sampling" : real-number-sampling-time-in-microseconds,
-//   "inputs" : list-of-inputs-to-this-update, "outputs" : list-of-outputs-from-this-update]
+// To define a block, we use a Map object of the following form:
+// [ "name" : "name of block", "id" : id-of-block, "sampling" : real-number-sampling-time-in-microseconds,
+//   "inputs" : list-of-inputs-to-this-block, "outputs" : list-of-outputs-from-this-block,
+//   "depends" : list-of-other-blocks-on-which-this-block-depends]
 // where only "sampling" is required. The list of outputs is a Vector of names, e.g. ["y1", "y2"].
-// The list of inputs can be either a Vector of names (all of them will have direct feedthrough to this update) or
-// a Map of [name -> bool] where the boolean value specifies whether the input has direct feedthrough to this update.
+// The list of inputs can be either a Vector of names (all of them will have direct feedthrough to this block) or
+// a Map of [name -> bool] where the boolean value specifies whether the input has direct feedthrough to this block.
 // For example: ["u1":true, "u2":true, "u3":false] is essentially the same as ["u1", "u2"] but the former provides more
 // optional information (we know that "u3" is also an input, but it doesn't have direct feedthrough).
 //
-// A function called "update" will produce such a Map from all arguments:
-//     update("name", id, sampling, inputs, outputs)
+// A function called "define_block" will produce such a Map from all arguments:
+//     block("name", id, sampling, inputs, outputs, dependencies)
 // where inputs (or outputs), if it is a singleton, can be a string (name of the single port) instead of a vector of a single string.
 
-def update(string name, uint32_t id, double sampling, inputs, outputs) {
+def define_block(string name, uint32_t id, double sampling, inputs, outputs, Vector dependencies) {
   var myinputs;
   var myoutputs;
   if (inputs.is_type("string")) { myinputs := [inputs]; } else { myinputs := inputs; }
   if (outputs.is_type("string")) { myoutputs := [outputs]; } else { myoutputs := outputs; }
   // The dictionary construction always copies data, so we can use references above
-  return ["name": name, "id": id, "sampling": sampling, "inputs": myinputs, "outputs": myoutputs];
+  return ["name": name, "id": id, "sampling": sampling, "inputs": myinputs, "outputs": myoutputs, "depends": dependencies];
 }
 
 
 // To define a node, we use a Map object of the following form:
 // ["name" : "node name", "inputs" : vector-of-input-ports, "outputs" : vector-of-output-ports,
-//  "dataports" : vector-of-data-ports, "updates" : vector-of-update-definitions]
-// where the definition of update types is as above.
+//  "dataports" : vector-of-data-ports, "blocks" : vector-of-block-definitions]
+// where the definition of blocks is as above.
 // Only "name" is required.
 // The function node(nodeDef, addnow) creates a Node object from the map definition and returns it.
 // If addnow = true (or omitted), the Node object will be added immediately to the system (by calling add_node);
 // otherwise it is not and the returned Node object must be added later.
+// For historical reason, "updates" field can be used in place of "blocks", but they are not allowed to both appear.
 def node(Map tnodedef, bool addnow) {
   var nodedef = tnodedef;  // A bug in Chaiscript that doesn't work with in-place Map objects
   if (nodedef.count("name") < 1) { throw ("Node definition must have a valid name."); }
@@ -64,13 +66,24 @@ def node(Map tnodedef, bool addnow) {
     }
   }
 
-  var hasUpdates = nodedef.count("updates") > 0;
+  var updates_count = nodedef.count("updates");
+  var blocks_count = nodedef.count("blocks");
+  if (updates_count > 0 && blocks_count > 0) {
+	  throw ("In node definition, fields 'updates' and 'blocks' cannot both exist.");
+  }
+  var hasUpdates = (blocks_count > 0) || (updates_count > 0);
+  var blocksdef;
   if (hasUpdates) {
-    if (!nodedef["updates"].is_type("Vector") || !foldl(nodedef["updates"].range(), fun(s,b) { b && s.is_type("Map");}, true)) {
-      throw ("In node definition, updates must be a vector of update definitions.");
+	if (blocks_count > 0) {
+	  blocksdef := nodedef["blocks"];
+	} else {
+	  blocksdef := nodedef["updates"];
+	}
+    if (!blocksdef.is_type("Vector") || !foldl(blocksdef.range(), fun(s,b) { b && s.is_type("Map");}, true)) {
+      throw ("In node definition, 'blocks' must be a vector of block definitions.");
     }
-    if (!foldl(nodedef["updates"].range(), fun(s,b) { b && s.count("sampling") > 0;}, true)) {
-      throw ("In update definition, sampling time is required.");
+    if (!foldl(blocksdef.range(), fun(s,b) { b && s.count("sampling") > 0;}, true)) {
+      throw ("In block definition, sampling time is required.");
     }
   }
 
@@ -91,39 +104,84 @@ def node(Map tnodedef, bool addnow) {
     for (auto i=0; i < li.size(); ++i) { theNode.add_dataport(li[i]); }
   }
 
-  if (hasUpdates && !nodedef["updates"].empty()) {
-    var li := nodedef["updates"];
-    for (auto i=0; i < li.size(); ++i) {
+  if (hasUpdates && !blocksdef.empty()) {
+	var internalDep = false;
+	var blocks_to_ids = Map();  // Map from block names (if given) to their IDs
+	var blockIDs = Vector();	// Vector of block IDs, in the same order as blocksdef
+    for (auto i=0; i < blocksdef.size(); ++i) {
       var id = i;
-      if (li[i].count("id") > 0) { id = li[i]["id"]; }
-      theNode.add_update(id, li[i]["sampling"]);
+      if (blocksdef[i].count("id") > 0) { id = blocksdef[i]["id"]; }
+      theNode.add_block(id, blocksdef[i]["sampling"]);
+
+	  blockIDs.push_back(id);	// Save the ID of this block
+	  
+	  // Save the name -> ID mapping if this block is given a name
+	  if (blocksdef[i].count("name") > 0) {
+		  var current_block_name = blocksdef[i]["name"];
+		  if (blocks_to_ids.count(current_block_name) > 0) {
+			  throw ("Block '${current_block_name}' on node '${theNode.get_name()}' already existed.");
+		  }
+		  blocks_to_ids[blocksdef[i]["name"]] = id;
+	  }
+
+	  // If there is internal dependency field ('depends')
+	  if (blocksdef[i].count("depends") > 0) {
+		  internalDep = true;
+	  }
 
       // Add inputs
-      if (li[i].count("inputs") > 0) {
-		var inputs := li[i]["inputs"];	  
+      if (blocksdef[i].count("inputs") > 0) {
+		var inputs := blocksdef[i]["inputs"];	  
 		if (inputs.is_type("Map")) {
 		  var myinputs := inputs.range();
           while (!myinputs.empty()) {
-			theNode.input_to_update(id, myinputs.front().first(), myinputs.front().second());
+			theNode.input_to_block(id, myinputs.front().first(), myinputs.front().second());
 			myinputs.pop_front();
 		  }
 		} else if (inputs.is_type("Vector")) {
 		  for (auto j=0; j < inputs.size(); ++j) {
-			  theNode.input_to_update(id, inputs[j], true);
+			  theNode.input_to_block(id, inputs[j], true);
 		  }
-		} else { throw ("In definition of node " + nodedef["name"] + " update #" + to_string(i) + " has invalid input list."); }
+		} else { throw ("In definition of node " + nodedef["name"] + " block #${i} has invalid input list."); }
       }
 
       // Add outputs
-      if (li[i].count("outputs") > 0) {
-		var outputs := li[i]["outputs"];
+      if (blocksdef[i].count("outputs") > 0) {
+		var outputs := blocksdef[i]["outputs"];
 		if (outputs.is_type("Vector")) {
 		  for (auto j=0; j < outputs.size(); ++j) {
-			theNode.output_from_update(id, outputs[j]);
+			theNode.output_from_block(id, outputs[j]);
 		  }
-		} else { throw ("In definition of node " + nodedef["name"] + " update #" + to_string(i) + " has invalid output list."); }
+		} else { throw ("In definition of node " + nodedef["name"] + " block #${i} has invalid output list."); }
       }
     }
+
+	if (internalDep) {
+		// Go through the block definitions again, this time to add their internal dependencies
+		for (auto i=0; i < blocksdef.size(); ++i) {
+			if (blocksdef[i].count("depends") > 0) {
+				var dependDef := blocksdef[i]["depends"];
+				if (!dependDef.is_type("Vector")) {
+					throw ("In block ${blockIDs[i]} of node " + nodedef["name"] + " 'depends' field must be a vector.");
+				}
+				for (auto j=0; j < dependDef.size(); ++j) {
+					var srcBlockID;
+					if (dependDef[j].is_type("int")) {
+						srcBlockID = dependDef[j];
+					} else if (dependDef[j].is_type("string")) {
+						if (blocks_to_ids.count(dependDef[j]) > 0) {
+							srcBlockID = blocks_to_ids[dependDef[j]];
+						} else {
+							throw ("In block ${blockIDs[i]} of node " + nodedef["name"] + " 'depends' field: block name ${dependDef[j]} does not exist.");
+						}
+					} else {
+						throw ("In block ${blockIDs[i]} of node " + nodedef["name"] + " 'depends' field must contain either block ID (integer) or block name (string); got ${dependDef[j].type_name()} instead.");
+					}
+					theNode.add_internal_dependency(srcBlockID, blockIDs[i]);
+				}
+			}
+		}
+	}
   }
 
   if (addnow) { add_node(theNode); }

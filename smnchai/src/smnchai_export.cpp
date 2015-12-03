@@ -22,12 +22,12 @@ using namespace SMNChai;
 const char QUOTE = '"';
 const char TAB = '\t';
 
-// Returns the string representation of an UPDATE name (UPDATEnn)
+// Returns the string representation of a block name (BLOCKnn)
 std::string gen_update_name(unsigned int id) {
     assert(0 <= id && id <= OBNsim::MAX_UPDATE_INDEX);
     
     char buf[32];
-    int cx = snprintf(buf, 32, "UPDATE%02u", id);
+    int cx = snprintf(buf, 32, "BLOCK%02u", id);
     
     assert(cx >= 0 && cx < 32);
 
@@ -39,7 +39,7 @@ std::string gen_update_name(unsigned int id) {
     }
 }
 
-// Returns the string representation of a time value in microseconds (for UPDATEs)
+// Returns the string representation of a time value in microseconds (for BLOCKs)
 std::string gen_time_rep(double t_ms) {
     assert(t_ms >= 0);
     
@@ -183,7 +183,7 @@ void Node::export2dot_full(std::ostream &tos, const std::string &tprops) const {
     // List of updates
     for (auto it = m_updates.cbegin(); it != m_updates.cend(); ++it) {
         tos << TAB << gen_update_name(it->first) << " [shape=box,label="
-        << QUOTE << "UPDATE " << it->first << "\\n" << (it->second<=0?"nonperiodic":"T = "+gen_time_rep(it->second)) << QUOTE << "];" << std::endl;
+        << QUOTE << "BLOCK " << it->first << "\\n" << (it->second.sampling_time<=0?"nonperiodic":"T = "+gen_time_rep(it->second.sampling_time)) << QUOTE << "];" << std::endl;
     }
     
     std::string portname;

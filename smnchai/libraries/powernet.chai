@@ -47,7 +47,7 @@ def POWERNET_subnetwork(Vector busdef, double timeStep, bool addNow, string dist
 
   // Create distribution node
   var distNode := new_node(distName);
-  distNode.add_update(0, timeStep);
+  distNode.add_block(0, timeStep);
 
   var thisBusName = "";  // Name of the current bus
   
@@ -76,8 +76,8 @@ def POWERNET_subnetwork(Vector busdef, double timeStep, bool addNow, string dist
     distNode.add_output(distOutName);
 
     // The inputs from bus are fed directly to the distribution node's computation, which calculates the outputs to the bus
-    distNode.input_to_update(0, distInName, true);
-    distNode.output_from_update(0, distOutName);
+    distNode.input_to_block(0, distInName, true);
+    distNode.output_from_block(0, distOutName);
 
     connect(thisBusNode.port(busOutName), distNode.port(distInName));
     connect(distNode.port(distOutName), thisBusNode.port(busInName));
@@ -151,28 +151,28 @@ class POWERNET_BusNode {
     var mybus := new_node(this.m_name);
     if (this.m_nUsers > 0) {
       // Generic bus with users
-      mybus.add_update(0, this.m_period);  // from users to grid
-      mybus.add_update(1, this.m_period);  // from grid to users
+      mybus.add_block(0, this.m_period);  // from users to grid
+      mybus.add_block(1, this.m_period);  // from grid to users
       
       mybus.add_input("VfromGrid");
       mybus.add_output("VtoGrid");
-      mybus.output_from_update(0, "VtoGrid");
-      mybus.input_to_update(1, "VfromGrid", true);
+      mybus.output_from_block(0, "VtoGrid");
+      mybus.input_to_block(1, "VfromGrid", true);
 
       for (var i = 1; i <= this.m_nUsers; ++i) {
 	var sin = "Vfrom${i}";
 	var sout = "Vto${i}";
 	mybus.add_input(sin);
 	mybus.add_output(sout);
-	mybus.input_to_update(0, sin, true);
-	mybus.output_from_update(1, sout);
+	mybus.input_to_block(0, sin, true);
+	mybus.output_from_block(1, sout);
       }
     } else if (this.m_nUsers == 0) {
       // Const bus
       mybus.add_input("VfromGrid");
       mybus.add_output("VtoGrid");
-      mybus.add_update(0, this.m_period);
-      mybus.output_from_update(0, "VtoGrid");
+      mybus.add_block(0, this.m_period);
+      mybus.output_from_block(0, "VtoGrid");
     } else {
       throw("Internal error in POWERNET_BusNode: m_nUsers is invalid.");
     }
@@ -257,7 +257,7 @@ def POWERNET_network_from_csv(string filename, double timeStep, string distName,
 
   // Create distribution node
   var distNode := new_node(distName);
-  distNode.add_update(0, timeStep);
+  distNode.add_block(0, timeStep);
 
   var mBuses;
   if (return_map) {
@@ -294,8 +294,8 @@ def POWERNET_network_from_csv(string filename, double timeStep, string distName,
     distNode.add_output(distOutName);
 
     // The inputs from bus are fed directly to the distribution node's computation, which calculates the outputs to the bus
-    distNode.input_to_update(0, distInName, true);
-    distNode.output_from_update(0, distOutName);
+    distNode.input_to_block(0, distInName, true);
+    distNode.output_from_block(0, distOutName);
 
     connect(thisBusNode.port(busOutName), distNode.port(distInName));
     connect(distNode.port(distOutName), thisBusNode.port(busInName));
@@ -366,12 +366,12 @@ def POWERNET_network_from_csv_multibus(string filename, double timeStep, string 
 
   // Create distribution node
   var distNode := new_node(distName);
-  distNode.add_update(0, timeStep);
+  distNode.add_block(0, timeStep);
 
   // Create multi-bus node
   var busNode := new_node(busName);
-  busNode.add_update(0, timeStep);  // From users -> grid
-  busNode.add_update(1, timeStep);  // From grid -> users
+  busNode.add_block(0, timeStep);  // From users -> grid
+  busNode.add_block(1, timeStep);  // From grid -> users
   busNode.need_updateX(false);
 
   // Loop through the bus definitions and create the bus nodes
@@ -393,8 +393,8 @@ def POWERNET_network_from_csv_multibus(string filename, double timeStep, string 
     busNode.add_input(busInName);
     busNode.add_output(busOutName);
 
-    busNode.output_from_update(0, busOutName);
-    busNode.input_to_update(1, busInName, true);
+    busNode.output_from_block(0, busOutName);
+    busNode.input_to_block(1, busInName, true);
 
     // Add the bus input and output for this bus on the grid node
     var distInName = "Vfrom" + thisBusName;
@@ -403,8 +403,8 @@ def POWERNET_network_from_csv_multibus(string filename, double timeStep, string 
     distNode.add_output(distOutName);
 
     // The inputs from bus are fed directly to the distribution node's computation, which calculates the outputs to the bus
-    distNode.input_to_update(0, distInName, true);
-    distNode.output_from_update(0, distOutName);
+    distNode.input_to_block(0, distInName, true);
+    distNode.output_from_block(0, distOutName);
 
     connect(busNode.port(busOutName), distNode.port(distInName));
     connect(distNode.port(distOutName), busNode.port(busInName));
@@ -416,8 +416,8 @@ def POWERNET_network_from_csv_multibus(string filename, double timeStep, string 
 	busOutName = "VtU${thisBusName}_${userIdx}";
 	busNode.add_input(busInName);
 	busNode.add_output(busOutName);
-	busNode.input_to_update(0, busInName, true);
-	busNode.output_from_update(1, busOutName);
+	busNode.input_to_block(0, busInName, true);
+	busNode.output_from_block(1, busOutName);
       }
     }
   }

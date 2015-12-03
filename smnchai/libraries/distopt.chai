@@ -28,17 +28,17 @@ def DISTOPT_admm (int nNodes, string masterName, string localPrefix, double time
   var aggregator := new_node(masterName);
   aggregator.need_updateX(false);
   aggregator.add_output("cmd");  // command port to control the local nodes
-  aggregator.add_update(0, timeStep);
-  aggregator.output_from_update(0, "cmd");
-  aggregator.add_update(1, 0);
-  aggregator.output_from_update(1, "cmd");
+  aggregator.add_block(0, timeStep);
+  aggregator.output_from_block(0, "cmd");
+  aggregator.add_block(1, 0);
+  aggregator.output_from_block(1, "cmd");
 
   for (auto i = 1; i <= nNodes; ++i) {
     // Create the local controller node
     var ctrl := node(["name" : localPrefix + to_string(i),
 		     "inputs" : ["cmd", "Gamma", "delta", "x"],
 		     "outputs" : ["u", "U"],
-		     "updates" : [["sampling": timeStep,
+		     "blocks" : [["sampling": timeStep,
 				   "inputs" : ["cmd", "Gamma", "delta", "x"],
 				   "outputs" : ["U", "u"]]]
 		     ], false);
@@ -58,10 +58,10 @@ def DISTOPT_admm (int nNodes, string masterName, string localPrefix, double time
     aggregator.add_output(di);
     aggregator.add_input(Ui);
 
-    aggregator.output_from_update(0, Gi);
-    aggregator.output_from_update(0, di);
-    aggregator.output_from_update(1, Gi);
-    aggregator.output_from_update(1, di);
+    aggregator.output_from_block(0, Gi);
+    aggregator.output_from_block(0, di);
+    aggregator.output_from_block(1, Gi);
+    aggregator.output_from_block(1, di);
 
     // Connect the ports between aggregator - local
     connect(aggregator.port(Gi), ctrl.port("Gamma"));

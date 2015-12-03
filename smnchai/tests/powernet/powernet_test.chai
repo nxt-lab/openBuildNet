@@ -18,7 +18,7 @@ var power_lausanne = POWERNET_subnetwork(["bus1", "bus2"], 1*second, false);
 var bus1 = node(["name": "bus1",
 		 "inputs": ["PQBldg", "PEfromSolar", "VfromGrid"],
 		 "outputs": ["PQtoSolar", "VtoGrid"],
-		 "updates": [["sampling": 1*second,
+		 "blocks": [["sampling": 1*second,
 			      "inputs": ["PQBldg", "PEfromSolar"],
 			      "outputs": ["VtoGrid"]],
 			     ["sampling": 1*second,
@@ -31,7 +31,7 @@ bus1.implement(power_lausanne["buses"]["bus1"]);
 var bus2 = node(["name": "bus2",
 		 "inputs": ["PQBldg", "VfromGrid"],
 		 "outputs": ["VtoGrid"],
-		 "updates": [["sampling": 1*second,
+		 "blocks": [["sampling": 1*second,
 			      "inputs": ["PQBldg"],
 			      "outputs": ["VtoGrid"]]]
 		 ]);
@@ -40,14 +40,14 @@ bus2.implement(power_lausanne["buses"]["bus2"]);
 // Add some user nodes and connect them to buses
 var building1 = node(["name": "Bldg1",
 		      "outputs": ["PQ"],
-		      "updates": [["sampling": 1*second, "outputs": ["PQ"]]
+		      "blocks": [["sampling": 1*second, "outputs": ["PQ"]]
 				  ]
 		      ]);
 
 var solar = node(["name": "Solar",
 		  "inputs": ["PQ"],
 		  "outputs": ["PE"],
-		  "updates": [["sampling": 1*second, "outputs": ["PE"]]]
+		  "blocks": [["sampling": 1*second, "outputs": ["PE"]]]
 		  ]);
 
 connect(building1.port("PQ"), bus1.port("PQBldg"));
@@ -56,7 +56,7 @@ connect(bus1.port("PQtoSolar"), solar.port("PQ"));
 
 var building2 = node(["name": "Bldg2",
 		      "outputs": ["PQ"],
-		      "updates": [["sampling": 1*second, "outputs": ["PQ"]]
+		      "blocks": [["sampling": 1*second, "outputs": ["PQ"]]
 				  ]
 		      ]);
 

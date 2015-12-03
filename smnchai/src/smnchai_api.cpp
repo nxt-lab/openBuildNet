@@ -262,7 +262,7 @@ OBNsmn::YARP::OBNNodeYARP* SMNChai::Node::create_yarp_node(OBNsmn::YARP::YARPPor
     // Configure all update types in this node
     // Note that time values are stored as real numbers of microseconds, which must be converted to integer values in time unit
     for (auto myupdate = m_updates.begin(); myupdate != m_updates.end(); ++myupdate) {
-        p_node->setUpdateType(myupdate->first, ws.get_time_value(myupdate->second));
+        p_node->setUpdateType(myupdate->first, ws.get_time_value(myupdate->second.sampling_time));
     }
     
     return p_node;
@@ -276,7 +276,7 @@ OBNsmn::MQTT::OBNNodeMQTT* SMNChai::Node::create_mqtt_node(OBNsmn::MQTT::MQTTCli
     // Configure all update types in this node
     // Note that time values are stored as real numbers of microseconds, which must be converted to integer values in time unit
     for (auto myupdate = m_updates.begin(); myupdate != m_updates.end(); ++myupdate) {
-        p_node->setUpdateType(myupdate->first, ws.get_time_value(myupdate->second));
+        p_node->setUpdateType(myupdate->first, ws.get_time_value(myupdate->second.sampling_time));
     }
     
     return p_node;
@@ -368,7 +368,7 @@ void SMNChai::Node::add_update(unsigned int t_id, double t_period) {
     }
     
     // Now it's ok to add the update
-    m_updates.emplace(t_id, t_period);
+    m_updates.emplace(t_id, BlockDef(t_period));
 }
 
 
@@ -412,6 +412,21 @@ void SMNChai::Node::output_from_update(unsigned int t_id, const std::string &t_p
     }
     
     it->second.m_mask |= (1 << t_id);
+}
+
+void SMNChai::Node::add_internal_dependency(unsigned int t_idsrc, unsigned int t_idtgt) {
+    // Check that IDs are valid and already exist
+    if (t_idsrc == t_idtgt) {
+        throw smnchai_exception("In add_internal_dependency, a block cannot depend on itself (self-loop).");
+    }
+    if (t_idsrc > OBNsim::MAX_UPDATE_INDEX || m_updates.count(t_idsrc) == 0) {
+        throw smnchai_exception("In add_internal_dependency, source block ID=" + std::to_string(t_idsrc) + " on node '" + m_name + "' is invalid or not existing.");
+    }
+    if (t_idtgt > OBNsim::MAX_UPDATE_INDEX || m_updates.count(t_idtgt) == 0) {
+        throw smnchai_exception("In add_internal_dependency, target block ID=" + std::to_string(t_idtgt) + " on node '" + m_name + "' is invalid or not existing.");
+    }
+
+    m_updates.at(t_idtgt).dependencies.insert(t_idsrc);    // Target block depends on source blocks
 }
 
 
@@ -737,6 +752,22 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc, SMNChai::SMNC
         {
             //std::cout << "Dependency from " << src_node.second << " with mask " << src_mask << " to " << tgt_node.second << " with mask " << tgt_mask << std::endl;
             nodeGraph->addDependency(src_node.index, tgt_node.index, src_mask, tgt_mask);
+        }
+    }
+    
+    // Set internal dependencies between blocks / updates of the same node
+    for (auto& mynode: m_nodes) {
+        auto mynodeid = mynode.second.index;
+        for (auto& myupdate: mynode.second.node.m_updates) {
+            if (!myupdate.second.dependencies.empty()) {
+                // Compute the source mask (all blocks that this block depend on)
+                OBNsim::updatemask_t src_mask = 0;
+                for (unsigned int src: myupdate.second.dependencies) {
+                    src_mask |= (1 << src);
+                }
+                // Create the dependency link
+                nodeGraph->addDependency(mynodeid, mynodeid, src_mask, 1 << myupdate.first);
+            }
         }
     }
 

@@ -1,3 +1,6 @@
+// In this test, some nodes use Yarp for communication with the SMN while the others use MQTT.
+// The communication between ports is by default carried out in MQTT, but Yarp can be selected.
+
 //run_simulation(false);
 settings.time_unit(millisecond);
 settings.final_time(10*second);
@@ -8,7 +11,7 @@ var ctrl_comm = "mqtt";			// Set the communication of the controller
 var motordef = ["name" : "motor",
 		"inputs" : ["vol"],
 		"outputs" : ["v"],
-		"updates" : [["sampling" : 100*millisecond, "inputs" : ["vol" : false], "outputs" : ["v"]]
+		"blocks" : [["sampling" : 100*millisecond, "inputs" : ["vol" : false], "outputs" : ["v"]]
 			     ]
 		];
 var motor = node(motordef);
@@ -16,14 +19,20 @@ var motor = node(motordef);
 var ctrldef = ["name" : "ctrl",
 	       "inputs" : ["v", "sp"],
 	       "outputs" : ["u"],
-	       "updates" : [["sampling" : 100*millisecond, "inputs" : ["v", "sp"], "outputs" : ["u"]]
+	       "blocks" : [["sampling" : 100*millisecond, "inputs" : ["v", "sp"], "outputs" : ["u"]]
 			    ]
 	       ];
 var ctrl = node(ctrldef, false);  // will add the node manually later
-ctrl.set_comm(ctrl_comm);	 //
+ctrl.set_comm(ctrl_comm);	 // Set the communication explicitly for this node
 add_node(ctrl);
 
-var sp = node(["name" : "sp", "outputs" : ["sp"], "updates" : [update("main", 0, 2*second, [], "sp")]], false);
+var sp = node(["name" : "sp",
+			   "outputs" : ["sp"],
+			   "blocks" : [["name": "main",
+							"id": 0,
+							"sampling": 2*second,
+							"outputs": ["sp"]]]
+			   ], false);
 sp.need_updateX(false);
 add_node(sp);
 

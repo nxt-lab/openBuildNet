@@ -1,4 +1,4 @@
-// source2 node in ONS (OBN Node Script), to be run with the OBN scriptable node program
+// receiver node in ONS (OBN Node Script), to be run with the OBN scriptable node program
 
 // IMPORTANT:
 // A function can't access top-level variables unless they are global variables.
@@ -16,40 +16,58 @@
 // Binding, and passing arguments to functions in general, is done via references; therefore any changes to the arguments made by the function are directly applied to the top-level variables (unless the passed arguments are constants). In other words, everything will work as expected, as if the function has direct access to the top-level variables.
 
 set_comm_mqtt("tcp://localhost:1883");
-set_node_name("source2");
+set_node_name("receiver");
 set_workspace("test4");
 // set_timeout(10);	// you can set timeout for the node (in seconds)
 create_node();
 
 // The ports
-var y1 = new_output_double("y1");
-var y2 = new_output_double_vector("y2");
-
-var v = MatrixD(2,1, [1.0, 2.0]);
-print(v);
+var u1 = new_input_double_strict("u1");
+var u2 = new_input_double_vector_strict("u2");
+var u3 = new_input_double_strict("u3");
 
 // Define the callback functions
 // Here we use the second solution to allow functions to use top-level variables, i.e. function binding
-def my_updatey(y1, y2, v) {
-	y1.set(-2.0);
-	y2.set(v);
-	v = v + 1;	// Here we make changes to v, which is the original top-level variable bound to this function
+def simple_print_update(string s) {
+	print(s);
 }
+
+callback_y(0, bind(simple_print_update, "First update"));
+callback_y(1, bind(simple_print_update, "Second update"));
+
+def printInputs(u2) {
+	print("At ${current_time_s()}");
+	if (u2.pending()) {
+		print("u2:");
+		while (u2.pending()) {
+			print(u2.pop().transpose());
+		}
+		print("");
+	}
+}
+
+callback_x(0, bind(printInputs, u2));
+callback_x(1, bind(printInputs, u2));
+
+def msgrcv_callback(string uname, u) {
+	if (u.pending()) {
+		print("${uname}: ${u.pop()}");
+	}
+}
+
+u1.callback_msgrcv(bind(msgrcv_callback, "u1", u1));
+u3.callback_msgrcv(bind(msgrcv_callback, "u3", u3));
 
 def my_init() {
-	print("Init");
+	print("At ${current_time_s()} INIT");
 }
 
-def my_term(v) {
-	print("Term");
-	print(current_time_s());
-	print(current_wallclock());
-	print(v);	// We print v, which is the top-level variable, which was changed by my_updatey()
+def my_term() {
+	print("At ${current_time_s()} TERMINATED");
 }
 
 // Set the callbacks
 callback_init(my_init);
-callback_term(bind(my_term,v));
-callback_y(0, bind(my_updatey,y1,y2,v));
+callback_term(my_term);
 
 // After the script file ends, if the node was created (by create_node()), the node will be run

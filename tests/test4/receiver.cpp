@@ -24,6 +24,16 @@
 using namespace OBNnode;
 
 #define MAIN_UPDATE 0
+#define SECOND_UPDATE 1
+
+// Simple callbacks
+void first_update() {
+    std::cout << "First update\n";
+}
+
+void second_update() {
+    std::cout << "Second update\n";
+}
 
 class ReceiverNode: public MQTTNode {
     MQTTInput<OBN_PB, double, true> m_u1;
@@ -56,7 +66,8 @@ public:
         }
         
         // Add the update to print u2
-        success = success && (this->addUpdate(MAIN_UPDATE, NULL_UPDATE_CALLBACK, std::bind(&ReceiverNode::printInputs, this)) >= 0);
+        success = success && (this->addUpdate(MAIN_UPDATE, &first_update, std::bind(&ReceiverNode::printInputs, this)) >= 0);
+        success = success && (this->addUpdate(SECOND_UPDATE, &second_update, std::bind(&ReceiverNode::printInputs, this)) >= 0);
         
         // Set up event for u1 to print its input (directly on communication thread)
         m_u1.setMsgRcvCallback([this](){

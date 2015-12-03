@@ -15,6 +15,7 @@
 #include <string>
 #include <map>
 #include <forward_list>
+#include <unordered_set>
 //#include <utility>      // std::pair
 #include <limits>       // limits of integers (time, etc.)
 #include <iostream>
@@ -111,8 +112,15 @@ namespace SMNChai {
         /** Set of data ports. */
         std::map<std::string, CommProtocol> m_dataports;
         
+        /** Details of a block. */
+        struct BlockDef {
+            double sampling_time{0.0};
+            std::unordered_set<unsigned int> dependencies;  // Set of other blocks on which this block depends
+            BlockDef(double t): sampling_time(t) { }
+        };
+        
         /** Set of update types: map from unique int ID to sampling period (in microseconds). */
-        std::map<unsigned int, double> m_updates;
+        std::map<unsigned int, BlockDef> m_updates;
         
         /** The communication protocol used for this node's GC port. */
         CommProtocol m_comm_protocol = COMM_DEFAULT;
@@ -190,6 +198,14 @@ namespace SMNChai {
          \exception smnchai_exception an error happens, e.g. ID is invalid (out of range), ID not exists, port not exists, etc.
          */
         void output_from_update(unsigned int t_id, const std::string &t_port);
+        
+        /** /brief Add an internal dependency between two blocks / updates of this node.
+         This method specifies that a given block depends on the computation outputs of another block of this same node.
+         \param t_idsrc The ID of the source block, on whose outputs the other (target) block depends.
+         \param t_idtgt The ID of the target block, which depends on the other (source) block.
+         \exception smnchai_exception an error happens, e.g. block IDs are invalid.
+         */
+        void add_internal_dependency(unsigned int t_idsrc, unsigned int t_idtgt);
 
         /** \brief Return a PortInfo object for connecting ports.
          \param t_port Port name

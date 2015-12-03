@@ -69,6 +69,11 @@ public:
             std::cerr << "Error while adding velocity output." << std::endl;
         }
         
+#ifdef OBNNODE_COMM_MQTT
+        voltage.set_mqtt_client(&mqtt_client);
+        velocity.set_mqtt_client(&mqtt_client);
+#endif
+        
         // Add the update
         success = success && (addUpdate(MAIN_UPDATE, std::bind(&Motor::doMainUpdate, this), std::bind(&Motor::doStateUpdate, this)) >= 0);
         
@@ -127,6 +132,10 @@ int main() {
 #ifdef OBNNODE_COMM_MQTT
     mqtt_client.setServerAddress(MQTT_SERVER_ADDRESS);
     mqtt_client.setClientID("test2_motor");
+    if (!mqtt_client.initialize()) {
+        std::cerr << "Error while initializing MQTT" << std::endl;
+        return 10;
+    }
     if (!mqtt_client.start()) {
         std::cerr << "Error while connecting to MQTT" << std::endl;
         return 10;

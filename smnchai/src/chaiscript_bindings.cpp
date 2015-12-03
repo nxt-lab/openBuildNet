@@ -34,13 +34,14 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, SMNChai::WorkSpace &ws) {
     chai.add(fun(&Node::add_dataport), "add_dataport");
     chai.add(fun([](Node& node, const std::string &name){ return node.add_dataport(name); }), "add_dataport");
     
-    chai.add(fun(&Node::add_update), "add_update");
+    chai.add(fun(&Node::add_update), "add_block");
     chai.add(fun(&Node::set_need_updateX), "need_updateX");
     chai.add(fun(&Node::set_comm_protocol), "set_comm");   // a string of the name of the communication protocol: default, mqtt, yarp
     chai.add(fun(&Node::get_comm_protocol), "get_comm");   // returns a string of the name of the communication protocol: default, mqtt, yarp
     
-    chai.add(fun(&Node::input_to_update), "input_to_update");
-    chai.add(fun(&Node::output_from_update), "output_from_update");
+    chai.add(fun(&Node::input_to_update), "input_to_block");
+    chai.add(fun(&Node::output_from_update), "output_from_block");
+    chai.add(fun(&Node::add_internal_dependency), "add_internal_dependency");
 
     // PortInfo from a node: used for connecting ports, and methods to access it
     chai.add(user_type<SMNChai::PortInfo>(), "PortInfo");

@@ -42,7 +42,7 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 
   // Create distribution node
   var distNode = new_node(distName);
-  distNode.add_update(0, timeStep);
+  distNode.add_block(0, timeStep);
 
   // Loop through the Map busdef and create bus and/or user nodes
   var thisBusName = "";  // name of the current bus
@@ -102,8 +102,8 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
     } else {
       // Virtual = false, the bus node is created with a virtual user node
       thisBusNode = new_node(thisBusName);
-      thisBusNode.add_update(0, timeStep);  // From users -> bus -> distribution
-      thisBusNode.add_update(1, timeStep);  // From distribution -> bus and maybe to users
+      thisBusNode.add_block(0, timeStep);  // From users -> bus -> distribution
+      thisBusNode.add_block(1, timeStep);  // From distribution -> bus and maybe to users
     }
 
     // Create the ports between the bus node and the distribution node
@@ -125,12 +125,12 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
       distNode.add_output(distOutName);
 
       // The inputs from bus are fed directly to the distribution node's computation, which calculates the outputs to the bus
-      distNode.input_to_update(0, distInName, true);
-      distNode.output_from_update(0, distOutName);
+      distNode.input_to_block(0, distInName, true);
+      distNode.output_from_block(0, distOutName);
 
       if (!thisBusVirtual) {
-	thisBusNode.input_to_update(1, busInName, true);
-	thisBusNode.output_from_update(0, busOutName);
+	thisBusNode.input_to_block(1, busInName, true);
+	thisBusNode.output_from_block(0, busOutName);
       }
 
       connect(thisBusNode.port(busOutName), distNode.port(distInName));
@@ -147,12 +147,12 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	distNode.add_input(distInName);
 	distNode.add_output(distOutName);
 
-	distNode.input_to_update(0, distInName, true);
-	distNode.output_from_update(0, distOutName);
+	distNode.input_to_block(0, distInName, true);
+	distNode.output_from_block(0, distOutName);
 
 	if (!thisBusVirtual) {
-	  thisBusNode.input_to_update(1, busInName, true);
-	  thisBusNode.output_from_update(0, busOutName);
+	  thisBusNode.input_to_block(1, busInName, true);
+	  thisBusNode.output_from_block(0, busOutName);
 	}
 
 	connect(thisBusNode.port(busOutName), distNode.port(distInName));
@@ -169,12 +169,12 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	distNode.add_input(distInName);
 	distNode.add_output(distOutName);
 
-	distNode.input_to_update(0, distInName, true);
-	distNode.output_from_update(0, distOutName);
+	distNode.input_to_block(0, distInName, true);
+	distNode.output_from_block(0, distOutName);
 
 	if (!thisBusVirtual) {
-	  thisBusNode.input_to_update(1, busInName, true);
-	  thisBusNode.output_from_update(0, busOutName);
+	  thisBusNode.input_to_block(1, busInName, true);
+	  thisBusNode.output_from_block(0, busOutName);
 	}
 
 	connect(thisBusNode.port(busOutName), distNode.port(distInName));
@@ -191,12 +191,12 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	distNode.add_input(distInName);
 	distNode.add_output(distOutName);
 
-	distNode.input_to_update(0, distInName, true);
-	distNode.output_from_update(0, distOutName);
+	distNode.input_to_block(0, distInName, true);
+	distNode.output_from_block(0, distOutName);
 
 	if (!thisBusVirtual) {
-	  thisBusNode.input_to_update(1, busInName, true);
-	  thisBusNode.output_from_update(0, busOutName);
+	  thisBusNode.input_to_block(1, busInName, true);
+	  thisBusNode.output_from_block(0, busOutName);
 	}
 
 	connect(thisBusNode.port(busOutName), distNode.port(distInName));
@@ -213,12 +213,12 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	distNode.add_input(distInName);
 	distNode.add_output(distOutName);
 
-	distNode.input_to_update(0, distInName, true);
-	distNode.output_from_update(0, distOutName);
+	distNode.input_to_block(0, distInName, true);
+	distNode.output_from_block(0, distOutName);
 
 	if (!thisBusVirtual) {
-	  thisBusNode.input_to_update(1, busInName, true);
-	  thisBusNode.output_from_update(0, busOutName);
+	  thisBusNode.input_to_block(1, busInName, true);
+	  thisBusNode.output_from_block(0, busOutName);
 	}
 
 	connect(thisBusNode.port(busOutName), distNode.port(distInName));
@@ -238,7 +238,7 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	// From user to bus, always exist
 	busInName = thisBusVectorName + "fromUser";
 	thisBusNode.add_input(busInName);
-	thisBusNode.input_to_update(0, busInName, true);
+	thisBusNode.input_to_block(0, busInName, true);
 	
 	distOutName = thisBusVectorName + "toBus";
 	thisUserNode.add_output(distOutName);
@@ -249,7 +249,7 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	if (!thisBusStrict) {
 	  busOutName = thisBusVectorName + "toUser";
 	  thisBusNode.add_output(busOutName);
-	  thisBusNode.output_from_update(1, busOutName);
+	  thisBusNode.output_from_block(1, busOutName);
 	  
 	  distInName = thisBusVectorName + "fromBus";
 	  thisUserNode.add_input(distInName);
@@ -260,7 +260,7 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	  // From user to bus, always exist
 	  busInName = "PfromUser";
 	  thisBusNode.add_input(busInName);
-	  thisBusNode.input_to_update(0, busInName, true);
+	  thisBusNode.input_to_block(0, busInName, true);
 	  
 	  distOutName = "PtoBus";
 	  thisUserNode.add_output(distOutName);
@@ -271,7 +271,7 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	  if (!thisBusStrict) {
 	    busOutName = "PtoUser";
 	    thisBusNode.add_output(busOutName);
-	    thisBusNode.output_from_update(1, busOutName);
+	    thisBusNode.output_from_block(1, busOutName);
 	    
 	    distInName = "PfromBus";
 	    thisUserNode.add_input(distInName);
@@ -282,7 +282,7 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	  // From user to bus, always exist
 	  busInName = "QfromUser";
 	  thisBusNode.add_input(busInName);
-	  thisBusNode.input_to_update(0, busInName, true);
+	  thisBusNode.input_to_block(0, busInName, true);
 	  
 	  distOutName = "QtoBus";
 	  thisUserNode.add_output(distOutName);
@@ -293,7 +293,7 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	  if (!thisBusStrict) {
 	    busOutName = "QtoUser";
 	    thisBusNode.add_output(busOutName);
-	    thisBusNode.output_from_update(1, busOutName);
+	    thisBusNode.output_from_block(1, busOutName);
 	    
 	    distInName = "QfromBus";
 	    thisUserNode.add_input(distInName);
@@ -304,7 +304,7 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	  // From user to bus, always exist
 	  busInName = "EfromUser";
 	  thisBusNode.add_input(busInName);
-	  thisBusNode.input_to_update(0, busInName, true);
+	  thisBusNode.input_to_block(0, busInName, true);
 	  
 	  distOutName = "EtoBus";
 	  thisUserNode.add_output(distOutName);
@@ -315,7 +315,7 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	  if (!thisBusStrict) {
 	    busOutName = "EtoUser";
 	    thisBusNode.add_output(busOutName);
-	    thisBusNode.output_from_update(1, busOutName);
+	    thisBusNode.output_from_block(1, busOutName);
 	    
 	    distInName = "EfromBus";
 	    thisUserNode.add_input(distInName);
@@ -326,7 +326,7 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	  // From user to bus, always exist
 	  busInName = "TfromUser";
 	  thisBusNode.add_input(busInName);
-	  thisBusNode.input_to_update(0, busInName, true);
+	  thisBusNode.input_to_block(0, busInName, true);
 	  
 	  distOutName = "TtoBus";
 	  thisUserNode.add_output(distOutName);
@@ -337,7 +337,7 @@ def POWERNET_subnetwork(Map busdef, double timeStep, bool addNodesNow, string di
 	  if (!thisBusStrict) {
 	    busOutName = "TtoUser";
 	    thisBusNode.add_output(busOutName);
-	    thisBusNode.output_from_update(1, busOutName);
+	    thisBusNode.output_from_block(1, busOutName);
 	    
 	    distInName = "TfromBus";
 	    thisUserNode.add_input(distInName);
