@@ -80,6 +80,7 @@ public:
     void doMainUpdate() {
         m_y1 = distribution(generator) * 1.0;
         m_y2 = distribution(generator) * 10.0;
+        //std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     
     /* There are other callbacks for reporting errors, etc. */

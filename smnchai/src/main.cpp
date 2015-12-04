@@ -11,6 +11,7 @@
  */
 
 #include <cstdlib>      // getevn
+#include <signal.h>
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -63,7 +64,8 @@ void show_usage() {
     "  ARGS is an optional list of arguments to the script file.\n";
 }
 
-// Function to shut down the SMN, should be called before exiting
+// Function to shut down the SMN properly
+// should be called before exiting NORMALLY, but not when being terminated unexpectedly
 void shutdown_SMN() {
     // Wait a bit before shutting down so that we won't overload the nameserver (hopefully)
     std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -86,9 +88,29 @@ void shutdown_SMN() {
     google::protobuf::ShutdownProtobufLibrary();
 }
 
+// The main GC thread object once it's created
+// Only use this pointer in special occasions, e.g. in the handler when the program exits unexpectedly
+OBNsmn::GCThread *main_gcthread = nullptr;
+
 void shutdown_communication_threads(OBNsmn::GCThread& gc) {
     gc.simple_thread_terminate = true;
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+}
+
+// The handler called when the program is interrupted unexpectedly (e.g. Ctrl-C)
+static void interrupt_signal_handler(int signal_value) {
+    std::cout << "Interrupted by user or system." << std::endl;
+    
+    // If the GC is available, try to stop it immediately
+    if (main_gcthread) {
+        std:: cout << "Try to terminate the simulation system cleanly..." << std::endl;
+        main_gcthread->setSysRequest(OBNsmn::GCThread::SYSREQ_TERMINATE);
+        std::this_thread::sleep_for(std::chrono::seconds(2));   // Wait a bit to let GC handle the request
+        
+        shutdown_communication_threads(*main_gcthread);
+    }
+    
+    // We won't delete the objects, etc., just let the program exit abnormally
 }
 
 
@@ -125,43 +147,58 @@ int main(int argc, const char* argv[]) {
         script_args.emplace_back(argv[i]);
     }
     
-    // The Global clock thread
-    OBNsmn::GCThread gc;
-    
-    // Run Chaiscript to load the network
-    auto load_script_result = SMNChai::smnchai_loadscript(script_file.string(), script_args, script_file.stem().string(), gc, comm_objects);
-
-    if (!load_script_result.first) {
-        shutdown_SMN();
-        return load_script_result.second;
+    {
+        // Set the handler for unexpected termination
+        struct sigaction action;
+        action.sa_handler = interrupt_signal_handler;
+        action.sa_flags = 0;
+        sigemptyset (&action.sa_mask);
+        sigaction (SIGINT, &action, NULL);
+        sigaction (SIGTERM, &action, NULL);
     }
     
-    // Done with running Chaiscript to load the network, now we only need to run the simulation
-    std::cout << "Done constructing the network.\nStart simulation...\n";
-    
-    // Start running the GC thread
-    if (!gc.startThread()) {
-        std::cerr << "ERROR: could not start GC thread. Shutting down..." << std::endl;
+    {
+        // The Global clock thread
+        OBNsmn::GCThread gc;
+        main_gcthread = &gc;
         
-        // As the communication thread(s) already started, we try to signal them to stop
-        shutdown_communication_threads(gc);
+        // Run Chaiscript to load the network
+        auto load_script_result = SMNChai::smnchai_loadscript(script_file.string(), script_args, script_file.stem().string(), gc, comm_objects);
         
-        if (comm_objects.allFinished()) {
-            // Good
+        if (!load_script_result.first) {
             shutdown_SMN();
-            return 1;
-        } else {
-            // Crap, we have to terminate
-            shutdown_SMN();
-            std::terminate();
+            return load_script_result.second;
         }
+        
+        // Done with running Chaiscript to load the network, now we only need to run the simulation
+        std::cout << "Done constructing the network.\nStart simulation...\n";
+        
+        // Start running the GC thread
+        if (!gc.startThread()) {
+            std::cerr << "ERROR: could not start GC thread. Shutting down..." << std::endl;
+            
+            // As the communication thread(s) already started, we try to signal them to stop
+            shutdown_communication_threads(gc);
+            
+            if (comm_objects.allFinished()) {
+                // Good
+                shutdown_SMN();
+                return 1;
+            } else {
+                // Crap, we have to terminate
+                shutdown_SMN();
+                std::terminate();
+            }
+        }
+        
+        // The main thread will only wait until the GC thread stops
+        
+        //Join the threads with the main thread
+        gc.joinThread();
+        comm_objects.joinThreads();
+        
+        main_gcthread = nullptr;    // No more access to the GC
     }
-    
-    // The main thread will only wait until the GC thread stops
-    
-    //Join the threads with the main thread
-    gc.joinThread();
-    comm_objects.joinThreads();
     
     //////////////////////
     // Clean up before exiting
