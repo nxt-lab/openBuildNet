@@ -21,6 +21,8 @@
 #include "nodechai_mqtt.h"
 #endif
 
+#include "chaiscript_io.h"
+
 using namespace chaiscript;
 
 Eigen::IOFormat EigenMatlabFmt(Eigen::StreamPrecision, 0, ", ", ";\n", "", "", "[", "]");
@@ -355,6 +357,14 @@ namespace NodeChai {
         return m;
     }
     
+    /** API bindings for general IO utility functions. */
+    std::shared_ptr<chaiscript::Module> nodechai_api_utils_io(std::shared_ptr<chaiscript::Module> m) {
+        m->add(fun(&NodeChai::extras::load_csv_into_chai), "load_csv_file");
+        NodeChai::extras::bind_CSVFileWriter(m);
+        
+        return m;
+    }
+    
     /** Add the API bindings after a node has been created, e.g. to create inputs, outputs, etc. */
     std::shared_ptr<chaiscript::Module> create_bindings_after_node(std::shared_ptr<chaiscript::Module> m = std::make_shared<chaiscript::Module>()) {
         if (!global_variables.node_created || !global_variables.node_factory) {
@@ -376,6 +386,10 @@ namespace NodeChai {
         m->add(fun(&NodeFactory::callback_term, pNF), "callback_term");
         m->add(fun(&NodeFactory::callback_x, pNF), "callback_x");
         m->add(fun(&NodeFactory::callback_y, pNF), "callback_y");
+        
+        // General methods to control the simulation
+        m->add(fun(&OBNnode::NodeBase::stopSimulation, pNode), "stop_simulation");
+        m->add(fun(&OBNnode::NodeBase::requestStopSimulation, pNode), "request_stop_simulation");
         
         // Functions to get the current simulation time in different units
         m->add(fun(&OBNnode::NodeBase::currentSimulationTime<std::chrono::seconds>, pNode), "current_time_s"); // in seconds
@@ -433,6 +447,7 @@ namespace NodeChai {
         ////// Common, generic purpose functions
         nodechai_api_utils_math(m);
         nodechai_api_eigen(m);
+        nodechai_api_utils_io(m);
         
         ////// Functions to set properties before creating a node
         // Some of these can only be used before the node is created

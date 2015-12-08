@@ -64,13 +64,16 @@ set(NODECHAI_SRCFILES
 	chaiscript_stdlib.cpp
 	chaiscript_bindings.cpp
 	chaiscript_bindings_eigen.cpp
+	chaiscript_io.cpp
 	nodechai.cpp
+	../thirdparties/csvparser/csvparser.c
 	main.cpp
 )
 
 set(NODECHAI_HDRFILES
 	chaiscript_stdlib.h
 	chaiscript_bindings.h
+	chaiscript_io.h
 	nodechai.h
 )
 

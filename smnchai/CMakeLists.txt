@@ -153,7 +153,7 @@ set(OBNSMN_CORE_HDRFILES
 set(SMNCHAI_SRCFILES
 	src/smnchai_api.cpp
 	src/smnchai_export.cpp
-	src/csvparser.c
+	../thirdparties/csvparser/csvparser.c
 	src/smnchai_utils.cpp
 	src/smnchai_loadscript.cpp
 	src/chaiscript_stdlib.cpp
@@ -164,7 +164,6 @@ set(SMNCHAI_SRCFILES
 
 set(SMNCHAI_HDRFILES
 	include/smnchai_api.h
-	include/csvparser.h
 	include/smnchai_utils.h
 	include/smnchai.h
 	include/chaiscript_stdlib.h

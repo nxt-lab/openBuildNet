@@ -10,7 +10,7 @@
 
 #include <cstdlib>
 #include <smnchai_api.h>
-#include <csvparser.h>  // Read CSV files
+#include <csvparser/csvparser.h>  // Read CSV files
 #include <smnchai_utils.h>
 
 #include <chaiscriptextras/math.hpp>

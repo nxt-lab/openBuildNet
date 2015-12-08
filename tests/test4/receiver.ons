@@ -15,6 +15,9 @@
 // The general syntax for bind in Chaiscript is: bind(func,arg1,arg2,...) where arg* is either an object or _; the latter causes the corresponding argument in func to be an argument in the new function.
 // Binding, and passing arguments to functions in general, is done via references; therefore any changes to the arguments made by the function are directly applied to the top-level variables (unless the passed arguments are constants). In other words, everything will work as expected, as if the function has direct access to the top-level variables.
 
+// Create a CSV file to write some inputs into; this tests a simple recorder
+GLOBAL recorder = CSVWriter("output.csv");
+
 set_comm_mqtt("tcp://localhost:1883");
 set_node_name("receiver");
 set_workspace("test4");
@@ -40,7 +43,10 @@ def printInputs(u2) {
 	if (u2.pending()) {
 		print("u2:");
 		while (u2.pending()) {
-			print(u2.pop().transpose());
+			var u2data = u2.pop().transpose();
+			print(u2data);
+			recorder.write(u2data);
+			recorder.new_row();
 		}
 		print("");
 	}
