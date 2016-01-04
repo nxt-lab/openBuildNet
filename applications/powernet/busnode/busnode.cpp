@@ -923,7 +923,7 @@ int main(int argc, char **argv) {
     
     // The bus node object
     std::unique_ptr<NodeBase> pbus;
-    bool success;
+    bool success = false;
     
 #ifdef OBNNODE_COMM_YARP
     if (!mqtt_used) {

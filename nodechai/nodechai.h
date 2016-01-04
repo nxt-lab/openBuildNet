@@ -14,6 +14,7 @@
 #include <memory>
 #include <functional>
 #include <unordered_map>
+#include <map>
 #include <obnnode.h>
 #include "chaiscript_bindings.h"
 
@@ -206,6 +207,18 @@ namespace NodeChai {
             return false;
         }
     };
+    
+    
+    /** Command-line arguments can be given to the node script in the form of named arguments:
+                keyword=value
+     This function processes the command-line arguments to the program and constructs a map of key-value pairs.
+     It will throw an exception (nodechai_exception) if there is any invalid argument.
+     Note that the first command-line argument must be the script file name and it is returned by this function; if it's nullptr, the script file is not provided.
+     In Chaiscript, to convert the string value to other types, use to_*, e.g., to_double(), to_int()...
+     \exception nodechai_exception
+    */
+    const char* process_commandline_args(int argc, char **argv, std::map<std::string, chaiscript::Boxed_Value>& argmap);
+
 }
 
 #endif

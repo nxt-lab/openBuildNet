@@ -92,7 +92,7 @@ namespace chaiscript {
                         int k = 0;
                         for (auto ri = 0; ri < r; ++ri) {
                             for (auto ci = 0; ci < c; ++ci) {
-                                v(ri, ci) = chaiscript::boxed_cast<Scalar>(cv[k++]);
+                                v(ri, ci) = chaiscript::Boxed_Number(cv[k++]).get_as<Scalar>();
                                 if (k == n) {
                                     break;
                                 }

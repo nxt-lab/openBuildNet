@@ -120,7 +120,7 @@ private:
 public:
     
     // calculate the values to send to the grid node
-    virtual bool calculateV2Grid(typename BaseCLS::Output2GridPort::ValueType &output, OBNnode::simtime_t t) {
+    virtual bool calculateV2Grid(typename BaseCLS::Output2GridPort::ValueType &output, OBNnode::simtime_t t) override {
         double curE = NAN, curTheta = NAN;  // Current aggregate values of E and Theta
         
         // Reset variables used in computation
@@ -163,7 +163,7 @@ public:
     virtual void distributeResults(const typename BaseCLS::InputFromGridPort::ValueType &v, OBNnode::simtime_t t) override;
     
     /* Add ports to node, register updates, etc. */
-    virtual bool init(BaseCLS *pnode) {
+    virtual bool init(BaseCLS *pnode) override {
         bool success;
         
         // Add the ports to the node

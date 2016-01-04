@@ -18,7 +18,7 @@
 #endif
 
 #include <exception>
-#include <nodechai.h>
+#include "nodechai.h"
 #include <chaiscript/chaiscript.hpp>
 #include "chaiscript_stdlib.h"
 
@@ -26,10 +26,14 @@ using namespace NodeChai;
 
 void show_usage(char *prog) {
     std::cout << "USAGE:" << std::endl <<
-    prog << " <script_file>" << std::endl <<
+    prog << " <script_file> [key1=value1 [key2=value2 ...]]" << std::endl <<
     R"args(
 where
-  <script_file> is the path to the script file of the node.
+  <script_file> is the path to the script file of the node;
+
+followed by an optional list of named arguments to the node script.
+Each named argument is a key-value pair of the form "key=value".
+The keys must be unique.
 )args";
 }
 
@@ -66,10 +70,11 @@ int main(int argc, char **argv) {
     // Extract the arguments
     //////////////////////////
     
-    const char *script_file = nullptr;        // The script file name
-    if (argc > 1) {
-        script_file = argv[1];
-    }
+    // The map of arguments to the node script
+    std::map<std::string, chaiscript::Boxed_Value> arguments_map;
+    
+    // The script file name
+    const char *script_file = NodeChai::process_commandline_args(argc, argv, arguments_map);
     
     if (!script_file) {
         // Not enough input args
@@ -80,6 +85,9 @@ int main(int argc, char **argv) {
     
     chaiscript::ChaiScript chai(NodeChai::create_chaiscript_stdlib());
     global_variables.chaiscript_engine = &chai;
+    
+    // Add the named arguments to the chai engine as a const map variable
+    chai.add(chaiscript::const_var(&arguments_map), "args");
   
     // Bind the API
     chai.add(NodeChai::create_bindings_before_node());

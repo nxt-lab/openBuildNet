@@ -268,7 +268,7 @@ namespace OBNnode {
          In MQTT this does nothing.
          The port only starts working when an output is connected to it via connect_from_port().
          */
-        virtual bool open(const std::string& full_name) {
+        virtual bool open(const std::string& full_name) override {
             return true;
         }
         
@@ -321,7 +321,7 @@ namespace OBNnode {
          
          In MQTT, this should return the topic of the output port, which can be used to connect it to input ports.
          */
-        virtual std::string fullPortName() const {
+        virtual std::string fullPortName() const override {
             return isValid()?m_node->fullPortName(m_name):"";
         }
         

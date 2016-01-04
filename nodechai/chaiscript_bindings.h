@@ -16,6 +16,7 @@
 namespace chaiscript {
     class Module;
     class ChaiScript;
+    class Boxed_Value;
 }
 
 namespace NodeChai {
