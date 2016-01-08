@@ -35,30 +35,34 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
 {
     // Get the main directory of SMNChai
     boost::filesystem::path smnchai_main_dir;
+    bool smnchai_main_dir_defined = false;
     {
         char *p = getenv(SMNCHAI_ENV_VAR);
         if (p) {
             smnchai_main_dir = p;
+            
+            // Check the path
+            if (!boost::filesystem::exists(smnchai_main_dir) || !boost::filesystem::is_directory(smnchai_main_dir)) {
+                std::cerr << "ERROR: SMNChai main directory is invalid. Please set the environment variable " << SMNCHAI_ENV_VAR << "\n\n";
+                show_usage();
+                return std::make_pair(false, 1);
+            }
+
+            // Construct the library path and check that it exists
+            smnchai_main_dir /= "libraries";
+            if (!boost::filesystem::exists(smnchai_main_dir) || !boost::filesystem::is_directory(smnchai_main_dir)) {
+                std::cerr << "ERROR: SMNChai library directory " << smnchai_main_dir << " does not exist.\nPlease check the environment variable " << SMNCHAI_ENV_VAR << "\n\n";
+                show_usage();
+                return std::make_pair(false, 1);
+            }
+
+            smnchai_main_dir_defined = true;
         } else {
             // Environment variable not available -> use current directory
             smnchai_main_dir = boost::filesystem::current_path();
         }
     }
-    
-    if (!boost::filesystem::exists(smnchai_main_dir) || !boost::filesystem::is_directory(smnchai_main_dir)) {
-        std::cerr << "ERROR: SMNChai main directory is invalid. Please set the environment variable " << SMNCHAI_ENV_VAR << "\n\n";
-        show_usage();
-        return std::make_pair(false, 1);
-    }
-    
-    // Construct the library path and check that it exists
-    smnchai_main_dir /= "libraries";
-    if (!boost::filesystem::exists(smnchai_main_dir) || !boost::filesystem::is_directory(smnchai_main_dir)) {
-        std::cerr << "ERROR: SMNChai library directory " << smnchai_main_dir << " does not exist.\nPlease check the environment variable " << SMNCHAI_ENV_VAR << "\n\n";
-        show_usage();
-        return std::make_pair(false, 1);
-    }
-    
+
     // Check that the standard library exists
     {
         boost::filesystem::path stdlib = smnchai_main_dir;
@@ -71,7 +75,13 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
     }
     
     std::vector<std::string> chai_usepath;
-    chai_usepath.emplace_back(smnchai_main_dir.string() + boost::filesystem::path::preferred_separator);
+    // Always use the current directory
+    chai_usepath.emplace_back(boost::filesystem::current_path().string() + boost::filesystem::path::preferred_separator);
+    
+    // Add the standard library path if it was defined
+    if (smnchai_main_dir_defined) {
+        chai_usepath.emplace_back(smnchai_main_dir.string() + boost::filesystem::path::preferred_separator);
+    }
     //std::cout << chai_usepath[0] << std::endl;
     
 #ifndef SMNCHAI_CHAISCRIPT_STATIC
