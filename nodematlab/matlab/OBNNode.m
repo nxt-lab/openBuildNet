@@ -286,7 +286,8 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
            % callback. This applies to all events that, in the openBuildNet
            % document, are supposed to compute and send out outputs, in
            % particular UPDATE_Y and INIT. In these cases, there is no need
-           % to call sendSync() explicitly.
+           % to call sendSync() explicitly. However, for other events, e.g. port events, this
+           % won't apply and therefore sendSync() needs to be used to send out the values.
            %
            % This function will cause an error if the port doesn't exist,
            % if it's not an appropriate port type, or if the value d is not
@@ -454,6 +455,11 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             % For events that don't support multiple callbacks
             % (e.g. INIT, TERM), when a callback is added, it will
             % replace any existing callback.
+            %
+            % IMPORTANT: only after UPDATE_Y and INIT events do the output ports automatically send
+            % out their values (assigned by method output()). In callbacks for other events,
+            % e.g. UPDATE_X or port events, output ports do not automatically send, therefore they
+            % must be explicitly instructed to do so by calling sendSync().
             
             narginchk(3, inf);
             assert(isscalar(this));
@@ -743,6 +749,23 @@ classdef OBNNode < matlab.mixin.Heterogeneous & handle
             %assert(isscalar(this));
             for k = 1:numel(this)
                 this(k).obnnode_mexfunc_('requestStopSim', this(k).id_);
+            end
+        end
+        
+        function b = processPortEvent(this, timeout)
+        % Wait for and process the next port event (by executing its callback), up until a given
+        % timeout (in seconds, can be non-positive for no timeout).
+        % Returns true if an event has been processed; false otherwise (timeout).
+        % This method can only be called on scalar objects.
+            assert(isscalar(this));
+            [b, evtype, portid] = this.obnnode_mexfunc_('portEvent', this.id_, timeout);
+            if b
+                if (evtype == 0)
+                    assert(this.callback_portrcvd.isKey(portid),...
+                           'Internal error: port id %d does not exist for RCV event.', portid);
+                    thecallback = this.callback_portrcvd(portid);
+                    feval(thecallback{:}); % Run the callback
+                end
             end
         end
         

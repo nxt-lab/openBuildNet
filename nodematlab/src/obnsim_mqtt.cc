@@ -213,8 +213,10 @@ int MQTTNodeMatlab::runStep(double timeout) {
 
     // If there is a pending event, which means the current event has just been processed in Matlab, we must resume the execution of the event object to finish it, then we can continue
     if (_ml_pending_event) {
-        assert(_current_node_event);    // It must store a valid event object
-        _current_node_event->executePost(this);
+        if (_current_node_event) {
+            // If there is a valid event object, call the post execution method
+            _current_node_event->executePost(this);
+        }
         _ml_pending_event = false;      // Clear the current event
     }
 
@@ -224,6 +226,22 @@ int MQTTNodeMatlab::runStep(double timeout) {
         switch (state) {
             case NODE_RUNNING:  // Node is running normally, so keep running it until the next event
             case NODE_STARTED:
+                // Check if there is any port event -> process them immediately -> they have higher priority
+                if (!m_port_events.empty()) {
+                    // Pop it out
+                    auto evt = m_port_events.wait_and_pop();
+                    assert(evt);    // The event must be valid
+                    
+                    // Create a Matlab event for this port event
+                    _ml_current_event.type = MLE_RCV;   // The default event is Message Received; check evt->event_type for other types
+                    _ml_current_event.arg.index = evt->port_index;
+                    _ml_pending_event = true;
+                    _current_node_event.reset();    // The node event pointer is set to null
+                    
+                    break;
+                }
+                
+                // Else (if there is no pending port event, get and process node events
                 // Wait for the next event and process it
                 if (timeout <= 0.0) {
                     // Without timeout
@@ -300,6 +318,17 @@ int MQTTNodeMatlab::runStep(double timeout) {
     
     // this can only be reached if there is a pending event
     return 0;
+}
+
+/** This method waits and gets the next port event.
+ \param timeout Timeout value in seconds to wait for the next event. If timeout <= 0.0, the function will return immediately.
+ \return A unique_ptr to the event object (of type PortEvent); the pointer is null if there was no pending event when the timeout was up.
+ */
+std::unique_ptr<OBNnode::MQTTNodeMatlab::PortEvent> MQTTNodeMatlab::getNextPortEvent(double timeout) {
+    if (timeout <= 0.0) {
+        return m_port_events.try_pop();
+    }
+    return m_port_events.wait_and_pop_timeout(timeout);
 }
 
 
@@ -904,6 +933,45 @@ namespace {
 
     /* === MQTTNode interface === */
     
+    // Get the next port event (e.g. message received) with a possible timeout.
+    // Args: node object pointer, timeout (double in seconds, can be <= 0.0 if no timeout, i.e. returns immediately).
+    // Returns: [status, event_type, port_index]
+    // where:
+    // - status = true if there is an event returned (hence the remaining returned values are valid); = false if there is no event (i.e. timeout).
+    // - event_type = 0 for Message Received.
+    // - port_index is the index of the port associated with the event.
+    MEX_DEFINE(portEvent) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+        InputArguments input(nrhs, prhs, 2);
+        OutputArguments output(nlhs, plhs, 3);
+        
+        MQTTNodeMatlab *ynode = Session<MQTTNodeMatlab>::get(input.get(0));
+        
+        // get next PortEvent from node
+        auto evt = ynode->getNextPortEvent(input.get<double>(1));
+        
+        if (!evt) {
+            // No event -> returns immediately
+            output.set(0, false);
+            output.set(1, -1);
+            output.set(2, -1);
+            return;
+        }
+        
+        // Convert the event to outputs of this MEX function
+        output.set(0, true);
+        output.set(2, evt->port_index);
+        
+        switch (evt->event_type) {
+            case OBNnode::MQTTNodeMatlab::PortEvent::RCV:
+                output.set(1, 0);
+                break;
+                
+            default:
+                reportError("MQTTNODE:portEvent", "Internal error: unrecognized port event type.");
+                break;
+        }
+    }
+    
     
     // Runs the node's simulation until the next event, or until the node stops or has errors
     // Args: node object pointer, timeout (double in seconds, can be <= 0.0 if no timeout)
@@ -1228,7 +1296,7 @@ namespace {
         InputPortBase* p = dynamic_cast<InputPortBase*>(portinfo.port);
         if (p) {
             // Set the callback for the port
-            p->setMsgRcvCallback(std::bind(&MQTTNodeMatlab::matlab_inputport_msgrcvd_callback, ynode, id), true);
+            p->setMsgRcvCallback(std::bind(&MQTTNodeMatlab::matlab_inputport_msgrcvd_callback, ynode, id), false);
             output.set(0, true);
         } else {
             reportError("MQTTNODE:enableRcvEvent", "Internal error: port object is not an input.");

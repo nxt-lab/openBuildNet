@@ -384,7 +384,7 @@ namespace SMNChai {
             unsigned int m_time_unit = 1;     ///< The atomic time unit, positive integer number in microseconds [default = 1 microseconds]
             bool m_run_simulation = true;     ///< Whether automatically run the simulation after loading it
             std::time_t m_wallclock = 0;      ///< The initial wall clock time, in Epoch/UNIX time
-            CommProtocol m_comm = COMM_YARP;
+            CommProtocol m_comm = COMM_MQTT;
             std::string m_mqtt_server{"tcp://localhost:1883"};  ///< The MQTT server address
             
             /* Set the default communication protocol. */

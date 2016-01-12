@@ -134,7 +134,7 @@ namespace OBNnode {
         }
         
         /** Open the port given a full network name. */
-        virtual bool open(const std::string& full_name) {
+        virtual bool open(const std::string& full_name) override {
             return getYarpPort().open(full_name[0]=='/'?full_name:('/'+full_name));
         }
         
@@ -163,7 +163,7 @@ namespace OBNnode {
         }
         
         /** Open the port given a full network name. */
-        virtual bool open(const std::string& full_name) {
+        virtual bool open(const std::string& full_name) override {
             return getYarpPort().open(full_name[0]=='/'?full_name:('/'+full_name));
         }
     public:

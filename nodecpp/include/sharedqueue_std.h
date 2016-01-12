@@ -157,13 +157,16 @@ public:
      If the queue is non-empty, pop the oldest element; otherwise, return nil pointer.
      \return The oldest item, or nil pointer if the queue is empty.
      */
-    /*
     item_type try_pop()
     {
-        std::lock_guard<std::mutex> lock(mMut);
-
-        return try_pop_with_lock();
-    }*/
+        std::unique_lock<std::mutex> lock(mMut);
+        
+        if (mData.empty())
+            return item_type();  // nil
+        item_type val(std::move(mData.front()));    // move the pointer (and its ownership) to val; the front element in the queue lost the ownership
+        mData.pop_front();
+        return val;
+    }
     
     /** \brief Try to pop when the caller HAS the lock on the queue access.
      
