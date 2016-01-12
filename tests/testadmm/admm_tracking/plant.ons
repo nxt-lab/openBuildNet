@@ -1,0 +1,77 @@
+// -*- mode: C++; indent-tabs-mode: nil; -*-
+// This node script implements the plant model (a simple battery model) for the ADMM example.
+// The plant model is: s' = alpha*s + u
+// where u is saturated by [u_top, u_bottom] and s is also saturated by [s_bottom, s_top].
+
+def show_usage() {
+    print("USAGE:");
+    print("The following named arguments are provided:");
+    print("   \"id\" is the unique suffix identifying the plant");
+    print("   \"alpha\" is the dissipative coefficient");
+    print("   \"lstate\" and \"hstate\" are the lower and upper saturation values of the state");
+    print("   \"istate\" is the initial state");
+    print("   optional \"linput\" & \"hinput\" are the lower and upper constraints of the input (can be INF)");
+}
+
+print("This is a battery plant node.");
+
+// Extract the arguments
+if (args.count("id") == 0 || args.count("alpha") == 0 || args.count("lstate") == 0 || args.count("hstate") == 0 || args.count("istate") == 0) {
+    // Not enough arguments
+    show_usage();
+    throw("Not enough arguments.");
+}
+
+// The parameters of the model
+GLOBAL alpha = args.at("alpha").to_double();
+GLOBAL lstate = args.at("lstate").to_double();
+GLOBAL hstate = args.at("hstate").to_double();
+GLOBAL istate = args.at("istate").to_double();
+GLOBAL linput = (args.count("linput")>0)?(args.at("linput").to_double()):(-1.0/0.0);
+GLOBAL hinput = (args.count("hinput")>0)?(args.at("hinput").to_double()):(1.0/0.0);
+
+// Check parameter values
+if (lstate >= hstate) {
+    throw("Error: lower state saturation must be less than upper state saturation.");
+}
+if (linput >= hinput) {
+    throw("Error: lower input saturation must be less than upper input saturation.");
+}
+if (istate < lstate || istate > hstate) {
+    throw("Error: initial state is invalid.");
+}
+
+// The battery's state
+var state = istate;
+
+// Output the current state
+def doOutputState(state, s_out) {
+    s_out.set(state);
+    //print("Output state");
+}
+
+// The main computation function
+def doMainUpdate(state, u_in, u_out) {
+    // Update state and compute saturated u
+    var u = min(max(u_in.get(), linput), hinput);  // saturated input
+    var alpha_s = alpha * state;
+    state = min(hstate, max(lstate, alpha_s+u));  // saturated state
+    u_out.set(state - alpha_s);
+    //print("Update state");
+}
+
+// Create node, then its input and output ports
+set_comm_mqtt("tcp://localhost:1883");
+set_node_name("plant" + args.at("id"));
+set_workspace("disttracking");
+// set_timeout(10);	// you can set timeout for the node (in seconds)
+create_node();
+
+var u_in = new_input_double("u");
+var u_out = new_output_double("usat");
+var s_out = new_output_double("s");
+
+// Register the main callback
+callback_y(0, bind(doOutputState, state, s_out));
+callback_y(1, bind(doMainUpdate, state, u_in, u_out));
+

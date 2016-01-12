@@ -1,0 +1,61 @@
+// -*- mode: C++; indent-tabs-mode: nil; -*-
+// This node script implements the recorder node for the ADMM example.
+
+def show_usage() {
+    print("USAGE:");
+    print("The following named arguments are provided:");
+    print("   \"n\" is the number of scalar inputs, named \"u1\" to \"u<n>\"");
+    print("   \"file\" is the name of the output file");
+    print("   \"name\" is the optional name of the node; default is \"recorder\".");
+}
+
+print("This is the recorder node.");
+
+// Extract the arguments
+if (args.count("n") == 0 || args.count("file") == 0) {
+    // Not enough arguments
+    print("Not enough arguments.");
+    show_usage();
+    exit(1);
+}
+
+// The parameters of the model
+var ninputs = args.at("n").to_int();
+
+// Check parameter values
+if (ninputs <= 0) {
+    throw("Error: Number of inputs must be a positive integer.");
+}
+
+// Open the output file
+GLOBAL recorder = CSVWriter(args.at("file"));
+
+// The main computation function
+// all_inputs is a vector of input port objects
+def doRecord(all_inputs) {
+    // Write the current time, in seconds
+    recorder.write(current_time_s());
+    
+    // Get the current values of all inputs and save them to the output file
+    for (auto i = 0; i < all_inputs.size(); ++i) {
+        recorder.write(all_inputs[i].get());
+    }
+    recorder.new_row();  // Start a new row
+}
+
+// Create node, then its input and output ports
+set_comm_mqtt("tcp://localhost:1883");
+set_node_name( (args.count("name")>0)?args.at("name"):"recorder" );
+set_workspace("disttracking");
+
+// set_timeout(10);	// you can set timeout for the node (in seconds)
+create_node();
+
+// Create the inputs and save them to a vector
+var all_inputs = Vector();
+for (auto i = 1; i <= ninputs; ++i) {
+    all_inputs.push_back_ref(new_input_double("u${i}"));
+}
+
+// Register the main callback
+callback_y(0, bind(doRecord, all_inputs));

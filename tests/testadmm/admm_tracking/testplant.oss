@@ -1,0 +1,79 @@
+// -*- mode: javascript; -*-
+// SMN definitions to test the Plant and Recorder nodes implemented in obnnode script.
+
+workspace("disttracking");
+settings.time_unit(millisecond);
+settings.final_time(5*minute);
+settings.default_comm("mqtt");	// Can change the default communication
+
+// Do not run simulation
+//run_simulation(false);
+
+// Create a plant node
+var plant = node(["name" : "plant1",
+				  "inputs" : ["u"],
+				  "outputs" : ["s", "usat"],
+				  "blocks" : [
+					  ["id" : 0,
+					   "sampling" : 1*minute,
+					   "outputs" : ["s"]
+					  ],
+					  ["id": 1,
+					   "sampling" : 1*minute,
+					   "inputs" : ["u"],
+					   "outputs" : ["usat"]
+					  ]]
+				 ], false);
+plant.need_updateX(false);
+add_node(plant);  // add the node to the system; after this, it can't be changed
+
+// Create a constant output node
+var constout = node(["name" : "const",
+					 "outputs" : ["y"],
+					 "blocks" : [
+						 ["id" : 0,
+						  "sampling" : 1*minute,
+						  "outputs" : ["y"]
+						 ]
+					 ]], false);
+constout.need_updateX(false);
+add_node(constout);
+
+// Create a recorder node
+var recorder = node(["name" : "recorder",
+					 "inputs" : ["u1", "u2"],
+					 "blocks" : [
+						 ["id" : 0,
+						  "sampling" : 1*minute,
+						  "inputs" : ["u1", "u2"]
+						  ]
+					 ]], false);
+recorder.need_updateX(false);
+add_node(recorder);
+
+// Connect the nodes
+connect(constout.port("y"), plant.port("u"));
+connect(plant.port("s"), recorder.port("u1"));
+connect(plant.port("usat"), recorder.port("u2"));
+
+// Start remote plant/battery node
+start_remote_node(plant, "/truongpc",
+		    "/Users/truong/work/working/obn/nodechai/build/Debug/obnchai", "/Users/truong/work/working/obn/tests/testadmm/admm_tracking/plant.ons id=1 alpha=0.9 lstate=0 hstate=1 istate=0.1 linput=-0.5 hinput=0.5");
+
+// Start const output node
+start_remote_node(constout, "/truongpc",
+				  "/Users/truong/work/working/obn/nodechai/build/Debug/obnchai",
+				  "/Users/truong/work/working/obn/tests/testadmm/admm_tracking/constoutput.ons value=0.4");
+
+// Start recorder node
+start_remote_node(recorder, "/truongpc",
+				  "/Users/truong/work/working/obn/nodechai/build/Debug/obnchai",
+				  "/Users/truong/work/working/obn/tests/testadmm/admm_tracking/recorder.ons n=2 file=/Users/truong/work/working/obn/tests/testadmm/admm_tracking/testplant.txt");
+
+// Print the system to the screen to check its correctness
+print_system();
+
+// Export the system to DOT for visualization
+//export2dot("system.dot", true);
+
+waitfor_all_nodes(30);

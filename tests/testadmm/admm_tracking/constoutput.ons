@@ -1,0 +1,32 @@
+// -*- mode: C++; indent-tabs-mode: nil; -*-
+// Simple node to output a constant, used for testing.
+
+def show_usage() {
+    print("USAGE:");
+    print("The following named arguments are provided:");
+    print("   \"value\" is the real number value to output; default is 0.");
+    print("   \"name\" is the name of the node (optional; default 'const').");
+}
+
+print("This is a simple constant output node.");
+show_usage();
+
+// The parameters of the model
+GLOBAL value = (args.count("value")>0)?(args.at("value").to_double()):0.0;
+
+// The main computation function
+def doMainUpdate(y_out) {
+    y_out.set(value);
+}
+
+// Create node, then its input and output ports
+set_comm_mqtt("tcp://localhost:1883");
+set_node_name( (args.count("name")>0)?args.at("name"):"const" );
+set_workspace("disttracking");
+// set_timeout(10);	// you can set timeout for the node (in seconds)
+create_node();
+
+var y_out = new_output_double("y");
+
+// Register the main callback
+callback_y(0, bind(doMainUpdate, y_out));
