@@ -20,6 +20,16 @@ set (OBN_MAIN_DIR ${PROJECT_SOURCE_DIR}/../)
 # Include the common CMake code for node.C++
 INCLUDE(${OBN_MAIN_DIR}/nodecpp/CMakeCommon.txt)
 
+## To use Boost library
+# see http://stackoverflow.com/questions/6646405/how-do-you-add-boost-libraries-in-cmakelists-txt
+# and http://www.cmake.org/cmake/help/v3.0/module/FindBoost.html
+# Because Boost is required, it will be an error if Boost is not found
+
+# set(Boost_USE_STATIC_LIBS OFF) 
+# set(Boost_USE_MULTITHREADED ON)  
+# set(Boost_USE_STATIC_RUNTIME OFF) 
+find_package(Boost 1.55.0 REQUIRED COMPONENTS filesystem system) 
+
 ## Compile with static Chaiscript or dynamic
 option(BUILD_STATIC_CHAI "Build with static ChaiScript standard library instead of dynamic one." ON)
 if(BUILD_STATIC_CHAI)
@@ -97,6 +107,7 @@ if(CMAKE_GENERATOR STREQUAL Xcode)
 endif()
 
 INCLUDE_DIRECTORIES(
+  ${Boost_INCLUDE_DIRS}
   ${OBN_MAIN_DIR}/thirdparties
   ${OBN_MAIN_DIR}/thirdparties/chaiscript/include
 )
@@ -108,9 +119,9 @@ ADD_EXECUTABLE(obnchai
 )
 
 
-# TARGET_LINK_LIBRARIES(obnchai
-# 	extra libraries here if necessary
-# )
+TARGET_LINK_LIBRARIES(obnchai
+	${Boost_LIBRARIES}
+)
 
 
 INSTALL(

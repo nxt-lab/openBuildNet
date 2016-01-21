@@ -1,4 +1,4 @@
-// -*- mode: C++; indent-tabs-mode: nil; -*-
+// -*- mode: javascript; indent-tabs-mode: nil; -*-
 // receiver node in ONS (OBN Node Script), to be run with the OBN scriptable node program
 
 // IMPORTANT:
