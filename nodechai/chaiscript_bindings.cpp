@@ -420,7 +420,7 @@ namespace NodeChai {
         switch (global_variables.comm_protocol) {
             case OBNnode::COMM_MQTT:
 #ifdef OBNNODE_COMM_MQTT
-                global_variables.node_factory.reset(new NodeFactoryMQTT());
+                global_variables.node_factory.reset(new NodeFactoryMQTT(global_variables.mqtt_server));
 #else
                 throw nodechai_exception("MQTT is not supported.");
 #endif

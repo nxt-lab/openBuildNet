@@ -118,30 +118,6 @@ namespace NodeChai {
             return true;
         }
     public:
-        virtual bool create_node(const std::string& t_name, const std::string& t_workspace) override {
-            if (m_node) {
-                // Already created -> error
-                m_last_error = "A node has already been created.";
-                return false;
-            }
-            
-            try {
-                m_node = std::make_shared<T>(t_name, t_workspace);
-            } catch (...) {
-                m_last_error = "Error while creating the node object.";
-                return false;
-            }
-            
-            // Try to open the GC port
-            if (m_node->openSMNPort()) {
-                return true;
-            } else {
-                // Delete the node and return error
-                m_node.reset();
-                m_last_error = "Could not open the system port on the node; check the communication network and configuration.";
-                return false;
-            }
-        }
         
         /** Return the created node object as a NodeBase object. */
         virtual OBNnode::NodeBase* get_node_object() const override {

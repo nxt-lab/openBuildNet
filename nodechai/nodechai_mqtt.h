@@ -45,6 +45,7 @@ namespace NodeChai {
     
     /** The abstract factory class for creating nodes. */
     class NodeFactoryMQTT: public NodeFactoryBase<MQTTNodeChai> {
+        std::string m_mqtt_server;  ///< Address of the MQTT server
     public:
         typedef OBNnode::MQTTInput<OBNnode::OBN_PB, double> InputScalarDouble;
         typedef OBNnode::MQTTInput<OBNnode::OBN_PB, double, true> InputScalarDoubleStrict;
@@ -57,6 +58,38 @@ namespace NodeChai {
         typedef OBNnode::MQTTInput<OBNnode::OBN_PB, OBNnode::obn_matrix<double> > InputMatrixDouble;
         typedef OBNnode::MQTTInput<OBNnode::OBN_PB, OBNnode::obn_matrix<double>, true> InputMatrixDoubleStrict;
         typedef OBNnode::MQTTOutput<OBNnode::OBN_PB, OBNnode::obn_matrix<double> > OutputMatrixDouble;
+        
+        /** Constructor of MQTTNode factory, with given MQTT server address. */
+        NodeFactoryMQTT(const std::string& t_mqttserver): m_mqtt_server(t_mqttserver) { }
+        
+        /** Create an MQTTNode object. */
+        virtual bool create_node(const std::string& t_name, const std::string& t_workspace) override {
+            if (m_node) {
+                // Already created -> error
+                m_last_error = "A node has already been created.";
+                return false;
+            }
+            
+            try {
+                m_node = std::make_shared<MQTTNodeChai>(t_name, t_workspace);
+            } catch (...) {
+                m_last_error = "Error while creating the node object.";
+                return false;
+            }
+            
+            // Set the server settings
+            m_node->setServerAddress(m_mqtt_server);
+            
+            // Try to open the GC port
+            if (m_node->openSMNPort()) {
+                return true;
+            } else {
+                // Delete the node and return error
+                m_node.reset();
+                m_last_error = "Could not open the system port on the node; check the communication network and configuration.";
+                return false;
+            }
+        }
 
         ///////////////////////////////////////////////////////////////////////////////
         /* These methods create inputs and outputs of various types.
