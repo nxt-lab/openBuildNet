@@ -63,17 +63,22 @@ ADD_EXECUTABLE(nodecpp-mynode
 	${OBNNODE_CORE_SRCFILES}
 )
 
+ADD_EXECUTABLE(nodecpp-extmqtt
+	extmqtt.cpp
+	src/obnnode_extmqtt.cpp
+	${OBNNODE_CORE_SRCFILES}
+)
 
 # TARGET_LINK_LIBRARIES(nodecpp-mynode
 # 	extra libraries here if necessary
 # )
 
 
-INSTALL(
-  TARGETS nodecpp-mynode
-  RUNTIME DESTINATION ${INSTALL_BIN_DIR}
-  COMPONENT bin
-)
+# INSTALL(
+#   TARGETS nodecpp-mynode
+#   RUNTIME DESTINATION ${INSTALL_BIN_DIR}
+#   COMPONENT bin
+# )
 
 
 ## Make sure that C++ 11 is used (for thread, mutex...)
@@ -81,5 +86,7 @@ if(APPLE)
   list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
 else()
   set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD 11)
+  set_property(TARGET nodecpp-extmqtt PROPERTY CXX_STANDARD 11)
   set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_property(TARGET nodecpp-extmqtt PROPERTY CXX_STANDARD_REQUIRED ON)
 endif()
