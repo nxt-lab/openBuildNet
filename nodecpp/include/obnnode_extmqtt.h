@@ -48,8 +48,8 @@ public:
     struct PortInfo {
         OBNnode::PortBase *port;
         enum { INPUTPORT, OUTPUTPORT, DATAPORT } type;
-        char container;     ///< 's', 'v', 'm', 'b'
-        enum { NONE, DOUBLE, LOGICAL, INT32, UINT32, INT64, UINT64 } elementType;
+        OBNEI_ContainerType container;
+        OBNEI_ElementType elementType;
         bool strict;    ///< Only for input ports
     };
     
@@ -57,10 +57,17 @@ public:
     std::vector<PortInfo> _all_ports;
     
     /** \brief Meta-function for creating all kinds of input ports supported by this class. */
-    int createInputPort(char container, const std::string &element, const std::string &name, bool strict);
+    int createInputPort(const std::string &name,
+                        OBNEI_FormatType format,
+                        OBNEI_ContainerType container,
+                        OBNEI_ElementType element,
+                        bool strict);
     
     /** \brief Meta-function for creating all kinds of output ports supported by this class. */
-    int createOutputPort(char container, const std::string &element, const std::string &name);
+    int createOutputPort(const std::string &name,
+                         OBNEI_FormatType format,
+                         OBNEI_ContainerType container,
+                         OBNEI_ElementType element);
     
     MQTTNodeExt(const std::string& name, const std::string& ws = ""): MQTTNodeBase(name, ws) {
     }

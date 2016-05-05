@@ -22,6 +22,11 @@
 using namespace OBNnode;
 using std::string;
 
+/* This is required so we can manage the node instances.
+ All implementations must have this line.
+ */
+template class OBNNodeExtInt::Session<MQTTNodeExt>;
+
 
 /// Report an error and (usually) terminate.
 void reportError(const char* msgID, const char* msg) {
@@ -35,93 +40,86 @@ void reportWarning(const char* msgID, const char* msg) {
 }
 
 
+/******* Implementation of the MQTT Node for External Interface *******/
+
 #define YNM_PORT_CLASS_BY_NAME(BASE,PCLS,CTNR,TYPE,...) \
-  TYPE=="double"?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<double> >(__VA_ARGS__)):(\
-    TYPE=="logical"?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<bool> >(__VA_ARGS__)):(\
-      TYPE=="int32"?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<int32_t> >(__VA_ARGS__)):(\
-        TYPE=="int64"?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<int64_t> >(__VA_ARGS__)):(\
-          TYPE=="uint32"?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<uint32_t> >(__VA_ARGS__)):(\
-            TYPE=="uint64"?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<uint64_t> >(__VA_ARGS__)):nullptr)))));
+  TYPE==OBNEI_Element_double?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<double> >(__VA_ARGS__)):(\
+    TYPE==OBNEI_Element_logical?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<bool> >(__VA_ARGS__)):(\
+      TYPE==OBNEI_Element_int32?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<int32_t> >(__VA_ARGS__)):(\
+        TYPE==OBNEI_Element_int64?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<int64_t> >(__VA_ARGS__)):(\
+          TYPE==OBNEI_Element_uint32?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<uint32_t> >(__VA_ARGS__)):(\
+            TYPE==OBNEI_Element_uint64?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<uint64_t> >(__VA_ARGS__)):nullptr)))));
 
 #define YNM_PORT_CLASS_BY_NAME_STRICT(BASE,PCLS,CTNR,TYPE,STRICT,...) \
-  TYPE=="double"?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<double>,STRICT >(__VA_ARGS__)):(\
-    TYPE=="logical"?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<bool>,STRICT >(__VA_ARGS__)):(\
-      TYPE=="int32"?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<int32_t>,STRICT >(__VA_ARGS__)):(\
-        TYPE=="int64"?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<int64_t>,STRICT >(__VA_ARGS__)):(\
-          TYPE=="uint32"?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<uint32_t>,STRICT >(__VA_ARGS__)):(\
-            TYPE=="uint64"?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<uint64_t>,STRICT >(__VA_ARGS__)):nullptr)))));
+  TYPE==OBNEI_Element_double?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<double>,STRICT >(__VA_ARGS__)):(\
+    TYPE==OBNEI_Element_logical?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<bool>,STRICT >(__VA_ARGS__)):(\
+      TYPE==OBNEI_Element_int32?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<int32_t>,STRICT >(__VA_ARGS__)):(\
+        TYPE==OBNEI_Element_int64?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<int64_t>,STRICT >(__VA_ARGS__)):(\
+          TYPE==OBNEI_Element_uint32?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<uint32_t>,STRICT >(__VA_ARGS__)):(\
+            TYPE==OBNEI_Element_uint64?static_cast<BASE*>(new PCLS< OBN_PB,CTNR<uint64_t>,STRICT >(__VA_ARGS__)):nullptr)))));
 
-#define YNM_PORT_ELEMENT_TYPE_BY_NAME(TYPE) \
-  TYPE=="double"?MQTTNodeExt::PortInfo::DOUBLE:(\
-    TYPE=="logical"?MQTTNodeExt::PortInfo::LOGICAL:(\
-      TYPE=="int32"?MQTTNodeExt::PortInfo::INT32:(\
-        TYPE=="int64"?MQTTNodeExt::PortInfo::INT64:(\
-          TYPE=="uint32"?MQTTNodeExt::PortInfo::UINT32:(\
-            TYPE=="uint64"?MQTTNodeExt::PortInfo::UINT64:MQTTNodeExt::PortInfo::NONE)))));
 
 
 /** This is a meta-function for creating all kinds of input ports supported by this class.
  It creates an input port with the specified type, name and configuration, adds it to the node object, then open it.
- \param container A character that specifies the container type; available options are: 's' for scalar, 'v' for dynamic-length vector, 'm' for dynamic-size 2-D matrix, 'b' for binary (raw) data.
- \param element A string specifying the data type of the elements of the container type (except for binary type 'b'); available options are similar to Matlab's types: 'logical', 'int32', 'int64', 'uint32', 'uint64', 'double'
  \param name A valid name of the port in this node.
+ \param format specifies the format type, e.g., ProtoBuf or JSON.
+ \param container specifies the container type.
+ \param element specifies the data type of the elements of the container type (except for binary type).
  \param strict Whether the input port uses strict reading.
  \return The unique ID of the port in this node (which must be non-negative), or a negative integer if there was an error.
  */
-int MQTTNodeExt::createInputPort(char container, const std::string &element, const std::string &name, bool strict) {
+int MQTTNodeExt::createInputPort(const std::string &name,
+                                 OBNEI_FormatType format,
+                                 OBNEI_ContainerType container,
+                                 OBNEI_ElementType element,
+                                 bool strict)
+{
+    // Currently we only support ProtoBuf
+    if (format != OBNEI_Format_ProtoBuf) {
+        return -1000;       // Unsupported format
+    }
+    
     MQTTNodeExt::PortInfo portinfo;
     OBNnode::InputPortBase *port;
     portinfo.type = MQTTNodeExt::PortInfo::INPUTPORT;
     switch (container) {
-        case 's':
-        case 'S':
+        case OBNEI_Container_Scalar:
             if (strict) {
                 port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_scalar,element,true,name);
             } else {
                 port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_scalar,element,false,name);
             }
-            portinfo.container = 's';
             break;
 
-        case 'v':
-        case 'V':
+        case OBNEI_Container_Vector:
             if (strict) {
                 port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector,element,true,name);
             } else {
                 port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector,element,false,name);
             }
-            portinfo.container = 'v';
             break;
             
-        case 'm':
-        case 'M':
+        case OBNEI_Container_Matrix:
             if (strict) {
                 port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix,element,true,name);
             } else {
                 port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix,element,false,name);
             }
-            portinfo.container = 'm';
             break;
             
-        case 'b':
-        case 'B':
+        case OBNEI_Container_Binary:
             if (strict) {
                 port = new MQTTInput<OBN_BIN,bool,true>(name);
             } else {
                 port = new MQTTInput<OBN_BIN,bool,false>(name);
             }
-            portinfo.container = 'b';
             break;
-            
-        default:
-            reportError("MQTTNODE:createInputPort", "Unknown container type.");
-            return -1;
     }
     
     if (!port) {
         // port is nullptr => error
-        reportError("MQTTNODE:createInputPort", "Unsupported input type.");
-        return -2;
+        return -1;  // Error while creating port
     }
     
     // Add the port to the node, which will OWN the port and will delete it
@@ -129,57 +127,53 @@ int MQTTNodeExt::createInputPort(char container, const std::string &element, con
     if (!result) {
         // failed to add to node
         delete port;
-        reportError("MQTTNODE:createInputPort", "Could not add new port to node.");
-        return -3;
+        return -2;  // Could not add new port to node.
     }
     
-    auto id = _all_ports.size();
+    int id = _all_ports.size();
     portinfo.port = port;
-    portinfo.elementType = YNM_PORT_ELEMENT_TYPE_BY_NAME(element);
+    portinfo.container = container;
+    portinfo.elementType = element;
     portinfo.strict = strict;
     _all_ports.push_back(portinfo);
     return id;
 }
 
 /** \brief Meta-function for creating all kinds of output ports supported by this class. */
-int MQTTNodeExt::createOutputPort(char container, const std::string &element, const std::string &name) {
+int MQTTNodeExt::createOutputPort(const std::string &name,
+                                  OBNEI_FormatType format,
+                                  OBNEI_ContainerType container,
+                                  OBNEI_ElementType element)
+{
+    // Currently we only support ProtoBuf
+    if (format != OBNEI_Format_ProtoBuf) {
+        return -1000;       // Unsupported format
+    }
+
     MQTTOutputPortBase *port;
     MQTTNodeExt::PortInfo portinfo;
     portinfo.type = MQTTNodeExt::PortInfo::OUTPUTPORT;
     switch (container) {
-        case 's':
-        case 'S':
+        case OBNEI_Container_Scalar:
             port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_scalar,element,name);
-            portinfo.container = 's';
             break;
             
-        case 'v':
-        case 'V':
+        case OBNEI_Container_Vector:
             port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_vector,element,name);
-            portinfo.container = 'v';
             break;
             
-        case 'm':
-        case 'M':
+        case OBNEI_Container_Matrix:
             port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_matrix,element,name);
-            portinfo.container = 'm';
             break;
             
-        case 'b':
-        case 'B':
+        case OBNEI_Container_Binary:
             port = new MQTTOutput<OBN_BIN,bool>(name);
-            portinfo.container = 'b';
             break;
-            
-        default:
-            reportError("MQTTNODE:createOutputPort", "Unknown container type.");
-            return -1;
     }
     
     if (!port) {
         // port is nullptr => error
-        reportError("MQTTNODE:createOutputPort", "Unknown element type.");
-        return -2;
+        return -1;      // Error while creating port
     }
     
     // Add the port to the node, which will OWN the port and will delete it
@@ -187,13 +181,13 @@ int MQTTNodeExt::createOutputPort(char container, const std::string &element, co
     if (!result) {
         // failed to add to node
         delete port;
-        reportError("MQTTNODE:createOutputPort", "Could not add new port to node.");
-        return -3;
+        return -2;      // Could not add new port to node.
     }
     
     auto id = _all_ports.size();
     portinfo.port = port;
-    portinfo.elementType = YNM_PORT_ELEMENT_TYPE_BY_NAME(element);
+    portinfo.container = container;
+    portinfo.elementType = element;
     _all_ports.push_back(portinfo);
     return id;
 }
@@ -341,11 +335,131 @@ std::unique_ptr<MQTTNodeExt::PortEvent> MQTTNodeExt::getNextPortEvent(double tim
     return m_port_events.wait_and_pop_timeout(timeout);
 }
 
-/* ============ MEX interface ===============*/
+/* ============ The external interface ===============*/
 
-// Instance manager
-template class mexplus::Session<MQTTNodeExt>;
-template class mexplus::Session<MQTTNode::WaitForCondition>;
+// Create a new node
+int createOBNNode(const char* name, const char* workspace, const char* addr, size_t* id) {
+    if (!name) {
+        return -1;      // Empty name
+    }
+    
+    // Check if the node has already existed
+    {
+        std::string newFullName( (workspace)?(std::string(workspace) + '/' + name):(name) );
+        if (OBNNodeExtInt::Session<MQTTNodeExt>::exist([newFullName&](const MQTTNodeExt& node){
+            return node.full_name() == newFullName;
+        })) {
+            return 1;       // Node exists
+        }
+    }
+    
+    // Create a node
+    MQTTNodeExt *y;
+    try {
+        if (workspace) {
+            // Workspace is given
+            y = new MQTTNodeExt(std::string(name), std::string(workspace));
+        } else {
+            // No workspace is given
+            y = new MQTTNodeExt(std::string(name));
+        }
+    } catch (...) {
+        return -2;      // Error while creating the node object
+    }
+    
+    // Set the server
+    if (addr) {
+        std::string s(addr);
+        if (!s.empty()) {
+            y->setServerAddress(addr);
+        }
+    }
+    
+    // For MQTT, we start the client immediately
+    if (y->startMQTT()) {
+        *id = OBNNodeExtInt::Session<MQTTNodeExt>::create(y);
+        return 0;
+    } else {
+        // Delete the node object and report error
+        delete y;
+        return -3;      // Error while starting the node object
+    }
+}
+
+
+// Delete a node object
+int deleteOBNNode(size_t id) {
+    return (OBNNodeExtInt::Session<MQTTNodeExt>::destroy(id))?0:-1;
+}
+
+// Create a new input port on a node
+// Arguments: node ID, port's name, format type, container type, element type, strict or not
+// Returns port's id; or negative number if error.
+// id is an integer starting from 0.
+int createInputPort(size_t id,
+                    const char* name,
+                    OBNEI_FormatType format,
+                    OBNEI_ContainerType container,
+                    OBNEI_ElementType element,
+                    bool strict)
+{
+    if (!name) {
+        return -1;      // Port name not provided.
+    }
+    std::string portname(name);
+    if (portname.empty()) {
+        return -2;      // Invalid port name.
+    }
+    
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(id);
+    if (!pnode) {
+        return -3;      // Node doesn't exist
+    }
+    
+    // Try to add the port
+    return pnode->createInputPort(portname, format, container, element, strict);
+}
+
+// Create a new output port on a node
+// Arguments: node ID, port's name, format type, container type, element type
+// Returns port's id; or negative number if error.
+// id is an integer starting from 0.
+int createOutputPort(size_t id,
+                     const char* name,
+                     OBNEI_FormatType format,
+                     OBNEI_ContainerType container,
+                     OBNEI_ElementType element)
+{
+    if (!name) {
+        return -1;      // Port name not provided.
+    }
+    std::string portname(name);
+    if (portname.empty()) {
+        return -2;      // Invalid port name.
+    }
+    
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(id);
+    if (!pnode) {
+        return -3;      // Node doesn't exist
+    }
+    
+    // Try to add the port
+    return pnode->createOutputPort(portname, format, container, element);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #define READ_INPUT_SCALAR_HELPER(A,B) \
 MQTTInput<A,obn_scalar<B>,false> *p = dynamic_cast<MQTTInput<A,obn_scalar<B>,false>*>(portinfo.port); \
@@ -1165,71 +1279,6 @@ MEX_DEFINE(isNodeStopped) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* p
 }
 
 
-// Create a new node object
-// Args: nodeName, workspace
-MEX_DEFINE(nodeNew) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 3);
-    OutputArguments output(nlhs, plhs, 1);
-    
-    // Get the address of the server (empty = default)
-    std::string addr = input.get<string>(2);
-    
-    // Create a node
-    MQTTNodeExt *y = new MQTTNodeExt(input.get<string>(0), input.get<string>(1));
-    
-    // Set the server
-    if (!addr.empty()) {
-        y->setServerAddress(addr);
-    }
-    
-    // For MQTT, we start the client immediately
-    if (y->startMQTT()) {
-        output.set(0, Session<MQTTNodeExt>::create(y));
-    } else {
-        // Delete the node object and report error
-        delete y;
-        reportError("MQTTNODE:nodeNew", "Could not start MQTT client; check network and MQTT server.");
-    }
-}
-
-// Delete a node object
-// Args: node's pointer
-MEX_DEFINE(nodeDelete) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 1);
-    OutputArguments output(nlhs, plhs, 0);
-    
-    Session<MQTTNodeExt>::destroy(input.get(0));
-}
-
-// Create a new physical input port managed by this node
-// Arguments: node object pointer, container type (s,v,m,b), element type (logical,double,int32,int64,uint32,uint64), port's name
-// An optional name-value pair of "strict" value.
-// Returns id; or negative number if error.
-// id is an integer starting from 0
-MEX_DEFINE(createInput) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 4, 1, "strict");
-    OutputArguments output(nlhs, plhs, 1);
-    
-    // Create port
-    int id = Session<MQTTNodeExt>::get(input.get(0))->createInputPort(input.get<char>(1), input.get<string>(2), input.get<string>(3), input.get<bool>("strict", false));
-    
-    output.set(0, id);
-}
-
-// Create a new physical output port managed by this node
-// Arguments: node object pointer, container type (s,v,m,b), element type (logical,double,int32,int64,uint32,uint64), port's name
-// Returns id; or a negative number if error.
-// id is an integer starting from 0
-MEX_DEFINE(createOutput) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 4, 0);
-    OutputArguments output(nlhs, plhs, 1);
-    
-    // Create port
-    int id = Session<MQTTNodeExt>::get(input.get(0))->createOutputPort(input.get<char>(1), input.get<string>(2), input.get<string>(3));
-    
-    output.set(0, id);
-}
-
 // Return information about a port.
 // Arguments: node object pointer, port's ID
 // Returns: type, container, elementType, strict
@@ -1348,12 +1397,3 @@ MEX_DEFINE(connectPort) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prh
 //        output.set(0, ynode->name());
 //    }
 
-// Returns the maximum ID allowed for an update type.
-// Args: none
-// Returns: an integer
-MEX_DEFINE(maxUpdateID) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 0);
-    OutputArguments output(nlhs, plhs, 1);
-    
-    output.set(0, OBNsim::MAX_UPDATE_INDEX);
-}
