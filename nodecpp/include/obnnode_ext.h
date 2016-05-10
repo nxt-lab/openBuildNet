@@ -14,16 +14,11 @@
 #include <vector>
 #include <functional>
 
-/** These functions are used to lock and unlock a pointer.
- They MUST be defined by the actual external interface (e.g., Matlab's MEX, Julia, Python, etc.).
- By locking a pointer, the pointer (i.e., its memory region) is locked and remains valid, and the dynamic library should not be unloaded until all locked objects are released.
- By unlocking a pointer, the locking is undone. When all locked objected have been unlocked, the dynamic library may be unloaded.
- Note that unlocking a pointer does not delete the pointer; it simply removes the lock.
- 
- Example: for Matlab's MEX interface, these correspond to mexLock() and mexUnlock(), and the pointer argument is not used.
- */
-void lockPointer(void*);
-void unlockPointer(void*);
+// Report an error and may terminate.
+void reportError(const char* msg);
+
+// Report a warning
+void reportWarning(const char* msg);
 
 /** Types and functions the external interface can use. */
 #ifdef __cplusplus
@@ -49,7 +44,6 @@ extern "C" {
     };
     
     
-    
     /* === Node interface === */
     
     // Create a new node object, given nodeName, workspace, and optional server address.
@@ -64,6 +58,13 @@ extern "C" {
     
     
     /* === Port interface === */
+    
+    /** Port type. */
+    enum OBNEI_PortType {
+        OBNEI_Port_Input = 0,
+        OBNEI_Port_Output = 1,
+        OBNEI_Port_Data = 2
+    };
     
     /** Container type. */
     enum OBNEI_ContainerType {
@@ -88,6 +89,14 @@ extern "C" {
         OBNEI_Format_ProtoBuf = 0      // The default
     };
     
+    /** Structure containing information about a port. */
+    struct OBNEI_PortInfo {
+        OBNEI_PortType type;
+        OBNEI_ContainerType container;
+        OBNEI_ElementType element_type;
+        bool strict;
+    };
+    
     // Create a new input port on a node
     // Arguments: node ID, port's name, format type, container type, element type, strict or not
     // Returns port's id; or negative number if error.
@@ -110,6 +119,25 @@ extern "C" {
                          OBNEI_ContainerType container,
                          OBNEI_ElementType element);
     
+    
+    // Synchronous sending: request an output port to send its current value/message immediately and wait until it can be sent.
+    // Note that this function does not accept a value to be sent; instead the value/message of the port is set by another function.
+    // Args: node ID, port's ID
+    // Returns: zero if successful
+    // This function will return an error if the given port is not a physical output port.
+    int outputSendSync(size_t nodeid, size_t portid);
+    
+    // Is there a value pending at an input port?
+    // Args: node ID, port's ID
+    // Returns: true if >0, false if =0, error if <0.
+    int inputPending(size_t nodeid, size_t portid);
+    
+    // Returns information about a port.
+    // Arguments: node ID, port's ID, pointer to an OBNEI_PortInfo structure to receive info
+    // Returns: 0 if successful.
+    int portInfo(size_t nodeid, size_t portid, OBNEI_PortInfo* pInfo);
+    
+    
     // Read the current value of a non-strict input port, or pop the top/front value of a strict input port.
     // Args: node object pointer, port's ID
     // Returns: value in an appropriate Matlab's type
@@ -117,9 +145,16 @@ extern "C" {
     // If the port contains binary data, the function will return a string containing the binary data.
     
     
+    
+    
     /* === Misc === */
     // Returns the maximum ID allowed for an update type.
     int maxUpdateID();
+    
+    // Returns the last error/warning message as a C null-terminated string.
+    // Do not try to modify the string.
+    const char* lastErrorMessage();
+    const char* lastWarningMessage();
     
 #ifdef __cplusplus
 }
@@ -128,6 +163,18 @@ extern "C" {
 
 /** Internal definitions used by implementation. */
 namespace OBNNodeExtInt {
+    
+    /** These functions are used to lock and unlock a pointer.
+     They MUST be defined by the actual external interface (e.g., Matlab's MEX, Julia, Python, etc.).
+     By locking a pointer, the pointer (i.e., its memory region) is locked and remains valid, and the dynamic library should not be unloaded until all locked objects are released.
+     By unlocking a pointer, the locking is undone. When all locked objected have been unlocked, the dynamic library may be unloaded.
+     Note that unlocking a pointer does not delete the pointer; it simply removes the lock.
+     
+     Example: for Matlab's MEX interface, these correspond to mexLock() and mexUnlock(), and the pointer argument is not used.
+     */
+    void lockPointer(void*);
+    void unlockPointer(void*);
+    
     /** Manage object instances. Inspired by MEXPLUS. */
     template<class T>
     class Session {
