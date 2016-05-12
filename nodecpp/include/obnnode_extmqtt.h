@@ -33,13 +33,6 @@
  */
 
 
-// Report an error and (usually) terminate.
-void reportError(const char* msgID, const char* msg);
-
-// Report a warning
-void reportWarning(const char* msgID, const char* msg);
-
-
 /** The main node class for external interface. */
 class MQTTNodeExt: public OBNnode::MQTTNodeBase {
 public:
@@ -47,7 +40,7 @@ public:
     /** Structure containing info about a port in this node. */
     struct PortInfo {
         OBNnode::PortBase *port;
-        enum { INPUTPORT, OUTPUTPORT, DATAPORT } type;
+        OBNEI_PortType type;
         OBNEI_ContainerType container;
         OBNEI_ElementType elementType;
         bool strict;    ///< Only for input ports
@@ -166,21 +159,21 @@ public:
     virtual void onRawMessageError(const OBNnode::PortBase * port, const std::string& info) override {
         _node_state = NODE_ERROR;
         auto msg = "Error while parsing the raw message from port: " + port->fullPortName() + " (" + info + ")";
-        reportError("MQTTNODE:communication", msg.c_str());
+        reportError(msg.c_str());
     }
     
     /** Callback for error when reading the values from a structured message (e.g. ProtoBuf or JSON), e.g. if the type or dimension is invalid. */
     virtual void onReadValueError(const OBNnode::PortBase * port, const std::string& info) override {
         _node_state = NODE_ERROR;
         auto msg = "Error while extracting value from message for port: " + port->fullPortName() + " (" + info + ")";
-        reportError("MQTTNODE:communication", msg.c_str());
+        reportError(msg.c_str());
     }
     
     /** Callback for error when sending the values (typically happens when serializing the message to be sent). */
     virtual void onSendMessageError(const OBNnode::PortBase * port, const std::string& info) override {
         _node_state = NODE_ERROR;
         auto msg = "Error while sending a value from port: " + port->fullPortName() + " (" + info + ")";
-        reportError("MQTTNODE:communication", msg.c_str());
+        reportError(msg.c_str());
     }
     
     /** Callback for error interacting with the SMN and openBuildNet system.  Used for serious errors.
@@ -188,14 +181,14 @@ public:
      */
     virtual void onOBNError(const std::string& msg) override {
         _node_state = NODE_ERROR;
-        reportError("MQTTNODE:openBuildNet", msg.c_str());
+        reportError(msg.c_str());
     }
     
     /** Callback for warning issues interacting with the SMN and openBuildNet system, e.g. an unrecognized system message from the SMN.  Usually the simulation may continue without any serious consequence.
      \param msg A string containing the warning message.
      */
     virtual void onOBNWarning(const std::string& msg) override {
-        reportWarning("MQTTNODE:openBuildNet", msg.c_str());
+        reportWarning(msg.c_str());
     }
 };
 

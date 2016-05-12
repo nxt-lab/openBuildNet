@@ -28,18 +28,6 @@ using std::string;
 template class OBNNodeExtInt::Session<MQTTNodeExt>;
 
 
-/// Report an error and (usually) terminate.
-void reportError(const char* msgID, const char* msg) {
-    //mexErrMsgIdAndTxt(msgID, msg);
-}
-
-
-/// Report a warning
-void reportWarning(const char* msgID, const char* msg) {
-    //mexWarnMsgIdAndTxt(msgID, msg);
-}
-
-
 /******* Implementation of the MQTT Node for External Interface *******/
 
 #define YNM_PORT_CLASS_BY_NAME(BASE,PCLS,CTNR,TYPE,...) \
@@ -82,7 +70,7 @@ int MQTTNodeExt::createInputPort(const std::string &name,
     
     MQTTNodeExt::PortInfo portinfo;
     OBNnode::InputPortBase *port;
-    portinfo.type = MQTTNodeExt::PortInfo::INPUTPORT;
+    portinfo.type = OBNEI_Port_Input;
     switch (container) {
         case OBNEI_Container_Scalar:
             if (strict) {
@@ -152,7 +140,7 @@ int MQTTNodeExt::createOutputPort(const std::string &name,
 
     MQTTOutputPortBase *port;
     MQTTNodeExt::PortInfo portinfo;
-    portinfo.type = MQTTNodeExt::PortInfo::OUTPUTPORT;
+    portinfo.type = OBNEI_Port_Output;
     switch (container) {
         case OBNEI_Container_Scalar:
             port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_scalar,element,name);
@@ -236,7 +224,7 @@ int MQTTNodeExt::runStep(double timeout) {
                     auto evt = m_port_events.wait_and_pop();
                     assert(evt);    // The event must be valid
                     
-                    // Create a Matlab event for this port event
+                    // Create an external-interface event for this port event
                     _ml_current_event.type = OBNEI_RCV;   // The default event is Message Received; check evt->event_type for other types
                     _ml_current_event.arg.index = evt->port_index;
                     _ml_pending_event = true;
@@ -279,7 +267,7 @@ int MQTTNodeExt::runStep(double timeout) {
                 break;
                 
             case NODE_STOPPED:
-                // if _node_is_stopping = true then the node is stopping (we've just pushed the TERM event to Matlab, now we need to actually stop it)
+                // if _node_is_stopping = true then the node is stopping (we've just pushed the TERM event to external interface, now we need to actually stop it)
                 if (_node_is_stopping) {
                     _node_is_stopping = false;
                     return 2;
@@ -313,7 +301,7 @@ int MQTTNodeExt::runStep(double timeout) {
     
     // Return appropriate value depending on the current state
     if (_node_state == NODE_STOPPED && !_node_is_stopping) {
-        // Stopped (properly) but not when the node is stopping (we still need to push a TERM event to Matlab)
+        // Stopped (properly) but not when the node is stopping (we still need to push a TERM event to external interface)
         return 2;
     } else if (_node_state == NODE_ERROR) {
         // error
@@ -446,6 +434,119 @@ int createOutputPort(size_t id,
     // Try to add the port
     return pnode->createOutputPort(portname, format, container, element);
 }
+
+// Synchronous sending: request an output port to send its current value/message immediately and wait until it can be sent.
+// Note that this function does not accept a value to be sent; instead the value/message of the port is set by another function.
+// Args: node ID, port's ID
+// Returns: zero if successful
+// This function will return an error if the given port is not a physical output port.
+int outputSendSync(size_t nodeid, size_t portid) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError("Node does not exist.");
+        return -1;
+    }
+    
+    // Find port
+    if (portid >= pnode->_all_ports.size()) {
+        reportError("Invalid port ID");
+        return -2;
+    }
+    
+    // Obtain the port
+    MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
+    if (portinfo.type != OBNEI_Port_Output) {
+        reportError("Given port is not a physical output.");
+        return -3;
+    }
+    
+    // Cast the pointer to an output port object and send
+    MQTTOutputPortBase *p = dynamic_cast<MQTTOutputPortBase*>(portinfo.port);
+    if (p) {
+        p->sendSync();
+    } else {
+        reportError("Internal error: port object type does not match its declared type.");
+        return -4;
+    }
+    
+    return 0;
+}
+
+// Is there a value pending at an input port?
+// Args: node ID, port's ID
+// Returns: true if >0, false if =0, error if <0.
+int inputPending(size_t nodeid, size_t portid) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError("Node does not exist.");
+        return -1;
+    }
+    
+    // Find port
+    if (portid >= pnode->_all_ports.size()) {
+        reportError("Invalid port ID");
+        return -2;
+    }
+    
+    // Obtain the port
+    MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
+    if (portinfo.type != OBNEI_Port_Input) {
+        reportError("Given port is not an input output.");
+        return -3;
+    }
+    
+    // Cast and query the port
+    OBNnode::InputPortBase *port = dynamic_cast<OBNnode::InputPortBase*>(portinfo.port);
+    if (port) {
+        return port->isValuePending()?1:0;
+    } else {
+        reportError("Internal error: port object is not an input port.");
+        return -4;
+    }
+}
+
+// Returns information about a port.
+// Arguments: node ID, port's ID, pointer to a valid OBNEI_PortInfo structure to receive info
+// Returns: 0 if successful.
+int portInfo(size_t nodeid, size_t portid, OBNEI_PortInfo* pInfo) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError("Node does not exist.");
+        return -1;
+    }
+    
+    // Find port
+    if (portid >= pnode->_all_ports.size()) {
+        reportError("Invalid port ID");
+        return -2;
+    }
+    
+    // Obtain the port's info
+    MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
+    
+    // Return the information
+    pInfo->type = portinfo.type;
+    pInfo->container = portinfo.container;
+    pInfo->element_type = portinfo.elementType;
+    pInfo->strict = portinfo.strict;
+    
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -649,7 +750,7 @@ MEX_DEFINE(readInput) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[
     
     // Obtain the port
     MQTTNodeExt::PortInfo portinfo = ynode->_all_ports[id];
-    if (portinfo.type != MQTTNodeExt::PortInfo::INPUTPORT) {
+    if (portinfo.type != OBNEI_Port_Input) {
         reportError("MQTTNODE:readInput", "Given port is not an input.");
         return;
     }
@@ -821,7 +922,7 @@ MEX_DEFINE(writeOutput) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prh
     
     // Obtain the port
     MQTTNodeExt::PortInfo portinfo = ynode->_all_ports[id];
-    if (portinfo.type != MQTTNodeExt::PortInfo::OUTPUTPORT) {
+    if (portinfo.type != OBNEI_Port_Output) {
         reportError("MQTTNODE:writeOutput", "Given port is not a physical output.");
         return;
     }
@@ -958,69 +1059,6 @@ MEX_DEFINE(writeOutput) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prh
         default:    // This should never happen
             reportError("MQTTNODE:writeOutput", "Internal error: port's container type is invalid.");
             break;
-    }
-}
-
-// Request an output port to send its current value/message immediatley and wait until it can be sent.
-// Note that this function does not accept a value to be sent; instead the value/message of the port is set by another function.
-// Args: node object pointer, port's ID
-// Returns: none
-// This function will return an error if the given port is not a physical output port.
-MEX_DEFINE(sendSync) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 2);
-    OutputArguments output(nlhs, plhs, 0);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    unsigned int id = input.get<unsigned int>(1);
-    if (id >= ynode->_all_ports.size()) {
-        reportError("MQTTNODE:sendSync", "Invalid port ID.");
-        return;
-    }
-    
-    // Obtain the port
-    MQTTNodeExt::PortInfo portinfo = ynode->_all_ports[id];
-    if (portinfo.type != MQTTNodeExt::PortInfo::OUTPUTPORT) {
-        reportError("MQTTNODE:sendSync", "Given port is not a physical output.");
-        return;
-    }
-    
-    // Cast the pointer to an output port object and send
-    MQTTOutputPortBase *p = dynamic_cast<MQTTOutputPortBase*>(portinfo.port);
-    if (p) {
-        p->sendSync();
-    } else {
-        reportError("MQTTNODE:sendSync", "Internal error: port object type does not match its declared type.");
-    }
-}
-
-// Is there a value pending at an input port?
-// Args: node object pointer, port's ID
-// Returns: true/false
-MEX_DEFINE(inputPending) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 2);
-    OutputArguments output(nlhs, plhs, 1);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    unsigned int id = input.get<unsigned int>(1);
-    if (id >= ynode->_all_ports.size()) {
-        reportError("MQTTNODE:inputPending", "Invalid port ID.");
-        return;
-    }
-    
-    // Obtain the port
-    MQTTNodeExt::PortInfo portinfo = ynode->_all_ports[id];
-    if (portinfo.type != MQTTNodeExt::PortInfo::INPUTPORT) {
-        reportError("MQTTNODE:inputPending", "Given port is not an input port.");
-        return;
-    }
-    
-    // Cast and query the port
-    OBNnode::InputPortBase *port = dynamic_cast<OBNnode::InputPortBase*>(portinfo.port);
-    if (port) {
-        output.set(0, port->isValuePending());
-    } else {
-        reportError("MQTTNODE:inputPending", "Internal error: port object is not an input port.");
-        return;
     }
 }
 
@@ -1279,53 +1317,6 @@ MEX_DEFINE(isNodeStopped) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* p
 }
 
 
-// Return information about a port.
-// Arguments: node object pointer, port's ID
-// Returns: type, container, elementType, strict
-MEX_DEFINE(portInfo) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 2);
-    OutputArguments output(nlhs, plhs, 4);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    unsigned int id = input.get<unsigned int>(1);
-    if (id >= ynode->_all_ports.size()) {
-        reportError("MQTTNODE:portInfo", "Invalid port ID.");
-        return;
-    }
-    
-    // Obtain the port
-    MQTTNodeExt::PortInfo portinfo = ynode->_all_ports[id];
-    
-    // Return the information
-    output.set(0,
-               portinfo.type==MQTTNodeExt::PortInfo::INPUTPORT?'i':
-               (portinfo.type==MQTTNodeExt::PortInfo::OUTPUTPORT?'o':'d'));
-    output.set(1, portinfo.container);
-    switch (portinfo.elementType) {
-        case MQTTNodeExt::PortInfo::DOUBLE:
-            output.set(2, "double");
-            break;
-        case MQTTNodeExt::PortInfo::INT32:
-            output.set(2, "int32");
-            break;
-        case MQTTNodeExt::PortInfo::INT64:
-            output.set(2, "int64");
-            break;
-        case MQTTNodeExt::PortInfo::UINT32:
-            output.set(2, "uint32");
-            break;
-        case MQTTNodeExt::PortInfo::UINT64:
-            output.set(2, "uint64");
-            break;
-        case MQTTNodeExt::PortInfo::LOGICAL:
-            output.set(2, "logical");
-            break;
-        default:
-            output.set(2, "");
-            break;
-    }
-    output.set(3, portinfo.strict);
-}
 
 // Enable the message received event at an input port
 // Args: node object pointer, port's ID
@@ -1344,7 +1335,7 @@ MEX_DEFINE(enableRcvEvent) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* 
     
     // Obtain the port
     MQTTNodeExt::PortInfo portinfo = ynode->_all_ports[id];
-    if (portinfo.type != MQTTNodeExt::PortInfo::INPUTPORT) {
+    if (portinfo.type != OBNEI_Port_Input) {
         reportError("MQTTNODE:enableRcvEvent", "Given port is not an input.");
         return;
     }
