@@ -76,9 +76,9 @@ int MQTTNodeMatlab::createInputPort(char container, const std::string &element, 
         case 'v':
         case 'V':
             if (strict) {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector,element,true,name);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector_raw,element,true,name);
             } else {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector,element,false,name);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector_raw,element,false,name);
             }
             portinfo.container = 'v';
             break;
@@ -86,9 +86,9 @@ int MQTTNodeMatlab::createInputPort(char container, const std::string &element, 
         case 'm':
         case 'M':
             if (strict) {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix,element,true,name);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix_raw,element,true,name);
             } else {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix,element,false,name);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix_raw,element,false,name);
             }
             portinfo.container = 'm';
             break;
@@ -145,13 +145,13 @@ int MQTTNodeMatlab::createOutputPort(char container, const std::string &element,
             
         case 'v':
         case 'V':
-            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_vector,element,name);
+            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_vector_raw,element,name);
             portinfo.container = 'v';
             break;
             
         case 'm':
         case 'M':
-            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_matrix,element,name);
+            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_matrix_raw,element,name);
             portinfo.container = 'm';
             break;
             
@@ -348,20 +348,20 @@ template class mexplus::Session<MQTTNode::WaitForCondition>;
   if (p) { output.set(0, p->pop()); } \
 else { reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type."); }
 
-// For vectors, regardless of how vectors are stored in Matlab's mxArray vs. in Eigen, we can simply copy the exact number of values from one to another.
+// For vectors, we can simply copy the exact number of values from one to another.
 template <typename ETYPE>
 mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port, bool strict)
 {
     if (strict) {
-        MQTTInput<OBN_PB,obn_vector<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector<ETYPE>,true>*>(port);
+        MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,true>*>(port);
         if (p) {
-            // Get unique_ptr to an Eigen's object
+            // Get unique_ptr to an array container
             auto pv = p->pop();
             
             if (pv) {
                 // Copy to MxArray
                 MxArray ml(FUNC(pv->size(), 1));
-                std::copy(pv->data(), pv->data()+pv->size(), ml.getData<ETYPE>());
+                std::copy_n(pv->data(), pv->size(), ml.getData<ETYPE>());
                 return ml.release();
             } else {
                 // Empty vector
@@ -370,14 +370,14 @@ mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnod
             }
         }
     } else {
-        MQTTInput<OBN_PB,obn_vector<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector<ETYPE>,false>*>(port);
+        MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,false>*>(port);
         if (p) {
             // Get direct access to value
             auto value_access = p->lock_and_get();
             const auto& pv = *value_access;
             
             MxArray ml(FUNC(pv.size(), 1));
-            std::copy(pv.data(), pv.data()+pv.size(), ml.getData<ETYPE>());
+            std::copy_n(pv.data(), pv.size(), ml.getData<ETYPE>());
             return ml.release();
         }
     }
@@ -387,29 +387,23 @@ mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnod
     return nullptr;
 }
 
-// For matrices, the order in which Matlab and Eigen store matrices (column-major or row-major) will affect how data can be copied.  Because both Eigen and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.  For completeness, there are commented code lines that safely transfer data by accessing element-by-element, but this would be slower.
+// For matrices, because both raw array and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.
 template <typename ETYPE>
 mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port, bool strict) {
     if (strict) {
-        MQTTInput<OBN_PB,obn_matrix<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix<ETYPE>,true>*>(port);
+        MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,true>*>(port);
         if (p) {
-            // Get unique_ptr to an Eigen's object
+            // Get unique_ptr to the raw matrix container
             auto pv = p->pop();
             
             if (pv) {
-                auto nr = pv->rows(), nc = pv->cols();
+                auto nr = pv->nrows, nc = pv->ncols;
                 MxArray ml(FUNC(nr, nc));
                 
-                // The following lines copy the whole chunk of raw data from Eigen to MEX/Matlab, it's faster but requires that Matlab and Eigen must use the same order type
-                std::copy(pv->data(), pv->data()+nr*nc, ml.getData<ETYPE>());
+                // The following lines copy the whole chunk of raw data to MEX/Matlab
+                std::copy_n(pv->data.data(), pv->data.size(), ml.getData<ETYPE>());
                 return ml.release();
                 
-                // // The following lines copy element-by-element: it's safe but slow.
-                //        for (std::size_t c = 0; c < nc; ++c) {
-                //            for (std::size_t r = 0; r < nr; ++r) {
-                //                ml.set(r, c, pv->coeff(r, c));
-                //            }
-                //        }
             } else {
                 // Empty matrix
                 MxArray ml(FUNC(0,0));
@@ -417,25 +411,18 @@ mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnod
             }
         }
     } else {
-        MQTTInput<OBN_PB,obn_matrix<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix<ETYPE>,false>*>(port);
+        MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,false>*>(port);
         if (p) {
             // Get direct access to value
             auto value_access = p->lock_and_get();
             const auto& pv = *value_access;
             
-            auto nr = pv.rows(), nc = pv.cols();
+            auto nr = pv.nrows, nc = pv.ncols;
             MxArray ml(FUNC(nr, nc));
             
-            // The following lines copy the whole chunk of raw data from Eigen to MEX/Matlab, it's faster but requires that Matlab and Eigen must use the same order type
-            std::copy(pv.data(), pv.data()+nr*nc, ml.getData<ETYPE>());
+            // The following lines copy the whole chunk of raw data to MEX/Matlab
+            std::copy_n(pv.data.data(), pv.data.size(), ml.getData<ETYPE>());
             return ml.release();
-            
-            // // The following lines copy element-by-element: it's safe but slow.
-            //        for (std::size_t c = 0; c < nc; ++c) {
-            //            for (std::size_t r = 0; r < nr; ++r) {
-            //                ml.set(r, c, pv.coeff(r, c));
-            //            }
-            //        }
         }
     }
 
@@ -451,36 +438,32 @@ mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnod
   else { reportError("MQTTNODE:writeOutput", "Internal error: port object type does not match its declared type."); }
 
 
-// To convert a vector from mxArray to Eigen, with possibility that their types are different
+// To convert a vector from mxArray to raw array, with possibility that their types are different
 // - Use MEXPLUS to convert from mxArray to vector<D> of appropriate type
-// - Use Eigen::Map to create an Eigen's vector on the data returned by the vector object.
-// - Assign the map object to the Eigen vector object (inside the port object).
+// - Copy the data over
 template <typename ETYPE>
 void write_output_vector_helper(const InputArguments &input, OBNnode::PortBase *port) {
-    MQTTOutput<OBN_PB,obn_vector<ETYPE>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_vector<ETYPE>>*>(port);
+    MQTTOutput<OBN_PB,obn_vector_raw<ETYPE>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_vector_raw<ETYPE>>*>(port);
     if (p) {
         auto from = MxArray(input.get(2)); // MxArray object
         auto &to = *(*p);
         if (from.isEmpty()) {
             // if "from" is empty then we clear the data in the port, do not copy
-            to.resize(0);
+            to.clear();
         } else {
             // if "from" is not empty then we can copy the data
-            to = to.Map(from.getData<ETYPE>(), from.size());
+            to.assign(from.getData<ETYPE>(), from.size());
         }
-        
-// // Another way to copy
-//        std::vector<ETYPE> v(input.get<std::vector<ETYPE>>(2));
-//        *p = (*(*p)).Map(v.data(), v.size());
+
     } else {
         reportError("MQTTNODE:writeOutput", "Internal error: port object type does not match its declared type.");
     }
 }
 
-// For matrices, the order in which Matlab and Eigen store matrices (column-major or row-major) will affect how data can be copied.  Because both Eigen and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.  For completeness, there are commented code lines that safely transfer data by accessing element-by-element, but this would be slower.
+// For matrices, because both raw array and Matlab use column-major order, we can safely copy the data in memory between them without affecting the data.
 template <typename ETYPE>
 void write_output_matrix_helper(const InputArguments &input, OBNnode::PortBase *port) {
-    MQTTOutput<OBN_PB,obn_matrix<ETYPE>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_matrix<ETYPE>>*>(port);
+    MQTTOutput<OBN_PB,obn_matrix_raw<ETYPE>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_matrix_raw<ETYPE>>*>(port);
     if (p) {
         auto from = MxArray(input.get(2)); // MxArray object
         auto nr = from.rows(), nc = from.cols();
@@ -488,19 +471,11 @@ void write_output_matrix_helper(const InputArguments &input, OBNnode::PortBase *
         
         if (from.isEmpty()) {
             // if "from" is empty then we clear the data in the port, do not copy
-            to.resize(nr, nc);
+            to.clear();
         } else {
             // if "from" is not empty then we can copy the data
-            to = to.Map(from.getData<ETYPE>(), nr, nc);
+            to.copy(from.getData<ETYPE>(), nr, nc);
         }
-        
-//        // The following lines copy element-by-element: it's safe but slow.
-//        to.resize(nr, nc);
-//        for (std::size_t c = 0; c < nc; ++c) {
-//            for (std::size_t r = 0; r < nr; ++r) {
-//                to(r, c) = from.at<ETYPE>(r, c);
-//            }
-//        }
     } else {
         reportError("MQTTNODE:writeOutput", "Internal error: port object type does not match its declared type.");
     }
@@ -754,14 +729,10 @@ namespace {
                         
                     case MQTTNodeMatlab::PortInfo::LOGICAL: {
                         // This case is special because vector<bool> does not have data()
-                        MQTTOutput<OBN_PB,obn_vector<bool>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_vector<bool>>*>(portinfo.port);
+                        MQTTOutput<OBN_PB,obn_vector_raw<bool>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_vector_raw<bool>>*>(portinfo.port);
                         if (p) {
                             std::vector<bool> v(input.get<std::vector<bool>>(2));
-                            (*(*p)).resize(v.size());
-                            // Copy element-by-element
-                            for (std::size_t i = 0; i < v.size(); ++i) {
-                                (*(*p))(i) = v[i];
-                            }
+                            (*(*p)).assign(v.begin(), v.size());
                         } else {
                             reportError("MQTTNODE:writeOutput", "Internal error: port object type does not match its declared type.");
                         }

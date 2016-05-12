@@ -876,7 +876,7 @@ MEX_DEFINE(writeOutput) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prh
                     
                 case MQTTNodeExt::PortInfo::LOGICAL: {
                     // This case is special because vector<bool> does not have data()
-                    MQTTOutput<OBN_PB,obn_vector<bool>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_vector<bool>>*>(portinfo.port);
+                    MQTTOutput<OBN_PB,obn_vector_raw<bool>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_vector_raw<bool>>*>(portinfo.port);
                     if (p) {
                         std::vector<bool> v(input.get<std::vector<bool>>(2));
                         (*(*p)).resize(v.size());
