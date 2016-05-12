@@ -188,11 +188,11 @@ ADD_EXECUTABLE(smnchai
 )
 
 
-## Make sure that C++ 11 is used (for thread, mutex...)
+## Make sure that C++ 14 is used (for thread, mutex...)
 if(APPLE)
-  list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
+  list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++14 ${CMAKE_CXX_FLAGS}")
 else()
-  set_property(TARGET smnchai PROPERTY CXX_STANDARD 11)
+  set_property(TARGET smnchai PROPERTY CXX_STANDARD 14)
   set_property(TARGET smnchai PROPERTY CXX_STANDARD_REQUIRED ON)
 endif()
 
