@@ -75,7 +75,7 @@ namespace chaiscript {
                 m->add(fun([](typename CLS::Index r, typename CLS::Index c) {
                     return CLS(r, c);
                 }), CLSNAME);
-                m->add(bootstrap::copy_constructor<CLS>(CLSNAME));
+                bootstrap::copy_constructor<CLS>(CLSNAME, *m);
                 m->add(fun(static_cast<CLS& (CLS::*)(const CLS&)>(&CLS::operator=)), "=");
                 
                 // Conversions from vector to matrix

@@ -120,13 +120,16 @@ int MQTTClient::sendMessage(const OBNSimMsg::SMN2N &msg, const std::string& topi
     
     // Allocate buffer to store the bytes of the message
     auto msgsize = msg.ByteSize();
-    char buffer[msgsize];
+    char* buffer = new char[msgsize];
     
     if (!msg.SerializeToArray(buffer, msgsize)) {
+        delete [] buffer;
         return false;
     }
 
-    return sendMessage(buffer, msgsize, topic, retained);
+    auto result = sendMessage(buffer, msgsize, topic, retained);
+    delete [] buffer;
+    return result;
 }
 
 

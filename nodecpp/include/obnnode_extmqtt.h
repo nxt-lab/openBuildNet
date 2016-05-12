@@ -22,6 +22,7 @@
 
 #include <obnnode.h>    // node.C++ framework
 #include <obnnode_ext.h>    // The external interface: all types and function definitions used by external language
+#include <obnnode_ext_internal.h>   // Internals of the external interface
 
 
 /* IMPORTANT NOTE:
