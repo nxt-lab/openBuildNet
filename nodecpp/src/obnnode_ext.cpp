@@ -12,6 +12,7 @@
 #include <obnnode_ext.h>
 
 // Returns the maximum ID allowed for an update type.
+EXPORT
 int maxUpdateID() {
     return OBNsim::MAX_UPDATE_INDEX;
 }

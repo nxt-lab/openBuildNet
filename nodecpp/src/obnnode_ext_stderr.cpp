@@ -28,10 +28,12 @@ void reportWarning(const char* msg) {
     warning_message[MAXMSGLEN] = '\0';    // make sure it's null terminated
 }
 
+EXPORT
 const char* lastErrorMessage() {
     return error_message;
 }
 
+EXPORT
 const char* lastWarningMessage() {
     return warning_message;
 }

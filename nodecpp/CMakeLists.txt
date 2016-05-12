@@ -65,8 +65,10 @@ ADD_EXECUTABLE(nodecpp-mynode
 
 ADD_EXECUTABLE(nodecpp-extmqtt
 	extmqtt.cpp
-	src/obnnode_extmqtt.cpp
-	src/obnnode_extmqtt_stderr.cpp
+  src/obnnode_ext.cpp
+	src/obnnode_ext_stderr.cpp
+  src/obnnode_ext_stdmsg.cpp
+  src/obnnode_extmqtt.cpp
 	${OBNNODE_CORE_SRCFILES}
 )
 

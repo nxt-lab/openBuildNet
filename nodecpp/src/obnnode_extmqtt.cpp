@@ -18,6 +18,7 @@
 
 #include <obnnode.h>    // node.C++ framework
 #include <obnnode_extmqtt.h>
+#include <obnnode_ext_stdmsg.h>
 
 using namespace OBNnode;
 using std::string;
@@ -82,17 +83,17 @@ int MQTTNodeExt::createInputPort(const std::string &name,
 
         case OBNEI_Container_Vector:
             if (strict) {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector,element,true,name);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector_raw,element,true,name);
             } else {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector,element,false,name);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_vector_raw,element,false,name);
             }
             break;
             
         case OBNEI_Container_Matrix:
             if (strict) {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix,element,true,name);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix_raw,element,true,name);
             } else {
-                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix,element,false,name);
+                port = YNM_PORT_CLASS_BY_NAME_STRICT(InputPortBase,MQTTInput,obn_matrix_raw,element,false,name);
             }
             break;
             
@@ -147,11 +148,11 @@ int MQTTNodeExt::createOutputPort(const std::string &name,
             break;
             
         case OBNEI_Container_Vector:
-            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_vector,element,name);
+            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_vector_raw,element,name);
             break;
             
         case OBNEI_Container_Matrix:
-            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_matrix,element,name);
+            port = YNM_PORT_CLASS_BY_NAME(MQTTOutputPortBase,MQTTOutput,obn_matrix_raw,element,name);
             break;
             
         case OBNEI_Container_Binary:
@@ -199,7 +200,6 @@ MQTTNodeExt::~MQTTNodeExt() {
 int MQTTNodeExt::runStep(double timeout) {
     if (_node_state == NODE_ERROR) {
         // We can't continue in error state
-        reportError("MQTTNODE:runStep", "Node is in error state; can't continue simulation; please stop the node (restart it) to clear the error state before continuing.");
         return 3;
     }
 
@@ -277,7 +277,7 @@ int MQTTNodeExt::runStep(double timeout) {
                 if (!openSMNPort()) {
                     // Error
                     _node_state = NODE_ERROR;
-                    reportError("MQTTNODE:runStep", "Could not open the SMN port. Check the network and the name server.");
+                    reportError("Could not open the SMN port; check the network and the name server.");
                     break;
                 }
                 
@@ -288,8 +288,9 @@ int MQTTNodeExt::runStep(double timeout) {
                 _node_state = NODE_STARTED;
                 break;
                 
-            default:
-                reportError("MQTTNODE:runStep", "Internal error: invalid node's state.");
+            case NODE_ERROR:
+                // Error state
+                reportError("Internal error: node's state is ERROR.");
                 break;
         }
         
@@ -326,6 +327,7 @@ std::unique_ptr<MQTTNodeExt::PortEvent> MQTTNodeExt::getNextPortEvent(double tim
 /* ============ The external interface ===============*/
 
 // Create a new node
+EXPORT
 int createOBNNode(const char* name, const char* workspace, const char* addr, size_t* id) {
     if (!name) {
         return -1;      // Empty name
@@ -337,6 +339,7 @@ int createOBNNode(const char* name, const char* workspace, const char* addr, siz
         if (OBNNodeExtInt::Session<MQTTNodeExt>::exist([newFullName&](const MQTTNodeExt& node){
             return node.full_name() == newFullName;
         })) {
+            reportError("Node already exists.");
             return 1;       // Node exists
         }
     }
@@ -352,6 +355,7 @@ int createOBNNode(const char* name, const char* workspace, const char* addr, siz
             y = new MQTTNodeExt(std::string(name));
         }
     } catch (...) {
+        reportError("Error while creating the node.");
         return -2;      // Error while creating the node object
     }
     
@@ -370,12 +374,14 @@ int createOBNNode(const char* name, const char* workspace, const char* addr, siz
     } else {
         // Delete the node object and report error
         delete y;
+        reportError("Error while starting the node.");
         return -3;      // Error while starting the node object
     }
 }
 
 
 // Delete a node object
+EXPORT
 int deleteOBNNode(size_t id) {
     return (OBNNodeExtInt::Session<MQTTNodeExt>::destroy(id))?0:-1;
 }
@@ -384,6 +390,7 @@ int deleteOBNNode(size_t id) {
 // Arguments: node ID, port's name, format type, container type, element type, strict or not
 // Returns port's id; or negative number if error.
 // id is an integer starting from 0.
+EXPORT
 int createInputPort(size_t id,
                     const char* name,
                     OBNEI_FormatType format,
@@ -396,11 +403,13 @@ int createInputPort(size_t id,
     }
     std::string portname(name);
     if (portname.empty()) {
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_NAME);
         return -2;      // Invalid port name.
     }
     
     MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(id);
     if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
         return -3;      // Node doesn't exist
     }
     
@@ -412,6 +421,7 @@ int createInputPort(size_t id,
 // Arguments: node ID, port's name, format type, container type, element type
 // Returns port's id; or negative number if error.
 // id is an integer starting from 0.
+EXPORT
 int createOutputPort(size_t id,
                      const char* name,
                      OBNEI_FormatType format,
@@ -423,11 +433,13 @@ int createOutputPort(size_t id,
     }
     std::string portname(name);
     if (portname.empty()) {
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_NAME);
         return -2;      // Invalid port name.
     }
     
     MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(id);
     if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
         return -3;      // Node doesn't exist
     }
     
@@ -440,24 +452,25 @@ int createOutputPort(size_t id,
 // Args: node ID, port's ID
 // Returns: zero if successful
 // This function will return an error if the given port is not a physical output port.
+EXPORT
 int outputSendSync(size_t nodeid, size_t portid) {
     // Find node
     MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
     if (!pnode) {
-        reportError("Node does not exist.");
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
         return -1;
     }
     
     // Find port
     if (portid >= pnode->_all_ports.size()) {
-        reportError("Invalid port ID");
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
         return -2;
     }
     
     // Obtain the port
     MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
     if (portinfo.type != OBNEI_Port_Output) {
-        reportError("Given port is not a physical output.");
+        reportError("Given port is not an output.");
         return -3;
     }
     
@@ -466,7 +479,7 @@ int outputSendSync(size_t nodeid, size_t portid) {
     if (p) {
         p->sendSync();
     } else {
-        reportError("Internal error: port object type does not match its declared type.");
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
         return -4;
     }
     
@@ -476,24 +489,25 @@ int outputSendSync(size_t nodeid, size_t portid) {
 // Is there a value pending at an input port?
 // Args: node ID, port's ID
 // Returns: true if >0, false if =0, error if <0.
+EXPORT
 int inputPending(size_t nodeid, size_t portid) {
     // Find node
     MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
     if (!pnode) {
-        reportError("Node does not exist.");
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
         return -1;
     }
     
     // Find port
     if (portid >= pnode->_all_ports.size()) {
-        reportError("Invalid port ID");
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
         return -2;
     }
     
     // Obtain the port
     MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
     if (portinfo.type != OBNEI_Port_Input) {
-        reportError("Given port is not an input output.");
+        reportError(OBNNodeExtInt::StdMsgs::PORT_NOT_INPUT);
         return -3;
     }
     
@@ -502,7 +516,7 @@ int inputPending(size_t nodeid, size_t portid) {
     if (port) {
         return port->isValuePending()?1:0;
     } else {
-        reportError("Internal error: port object is not an input port.");
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
         return -4;
     }
 }
@@ -510,17 +524,18 @@ int inputPending(size_t nodeid, size_t portid) {
 // Returns information about a port.
 // Arguments: node ID, port's ID, pointer to a valid OBNEI_PortInfo structure to receive info
 // Returns: 0 if successful.
+EXPORT
 int portInfo(size_t nodeid, size_t portid, OBNEI_PortInfo* pInfo) {
     // Find node
     MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
     if (!pnode) {
-        reportError("Node does not exist.");
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
         return -1;
     }
     
     // Find port
     if (portid >= pnode->_all_ports.size()) {
-        reportError("Invalid port ID");
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
         return -2;
     }
     
@@ -537,64 +552,186 @@ int portInfo(size_t nodeid, size_t portid, OBNEI_PortInfo* pInfo) {
 }
 
 
+// Generic (template) function to read from scalar input port
+template <typename T>
+int READ_INPUT_SCALAR_HELPER(size_t nodeid, size_t portid, T* pval) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    // Find port
+    if (portid >= pnode->_all_ports.size()) {
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
+        return -2;
+    }
+    
+    // Obtain the port's info
+    MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
 
+    if (portinfo.type != OBNEI_Port_Input) {
+        reportError(OBNNodeExtInt::StdMsgs::PORT_NOT_INPUT);
+        return -3;
+    }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#define READ_INPUT_SCALAR_HELPER(A,B) \
-MQTTInput<A,obn_scalar<B>,false> *p = dynamic_cast<MQTTInput<A,obn_scalar<B>,false>*>(portinfo.port); \
-if (p) { output.set(0, p->get()); } \
-else { reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type."); }
-
-#define READ_INPUT_SCALAR_HELPER_STRICT(A,B) \
-MQTTInput<A,obn_scalar<B>,true> *p = dynamic_cast<MQTTInput<A,obn_scalar<B>,true>*>(portinfo.port); \
-if (p) { output.set(0, p->pop()); } \
-else { reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type."); }
-
-// For vectors, regardless of how vectors are stored in Matlab's mxArray vs. in Eigen, we can simply copy the exact number of values from one to another.
-template <typename ETYPE>
-mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port, bool strict)
-{
-    if (strict) {
-        MQTTInput<OBN_PB,obn_vector<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector<ETYPE>,true>*>(port);
+    // Query its value based on its type
+    if (portinfo.strict) {
+        MQTTInput<OBN_PB,obn_scalar<T>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_scalar<T>,true>*>(portinfo.port);
+        
         if (p) {
-            // Get unique_ptr to an Eigen's object
-            auto pv = p->pop();
-            
-            if (pv) {
-                // Copy to MxArray
-                MxArray ml(FUNC(pv->size(), 1));
-                std::copy(pv->data(), pv->data()+pv->size(), ml.getData<ETYPE>());
-                return ml.release();
+            if (p->isValuePending()) {
+                *pval = p->pop();
+                return 0;
             } else {
-                // Empty vector
-                MxArray ml(FUNC(0,0));
-                return ml.release();
+                // No value
+                return 1;
             }
+        } else {
+            reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+            return -4;
         }
     } else {
-        MQTTInput<OBN_PB,obn_vector<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector<ETYPE>,false>*>(port);
+        MQTTInput<OBN_PB,obn_scalar<T>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_scalar<T>,false>*>(portinfo.port);
+        if (p) {
+            *pval = p->get();
+            return 0;
+        } else {
+            reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+            return -4;
+        }
+    }
+}
+
+// Float64
+EXPORT
+int inputScalarDoubleGet(size_t nodeid, size_t portid, double* pval) {
+    return READ_INPUT_SCALAR_HELPER(nodeid, portid, pval);
+}
+
+// C++ bool (1 byte)
+EXPORT
+int inputScalarBoolGet(size_t nodeid, size_t portid, bool* pval) {
+    return READ_INPUT_SCALAR_HELPER(nodeid, portid, pval);
+}
+
+// Int32
+EXPORT
+int inputScalarInt32Get(size_t nodeid, size_t portid, int32_t* pval) {
+    return READ_INPUT_SCALAR_HELPER(nodeid, portid, pval);
+}
+
+// Int64
+EXPORT
+int inputScalarInt64Get(size_t nodeid, size_t portid, int64_t* pval) {
+    return READ_INPUT_SCALAR_HELPER(nodeid, portid, pval);
+}
+
+// UInt32
+EXPORT
+int inputScalarUInt32Get(size_t nodeid, size_t portid, uint32_t* pval) {
+    return READ_INPUT_SCALAR_HELPER(nodeid, portid, pval);
+}
+
+// UInt64
+EXPORT
+int inputScalarUInt64Get(size_t nodeid, size_t portid, uint64_t* pval) {
+    return READ_INPUT_SCALAR_HELPER(nodeid, portid, pval);
+}
+
+
+// Generic (template) function to read from vector input port - the *GET function
+template <typename ETYPE>
+int read_input_vector_get(size_t nodeid, size_t portid, void** pMan, ETYPE** pVals, size_t* nelems)
+{
+    // Sanity check
+    if (pMan == nullptr || nelems == nullptr) {
+        return -1000;
+    }
+    
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    // Find port
+    if (portid >= pnode->_all_ports.size()) {
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
+        return -2;
+    }
+    
+    // Obtain the port's info
+    MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
+    
+    if (portinfo.type != OBNEI_Port_Input) {
+        reportError(OBNNodeExtInt::StdMsgs::PORT_NOT_INPUT);
+        return -3;
+    }
+    
+    // Query its value based on its type
+    if (portinfo.strict) {
+        MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,true>*>(port);
+        
+        if (p) {
+            if (p->isValuePending()) {
+                // Get unique_ptr to an array container.
+                auto pv = p->pop();
+                
+                // pMan is this array container object, taken from the unique_ptr
+                raw_array_container<ETYPE>* pContainer = pv.release();
+
+                if (!pContainer) {
+                    reportError(OBNNodeExtInt::StdMsgs::INTERNAL_INVALID_VALUE_FROM_PORT);
+                    return -5;
+                }
+
+                // Returns the pointer
+                *pMan = static_cast<void*>(pContainer);
+                
+                // Lock the pointer so that it will remain in memory
+                OBNNodeExtInt::lockPointer(*pMan);
+
+                // Number of elements
+                *nelems = pContainer->size();
+                
+                // Returns the array if requested
+                if (pVals) {
+                    *pVals = pContainer->data();
+                }
+                
+                return 0;
+            } else {
+                // No value
+                return 1;
+            }
+        } else {
+            reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+            return -4;
+        }
+        
+    } else {
+        MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,false>*>(port);
+        
+        if (p) {
+            // Get direct access to values via LockedAccess
+            auto value_access = p->lock_and_get();
+            
+            // Should create a new dynamic LockedAccess object moved from the returned object, which will be pMan
+            STOP HERE
+            
+            
+            
+            const auto& pv = *value_access;
+            
+            return 0;
+        } else {
+            reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+            return -4;
+        }
+        
         if (p) {
             // Get direct access to value
             auto value_access = p->lock_and_get();
@@ -611,11 +748,33 @@ mxArray* read_input_vector_helper(std::function<mxArray*(int, int)> FUNC, OBNnod
     return nullptr;
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For matrices, the order in which Matlab and Eigen store matrices (column-major or row-major) will affect how data can be copied.  Because both Eigen and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.  For completeness, there are commented code lines that safely transfer data by accessing element-by-element, but this would be slower.
 template <typename ETYPE>
 mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port, bool strict) {
     if (strict) {
-        MQTTInput<OBN_PB,obn_matrix<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix<ETYPE>,true>*>(port);
+        MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,true>*>(port);
         if (p) {
             // Get unique_ptr to an Eigen's object
             auto pv = p->pop();
@@ -641,7 +800,7 @@ mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnod
             }
         }
     } else {
-        MQTTInput<OBN_PB,obn_matrix<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix<ETYPE>,false>*>(port);
+        MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,false>*>(port);
         if (p) {
             // Get direct access to value
             auto value_access = p->lock_and_get();
@@ -681,7 +840,7 @@ else { reportError("MQTTNODE:writeOutput", "Internal error: port object type doe
 // - Assign the map object to the Eigen vector object (inside the port object).
 template <typename ETYPE>
 void write_output_vector_helper(const InputArguments &input, OBNnode::PortBase *port) {
-    MQTTOutput<OBN_PB,obn_vector<ETYPE>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_vector<ETYPE>>*>(port);
+    MQTTOutput<OBN_PB,obn_vector_raw<ETYPE>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_vector_raw<ETYPE>>*>(port);
     if (p) {
         auto from = MxArray(input.get(2)); // MxArray object
         auto &to = *(*p);
@@ -704,7 +863,7 @@ void write_output_vector_helper(const InputArguments &input, OBNnode::PortBase *
 // For matrices, the order in which Matlab and Eigen store matrices (column-major or row-major) will affect how data can be copied.  Because both Eigen and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.  For completeness, there are commented code lines that safely transfer data by accessing element-by-element, but this would be slower.
 template <typename ETYPE>
 void write_output_matrix_helper(const InputArguments &input, OBNnode::PortBase *port) {
-    MQTTOutput<OBN_PB,obn_matrix<ETYPE>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_matrix<ETYPE>>*>(port);
+    MQTTOutput<OBN_PB,obn_matrix_raw<ETYPE>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_matrix_raw<ETYPE>>*>(port);
     if (p) {
         auto from = MxArray(input.get(2)); // MxArray object
         auto nr = from.rows(), nc = from.cols();
@@ -1145,6 +1304,10 @@ MEX_DEFINE(runStep) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[])
     // Call node's runStep
     int result = ynode->runStep(input.get<double>(1));
     
+    /* Results:
+     3 -> reportError("MQTTNODE:runStep", "Node is in error state; can't continue simulation; please stop the node (restart it) to clear the error state before continuing.");
+     
+     
     
     // Convert the result to outputs of this MEX function
     output.set(0, result);
@@ -1329,7 +1492,7 @@ MEX_DEFINE(enableRcvEvent) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* 
     MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
     unsigned int id = input.get<unsigned int>(1);
     if (id >= ynode->_all_ports.size()) {
-        reportError("MQTTNODE:enableRcvEvent", "Invalid port ID.");
+        reportError("MQTTNODE:enableRcvEvent", OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
         return;
     }
     
@@ -1363,7 +1526,7 @@ MEX_DEFINE(connectPort) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prh
     MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
     unsigned int id = input.get<unsigned int>(1);
     if (id >= ynode->_all_ports.size()) {
-        reportError("MQTTNODE:connectPort", "Invalid port ID.");
+        reportError("MQTTNODE:connectPort", OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
         return;
     }
     

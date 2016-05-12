@@ -47,7 +47,7 @@ namespace OBNNodeExtInt {
             } else {
                 instances->emplace_back(instance);      // Add new element
             }
-            lockPointer((void*)instance);
+            lockPointer(static_cast<void*>(instance));
             return id;
         }
         /** Destroy an instance.
@@ -55,7 +55,7 @@ namespace OBNNodeExtInt {
         static bool destroy(std::size_t id) {
             T* p = get(id);     // Get the pointer to unlock
             if (p) {
-                unlockPointer((void*)p);
+                unlockPointer(static_cast<void*>(p));
                 // Destroy the object and reset the shared_ptr to null (i.e., empty)
                 getInstances()->at(id).reset();
                 return true;
@@ -99,7 +99,7 @@ namespace OBNNodeExtInt {
             InstanceList* instances = getInstances();
             for (auto it = instances->begin(); it != instances->end(); ++it) {
                 if (*it) {
-                    unlockPointer((void*)(it->get()));
+                    unlockPointer(static_cast<void*>(it->get()));
                 }
             }
             instances->clear();
