@@ -138,14 +138,29 @@ extern "C" {
     int portInfo(size_t nodeid, size_t portid, OBNEI_PortInfo* pInfo);
     
     
-    // Read the current value of a non-strict input port, or pop the top/front value of a strict input port.
-    // Args: node object pointer, port's ID
-    // Returns: value in an appropriate Matlab's type
-    // For strict ports, if there is no value pending, a default / empty value will be returned.
-    // If the port contains binary data, the function will return a string containing the binary data.
+    /** These functions read the current value of a non-strict scalar input port, or pop the top/front value of a strict scalar input port.
+     Args: node ID, port's ID, pointer to scalar variable to receive the value.
+     Returns: 0 if successful; <0 if error; >0 if no value actually read (e.g., no pending value on a strict port).
+     For strict ports, if there is no value pending, a default / empty value will be returned and the function will return 1.
+     */
+    int inputReadScalarDouble(size_t nodeid, size_t portid, double* pval);      // Float64
+    int inputReadScalarBool(size_t nodeid, size_t portid, bool* pval);          // C++ bool (1 byte)
+    int inputReadScalarInt32(size_t nodeid, size_t portid, int32_t* pval);      // Int32
+    int inputReadScalarInt64(size_t nodeid, size_t portid, int64_t* pval);      // Int64
+    int inputReadScalarUInt32(size_t nodeid, size_t portid, uint32_t* pval);    // UInt32
+    int inputReadScalarUInt64(size_t nodeid, size_t portid, uint64_t* pval);    // UInt64
     
     
-    
+    /** These functions read (or pop) the value from a non-strict (or strict) vector/matrix input port.
+     For each port, there are three functions: *Get, *Release, and *Copy.
+     - The *Get(nodeid, portid, void** pMan, <elem-type>* pVals, size_t* nrows, size_t* ncols) [for vector version, there is no ncols] gets the array of values and put its pointer to pVals (if pVals = NULL this won't be done) and also returns its dimensions (nrows, ncols) as well as a management object in pMan.  It is critical that pMan is received and used later on because it will be used to release the memory used in C.
+     - *Release(void* pMan) releases the management object.  When a port is read by *Get, it may allocate temporary memory and may be locked (so that new incoming messages will not override the current value).  It's CRITICALLY IMPORTANT to call *Release on the returned management object to release the memory and the lock on the port.
+     - *Copy(void* pMan, <elem-type>* pBuf) copies the values from the port to the given buffer (allocated by the external language), where pMan is the management returned by *Get.  This can be used instead of copying the data from pVals to the buffer in the external language (e.g., if pVals in *Get is NULL or ignored).  This function ALSO RELEASE the management object (hence the port) similarly to *Release, therefore IF *Copy IS USED *Release MUST NOT BE CALLED.  In other words, after *Get is called, either *Release or *Copy must be called but not both.
+     
+     There are two ways to use the returned values:
+     - The safest way is to copy the values to a vector / matrix managed by the external language, via pVals returned by *Get or via *Copy.
+     - The values in pVals can also be used directly BUT MUST NOT BE CHANGED (i.e., they are constant) and *Release MUST BE CALLED after this is done.  For example if we simply want to take the sum of the elements, this can be the most efficient way.  However, note that between *Get and *Release, the port is usually locked, hence whatever operations are done on the values should be quick.  Another use case could be to access some elements to decide if we want to use the values in further calculation, in that case we can copy the values over, otherwise we just ignore them.
+     */
     
     /* === Misc === */
     // Returns the maximum ID allowed for an update type.
@@ -159,117 +174,5 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
-
-
-/** Internal definitions used by implementation. */
-namespace OBNNodeExtInt {
-    
-    /** These functions are used to lock and unlock a pointer.
-     They MUST be defined by the actual external interface (e.g., Matlab's MEX, Julia, Python, etc.).
-     By locking a pointer, the pointer (i.e., its memory region) is locked and remains valid, and the dynamic library should not be unloaded until all locked objects are released.
-     By unlocking a pointer, the locking is undone. When all locked objected have been unlocked, the dynamic library may be unloaded.
-     Note that unlocking a pointer does not delete the pointer; it simply removes the lock.
-     
-     Example: for Matlab's MEX interface, these correspond to mexLock() and mexUnlock(), and the pointer argument is not used.
-     */
-    void lockPointer(void*);
-    void unlockPointer(void*);
-    
-    /** Manage object instances. Inspired by MEXPLUS. */
-    template<class T>
-    class Session {
-    public:
-        typedef std::vector< std::shared_ptr<T> > InstanceList;
-        
-        /** Create an instance.
-         */
-        static std::size_t create(T* instance) {
-            InstanceList* instances = getInstances();
-            
-            // Find an empty slot
-            std::size_t id = 0;
-            auto sz = instances->size();
-            for (; id < sz; ++id) {
-                if (!(instances->at(id)))
-                    break;
-            }
-            if (id < sz) {
-                instances->at(id).reset(instance);      // Assign new pointer to this empty slot
-            } else {
-                instances->emplace_back(instance);      // Add new element
-            }
-            lockPointer((void*)instance);
-            return id;
-        }
-        /** Destroy an instance.
-         */
-        static bool destroy(std::size_t id) {
-            T* p = get(id);     // Get the pointer to unlock
-            if (p) {
-                unlockPointer((void*)p);
-                // Destroy the object and reset the shared_ptr to null (i.e., empty)
-                getInstances()->at(id).reset();
-                return true;
-            }
-            return false;
-        }
-        /** Retrieve an instance or nullptr if no instance is found.
-         */
-        static T* get(std::size_t id) {
-            InstanceList* instances = getInstances();
-            if (id < instances->size() && id >= 0) {
-                auto& p = instances->at(id);
-                if (p) {
-                    return p.get();
-                }
-            }
-            return nullptr;
-        }
-        /** Check if the given id exists.
-         */
-        static bool exist(std::size_t id) {
-            InstanceList* instances = getInstances();
-            return id < instances->size() && id >= 0 && instances->at(id);
-        }
-        /** Check if an element exists with a predicate function.
-         */
-        static bool exist(std::function<bool(const T&)> pred) {
-            InstanceList* instances = getInstances();
-            for (auto it = instances->begin(); it != instances->end(); ++it) {
-                if (*it) {
-                    if (pred(*(*it))) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-        /** Clear all session instances.
-         */
-        static void clear() {
-            InstanceList* instances = getInstances();
-            for (auto it = instances->begin(); it != instances->end(); ++it) {
-                if (*it) {
-                    unlockPointer((void*)(it->get()));
-                }
-            }
-            instances->clear();
-        }
-        
-    private:
-        /** Constructor prohibited.
-         */
-        Session() {}
-        ~Session() {}
-        
-        /** Get static instance storage.
-         */
-        static InstanceList* getInstances() {
-            static InstanceList instances;
-            return &instances;
-        }
-    };
-}
-
 
 #endif /* OBNNODE_EXT_H_ */
