@@ -1412,18 +1412,29 @@ namespace OBNnode {
         const V* m_value;
         
     public:
-        LockedAccess(V* t_value, M* t_mutex): m_mutex(t_mutex), m_value(t_value) {
-            m_mutex->lock();
-            //std::cout << "Locked\n";
+        LockedAccess(V* t_value, M* t_mutex): m_mutex{t_mutex}, m_value{t_value} {
+            // Lock the mutex to access the value
+            if (m_mutex) m_mutex->lock();
         }
         
-        LockedAccess(const LockedAccess& other) = delete;   // no copy constructor, so we force it to move
-        LockedAccess() = delete;    // no default
-        LockedAccess(LockedAccess&& rvalue) = default;
+        LockedAccess(const LockedAccess&) = delete;   // no copy constructor, so we force it to move
+        LockedAccess() = delete;    // no default constructor
+        LockedAccess& operator=(const LockedAccess&) = delete;  // no assignment
+        LockedAccess& operator=(LockedAccess&&) = delete;  // no move-assignment
+        
+        // Move constructor that:
+        // - Moves all members from rvalue to this object.
+        // - Marks the original object (rvalue) as invalid / unused, so that it won't unlock the mutex when it's destroyed.
+        LockedAccess(LockedAccess&& rvalue): m_mutex{std::move(rvalue.m_mutex)}, m_value{std::move(rvalue.m_value)}
+        {
+            rvalue.m_mutex = nullptr;   // NULL mutex pointer means ununsed / invalid
+        }
         
         ~LockedAccess() {
-            m_mutex->unlock();
-            //std::cout << "Unlocked\n";
+            // Only unlock the mutex if the pointer m_mutex is not NULL (i.e., a valid / used LockedAccess object)
+            if (m_mutex) {
+                m_mutex->unlock();
+            }
         }
         
         const V& operator*() const {
