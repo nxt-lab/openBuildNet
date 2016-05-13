@@ -15,6 +15,8 @@
 #include <vector>
 #include <algorithm>    // std::copy
 #include <functional>
+#include <utility>      // std::pair
+
 
 #include <obnnode.h>    // node.C++ framework
 #include <obnnode_extmqtt.h>
@@ -336,7 +338,7 @@ int createOBNNode(const char* name, const char* workspace, const char* addr, siz
     // Check if the node has already existed
     {
         std::string newFullName( (workspace)?(std::string(workspace) + '/' + name):(name) );
-        if (OBNNodeExtInt::Session<MQTTNodeExt>::exist([newFullName&](const MQTTNodeExt& node){
+        if (OBNNodeExtInt::Session<MQTTNodeExt>::exist([&newFullName](const MQTTNodeExt& node){
             return node.full_name() == newFullName;
         })) {
             reportError("Node already exists.");
@@ -575,6 +577,11 @@ int READ_INPUT_SCALAR_HELPER(size_t nodeid, size_t portid, T* pval) {
         reportError(OBNNodeExtInt::StdMsgs::PORT_NOT_INPUT);
         return -3;
     }
+    
+    if (portinfo.container != OBNEI_Container_Scalar) {
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+        return -4;
+    }
 
     // Query its value based on its type
     if (portinfo.strict) {
@@ -641,6 +648,11 @@ int inputScalarUInt64Get(size_t nodeid, size_t portid, uint64_t* pval) {
 }
 
 
+/** The wrapper for the access management object for vector/matrix input port,
+ which is a pair of bool (strict or non-strict port) and a void* pointer of the actual access object. */
+typedef std::pair<bool, void*> AccessManagementWrapper;
+
+
 // Generic (template) function to read from vector input port - the *GET function
 template <typename ETYPE>
 int read_input_vector_get(size_t nodeid, size_t portid, void** pMan, ETYPE** pVals, size_t* nelems)
@@ -671,27 +683,34 @@ int read_input_vector_get(size_t nodeid, size_t portid, void** pMan, ETYPE** pVa
         return -3;
     }
     
+    if (portinfo.container != OBNEI_Container_Vector) {
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+        return -4;
+    }
+    
     // Query its value based on its type
     if (portinfo.strict) {
-        MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,true>*>(port);
+        MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,true>*>(portinfo.port);
         
         if (p) {
             if (p->isValuePending()) {
                 // Get unique_ptr to an array container.
                 auto pv = p->pop();
                 
-                // pMan is this array container object, taken from the unique_ptr
+                // pMan contains this array container object, taken from the unique_ptr
                 raw_array_container<ETYPE>* pContainer = pv.release();
-
+                
                 if (!pContainer) {
                     reportError(OBNNodeExtInt::StdMsgs::INTERNAL_INVALID_VALUE_FROM_PORT);
                     return -5;
                 }
 
-                // Returns the pointer
-                *pMan = static_cast<void*>(pContainer);
+                // Returns the pointer pMan which wraps pContainer
+                void* pContainerVoid = static_cast<void*>(pContainer);
+                *pMan = static_cast<void*>(new AccessManagementWrapper(portinfo.strict, pContainerVoid));
                 
-                // Lock the pointer so that it will remain in memory
+                // Lock the pointers so that it will remain in memory
+                OBNNodeExtInt::lockPointer(pContainerVoid);
                 OBNNodeExtInt::lockPointer(*pMan);
 
                 // Number of elements
@@ -713,119 +732,531 @@ int read_input_vector_get(size_t nodeid, size_t portid, void** pMan, ETYPE** pVa
         }
         
     } else {
-        MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,false>*>(port);
+        using ThisPortType = MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,false>;
+        ThisPortType* p = dynamic_cast<ThisPortType*>(portinfo.port);
         
         if (p) {
-            // Get direct access to values via LockedAccess
-            auto value_access = p->lock_and_get();
+            // Get direct access to values via a LockedAccess object
+            // Create a new dynamic LockedAccess object, which will be wrapped in pMan
+            typename ThisPortType::LockedAccess* locked_access = new typename ThisPortType::LockedAccess(p->lock_and_get());
             
-            // Should create a new dynamic LockedAccess object moved from the returned object, which will be pMan
-            STOP HERE
+            // Returns the pointer pMan which wraps locked_access
+            void* locked_access_void = static_cast<void*>(locked_access);
+            *pMan = static_cast<void*>(new AccessManagementWrapper(portinfo.strict, locked_access_void));
             
+            // Lock the pointer so that it will remain in memory
+            OBNNodeExtInt::lockPointer(locked_access_void);
+            OBNNodeExtInt::lockPointer(*pMan);
+
+            // Number of elements
+            *nelems = (*locked_access)->size();
             
-            
-            const auto& pv = *value_access;
+            // Returns the array if requested
+            if (pVals) {
+                *pVals = (*locked_access)->data();
+            }
             
             return 0;
         } else {
             reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
             return -4;
         }
+    }
+}
+
+// Generic (template) function to copy/release the management object for reading from a vector input port - the *RELEASE function
+template <typename ETYPE>
+void read_input_vector_copy_release(void* pMan, ETYPE* pBuf) {
+    if (!pMan) {
+        return;
+    }
+    
+    // Cast it back to the wrapper type
+    AccessManagementWrapper* wrapper = static_cast<AccessManagementWrapper*>(pMan);
+    
+    if (wrapper->first) {
+        // Strict port
+        using AccessObjectType = raw_array_container<ETYPE>;
+        AccessObjectType* access_obj = static_cast<AccessObjectType*>(wrapper->second);
+        
+        // Copy the values
+        if (pBuf) {
+            std::copy_n(access_obj->data(), access_obj->size(), pBuf);
+        }
+        
+        // Unlock and delete the access object
+        OBNNodeExtInt::unlockPointer(wrapper->second);
+        delete access_obj;
+    } else {
+        // Non-strict port
+        using AccessObjectType = typename MQTTInput<OBN_PB,obn_vector_raw<ETYPE>,false>::LockedAccess;
+        AccessObjectType* access_obj = static_cast<AccessObjectType*>(wrapper->second);
+        
+        // Copy the values
+        if (pBuf) {
+            std::copy_n((*access_obj)->data(), (*access_obj)->size(), pBuf);
+        }
+        
+        // Unlock and delete the access object
+        OBNNodeExtInt::unlockPointer(wrapper->second);
+        delete access_obj;
+    }
+    
+    // Unlock and delete the managegement objects (wrapper)
+    OBNNodeExtInt::unlockPointer(pMan);
+    delete wrapper;
+}
+
+// Float64
+EXPORT
+int inputVectorDoubleGet(size_t nodeid, size_t portid, void** pMan, const double** pVals, size_t* nelems) {
+    return read_input_vector_get(nodeid, portid, pMan, pVals, nelems);
+}
+
+EXPORT
+void inputVectorDoubleRelease(void* pMan, double* pBuf) {
+    read_input_vector_copy_release(pMan, pBuf);
+}
+
+// C++ bool (1 byte)
+EXPORT
+int inputVectorBoolGet(size_t nodeid, size_t portid, void** pMan, const bool** pVals, size_t* nelems) {
+    return read_input_vector_get(nodeid, portid, pMan, pVals, nelems);
+}
+
+EXPORT
+void inputVectorBoolRelease(void* pMan, bool* pBuf) {
+    read_input_vector_copy_release(pMan, pBuf);
+}
+
+// Int32
+EXPORT
+int inputVectorInt32Get(size_t nodeid, size_t portid, void** pMan, const int32_t** pVals, size_t* nelems) {
+    return read_input_vector_get(nodeid, portid, pMan, pVals, nelems);
+}
+
+EXPORT
+void inputVectorInt32Release(void* pMan, int32_t* pBuf) {
+    read_input_vector_copy_release(pMan, pBuf);
+}
+
+// Int64
+EXPORT
+int inputVectorInt64Get(size_t nodeid, size_t portid, void** pMan, const int64_t** pVals, size_t* nelems) {
+    return read_input_vector_get(nodeid, portid, pMan, pVals, nelems);
+}
+
+EXPORT
+void inputVectorInt64Release(void* pMan, int64_t* pBuf) {
+    read_input_vector_copy_release(pMan, pBuf);
+}
+
+// UInt32
+EXPORT
+int inputVectorUInt32Get(size_t nodeid, size_t portid, void** pMan, const uint32_t** pVals, size_t* nelems) {
+    return read_input_vector_get(nodeid, portid, pMan, pVals, nelems);
+}
+
+EXPORT
+void inputVectorUInt32Release(void* pMan, uint32_t* pBuf) {
+    read_input_vector_copy_release(pMan, pBuf);
+}
+
+// UInt64
+EXPORT
+int inputVectorUInt64Get(size_t nodeid, size_t portid, void** pMan, const uint64_t** pVals, size_t* nelems) {
+    return read_input_vector_get(nodeid, portid, pMan, pVals, nelems);
+}
+
+EXPORT
+void inputVectorUInt64Release(void* pMan, uint64_t* pBuf) {
+    read_input_vector_copy_release(pMan, pBuf);
+}
+
+
+// Generic (template) function to read from matrix input port - the *GET function
+template <typename ETYPE>
+int read_input_matrix_get(size_t nodeid, size_t portid, void** pMan, ETYPE** pVals, size_t* nrows, size_t* ncols)
+{
+    // Sanity check
+    if (pMan == nullptr || nrows == nullptr || ncols == nullptr) {
+        return -1000;
+    }
+    
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    // Find port
+    if (portid >= pnode->_all_ports.size()) {
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
+        return -2;
+    }
+    
+    // Obtain the port's info
+    MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
+    
+    if (portinfo.type != OBNEI_Port_Input) {
+        reportError(OBNNodeExtInt::StdMsgs::PORT_NOT_INPUT);
+        return -3;
+    }
+    
+    if (portinfo.container != OBNEI_Container_Matrix) {
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+        return -4;
+    }
+    
+    // Query its value based on its type
+    if (portinfo.strict) {
+        MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,true>*>(portinfo.port);
         
         if (p) {
-            // Get direct access to value
-            auto value_access = p->lock_and_get();
-            const auto& pv = *value_access;
-            
-            MxArray ml(FUNC(pv.size(), 1));
-            std::copy(pv.data(), pv.data()+pv.size(), ml.getData<ETYPE>());
-            return ml.release();
-        }
-    }
-    
-    // Reach here only if there is error
-    reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
-    return nullptr;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// For matrices, the order in which Matlab and Eigen store matrices (column-major or row-major) will affect how data can be copied.  Because both Eigen and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.  For completeness, there are commented code lines that safely transfer data by accessing element-by-element, but this would be slower.
-template <typename ETYPE>
-mxArray* read_input_matrix_helper(std::function<mxArray*(int, int)> FUNC, OBNnode::PortBase *port, bool strict) {
-    if (strict) {
-        MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,true> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,true>*>(port);
-        if (p) {
-            // Get unique_ptr to an Eigen's object
-            auto pv = p->pop();
-            
-            if (pv) {
-                auto nr = pv->rows(), nc = pv->cols();
-                MxArray ml(FUNC(nr, nc));
+            if (p->isValuePending()) {
+                // Get unique_ptr to an array container.
+                auto pv = p->pop();
                 
-                // The following lines copy the whole chunk of raw data from Eigen to MEX/Matlab, it's faster but requires that Matlab and Eigen must use the same order type
-                std::copy(pv->data(), pv->data()+nr*nc, ml.getData<ETYPE>());
-                return ml.release();
+                // pMan contains this array container object, taken from the unique_ptr
+                typename obn_matrix_raw<ETYPE>::raw_matrix_data_type* pContainer = pv.release();
+
+                // Returns the pointer pMan which wraps pContainer
+                void* pContainerVoid = static_cast<void*>(pContainer);
+                *pMan = static_cast<void*>(new AccessManagementWrapper(portinfo.strict, pContainerVoid));
                 
-                // // The following lines copy element-by-element: it's safe but slow.
-                //        for (std::size_t c = 0; c < nc; ++c) {
-                //            for (std::size_t r = 0; r < nr; ++r) {
-                //                ml.set(r, c, pv->coeff(r, c));
-                //            }
-                //        }
+                // Lock the pointers so that it will remain in memory
+                OBNNodeExtInt::lockPointer(pContainerVoid);
+                OBNNodeExtInt::lockPointer(*pMan);
+                
+                // Number of elements
+                *nrows = pContainer->nrows;
+                *ncols = pContainer->ncols;
+                
+                // Returns the array if requested
+                if (pVals) {
+                    *pVals = pContainer->data.data();
+                }
+                
+                return 0;
             } else {
-                // Empty matrix
-                MxArray ml(FUNC(0,0));
-                return ml.release();
+                // No value
+                return 1;
             }
+        } else {
+            reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+            return -4;
         }
+        
     } else {
-        MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,false> *p = dynamic_cast<MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,false>*>(port);
+        using ThisPortType = MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,false>;
+        ThisPortType* p = dynamic_cast<ThisPortType*>(portinfo.port);
+        
         if (p) {
-            // Get direct access to value
-            auto value_access = p->lock_and_get();
-            const auto& pv = *value_access;
+            // Get direct access to values via a LockedAccess object
+            // Create a new dynamic LockedAccess object, which will be wrapped in pMan
+            typename ThisPortType::LockedAccess* locked_access = new typename ThisPortType::LockedAccess(p->lock_and_get());
             
-            auto nr = pv.rows(), nc = pv.cols();
-            MxArray ml(FUNC(nr, nc));
+            // Returns the pointer pMan which wraps locked_access
+            void* locked_access_void = static_cast<void*>(locked_access);
+            *pMan = static_cast<void*>(new AccessManagementWrapper(portinfo.strict, locked_access_void));
             
-            // The following lines copy the whole chunk of raw data from Eigen to MEX/Matlab, it's faster but requires that Matlab and Eigen must use the same order type
-            std::copy(pv.data(), pv.data()+nr*nc, ml.getData<ETYPE>());
-            return ml.release();
+            // Lock the pointer so that it will remain in memory
+            OBNNodeExtInt::lockPointer(locked_access_void);
+            OBNNodeExtInt::lockPointer(*pMan);
             
-            // // The following lines copy element-by-element: it's safe but slow.
-            //        for (std::size_t c = 0; c < nc; ++c) {
-            //            for (std::size_t r = 0; r < nr; ++r) {
-            //                ml.set(r, c, pv.coeff(r, c));
-            //            }
-            //        }
+            // Number of elements
+            *nrows = (*locked_access)->nrows;
+            *ncols = (*locked_access)->ncols;
+            
+            // Returns the array if requested
+            if (pVals) {
+                *pVals = (*locked_access)->data.data();
+            }
+            
+            return 0;
+        } else {
+            reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+            return -4;
         }
     }
-    
-    // Reach here only if there is error
-    reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
-    return nullptr;
 }
+
+// Generic (template) function to copy/release the management object for reading from a matrix input port - the *RELEASE function
+template <typename ETYPE>
+void read_input_matrix_copy_release(void* pMan, ETYPE* pBuf = nullptr) {
+    if (!pMan) {
+        return;
+    }
+    
+    // Cast it back to the wrapper type
+    AccessManagementWrapper* wrapper = static_cast<AccessManagementWrapper*>(pMan);
+    
+    if (wrapper->first) {
+        // Strict port
+        using AccessObjectType = typename obn_matrix_raw<ETYPE>::raw_matrix_data_type;
+        AccessObjectType* access_obj = static_cast<AccessObjectType*>(wrapper->second);
+        
+        // Copy the values
+        if (pBuf) {
+            std::copy_n(access_obj->data.data(), access_obj->data.size(), pBuf);
+        }
+        
+        // Unlock and delete the access object
+        OBNNodeExtInt::unlockPointer(wrapper->second);
+        delete access_obj;
+    } else {
+        // Non-strict port
+        using AccessObjectType = typename MQTTInput<OBN_PB,obn_matrix_raw<ETYPE>,false>::LockedAccess;
+        AccessObjectType* access_obj = static_cast<AccessObjectType*>(wrapper->second);
+        
+        // Copy the values
+        if (pBuf) {
+            std::copy_n((*access_obj)->data.data(), (*access_obj)->data.size(), pBuf);
+        }
+        
+        // Unlock and delete the access object
+        OBNNodeExtInt::unlockPointer(wrapper->second);
+        delete access_obj;
+    }
+    
+    // Unlock and delete the managegement objects (wrapper)
+    OBNNodeExtInt::unlockPointer(pMan);
+    delete wrapper;
+}
+
+
+// Float64
+EXPORT
+int inputMatrixDoubleGet(size_t nodeid, size_t portid, void** pMan, const double** pVals, size_t* nrows, size_t* ncols) {
+    return read_input_matrix_get(nodeid, portid, pMan, pVals, nrows, ncols);
+}
+
+EXPORT
+void inputMatrixDoubleRelease(void* pMan, double* pBuf) {
+    read_input_matrix_copy_release(pMan, pBuf);
+}
+
+// C++ bool (1 byte)
+EXPORT
+int inputMatrixBoolGet(size_t nodeid, size_t portid, void** pMan, const bool** pVals, size_t* nrows, size_t* ncols) {
+    return read_input_matrix_get(nodeid, portid, pMan, pVals, nrows, ncols);
+}
+
+EXPORT
+void inputMatrixBoolRelease(void* pMan, bool* pBuf) {
+    read_input_matrix_copy_release(pMan, pBuf);
+}
+
+// Int32
+EXPORT
+int inputMatrixInt32Get(size_t nodeid, size_t portid, void** pMan, const int32_t** pVals, size_t* nrows, size_t* ncols) {
+    return read_input_matrix_get(nodeid, portid, pMan, pVals, nrows, ncols);
+}
+
+EXPORT
+void inputMatrixInt32Release(void* pMan, int32_t* pBuf) {
+    read_input_matrix_copy_release(pMan, pBuf);
+}
+
+// Int64
+EXPORT
+int inputMatrixInt64Get(size_t nodeid, size_t portid, void** pMan, const int64_t** pVals, size_t* nrows, size_t* ncols) {
+    return read_input_matrix_get(nodeid, portid, pMan, pVals, nrows, ncols);
+}
+
+EXPORT
+void inputMatrixInt64Release(void* pMan, int64_t* pBuf) {
+    read_input_matrix_copy_release(pMan, pBuf);
+}
+
+// UInt32
+EXPORT
+int inputMatrixUInt32Get(size_t nodeid, size_t portid, void** pMan, const uint32_t** pVals, size_t* nrows, size_t* ncols) {
+    return read_input_matrix_get(nodeid, portid, pMan, pVals, nrows, ncols);
+}
+
+EXPORT
+void inputMatrixUInt32Release(void* pMan, uint32_t* pBuf) {
+    read_input_matrix_copy_release(pMan, pBuf);
+}
+
+// UInt64
+EXPORT
+int inputMatrixUInt64Get(size_t nodeid, size_t portid, void** pMan, const uint64_t** pVals, size_t* nrows, size_t* ncols) {
+    return read_input_matrix_get(nodeid, portid, pMan, pVals, nrows, ncols);
+}
+
+EXPORT
+void inputMatrixUInt64Release(void* pMan, uint64_t* pBuf) {
+    read_input_matrix_copy_release(pMan, pBuf);
+}
+
+
+EXPORT
+int inputBinaryGet(size_t nodeid, size_t portid, void** pMan, const char** pVals, size_t* nbytes)
+{
+    // Sanity check
+    if (pMan == nullptr || nbytes == nullptr) {
+        return -1000;
+    }
+    
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    // Find port
+    if (portid >= pnode->_all_ports.size()) {
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
+        return -2;
+    }
+    
+    // Obtain the port's info
+    MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
+    
+    if (portinfo.type != OBNEI_Port_Input) {
+        reportError(OBNNodeExtInt::StdMsgs::PORT_NOT_INPUT);
+        return -3;
+    }
+    
+    if (portinfo.container != OBNEI_Container_Binary) {
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+        return -4;
+    }
+    
+    // Query its value based on its type
+    if (portinfo.strict) {
+        MQTTInput<OBN_BIN,bool,true> *p = dynamic_cast<MQTTInput<OBN_BIN,bool,true>*>(portinfo.port);
+        
+        if (p) {
+            if (p->isValuePending()) {
+                // Get a std::string containing the data
+                std::string* pContainer = new std::string(p->pop());
+                
+                // Returns the pointer pMan which wraps pContainer
+                void* pContainerVoid = static_cast<void*>(pContainer);
+                *pMan = static_cast<void*>(new AccessManagementWrapper(portinfo.strict, pContainerVoid));
+                
+                // Lock the pointers so that it will remain in memory
+                OBNNodeExtInt::lockPointer(pContainerVoid);
+                OBNNodeExtInt::lockPointer(*pMan);
+                
+                // Number of elements
+                *nbytes = pContainer->size();
+                
+                // Returns the array if requested
+                if (pVals) {
+                    *pVals = pContainer->data();
+                }
+                
+                return 0;
+            } else {
+                // No value
+                return 1;
+            }
+        } else {
+            reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+            return -4;
+        }
+        
+    } else {
+        using ThisPortType = MQTTInput<OBN_BIN,bool,false>;
+        ThisPortType* p = dynamic_cast<ThisPortType*>(portinfo.port);
+        
+        if (p) {
+            // Get direct access to values via a LockedAccess object
+            // Create a new dynamic LockedAccess object, which will be wrapped in pMan
+            typename ThisPortType::LockedAccess* locked_access = new typename ThisPortType::LockedAccess(p->lock_and_get());
+            
+            // Returns the pointer pMan which wraps locked_access
+            void* locked_access_void = static_cast<void*>(locked_access);
+            *pMan = static_cast<void*>(new AccessManagementWrapper(portinfo.strict, locked_access_void));
+            
+            // Lock the pointer so that it will remain in memory
+            OBNNodeExtInt::lockPointer(locked_access_void);
+            OBNNodeExtInt::lockPointer(*pMan);
+            
+            // Number of bytes
+            *nbytes = (*locked_access)->size();
+            
+            // Returns the array if requested
+            if (pVals) {
+                *pVals = (*locked_access)->data();
+            }
+            
+            return 0;
+        } else {
+            reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+            return -4;
+        }
+    }
+}
+
+EXPORT
+void inputBinaryRelease(void* pMan, char* pBuf) {
+    if (!pMan) {
+        return;
+    }
+    
+    // Cast it back to the wrapper type
+    AccessManagementWrapper* wrapper = static_cast<AccessManagementWrapper*>(pMan);
+    
+    if (wrapper->first) {
+        // Strict port
+        using AccessObjectType = std::string;
+        AccessObjectType* access_obj = static_cast<AccessObjectType*>(wrapper->second);
+        
+        // Copy the values
+        if (pBuf) {
+            access_obj->copy(pBuf, std::string::npos);
+        }
+        
+        // Unlock and delete the access object
+        OBNNodeExtInt::unlockPointer(wrapper->second);
+        delete access_obj;
+    } else {
+        // Non-strict port
+        using AccessObjectType = typename MQTTInput<OBN_BIN,bool,false>::LockedAccess;
+        AccessObjectType* access_obj = static_cast<AccessObjectType*>(wrapper->second);
+        
+        // Copy the values
+        if (pBuf) {
+            (*access_obj)->copy(pBuf, std::string::npos);
+        }
+        
+        // Unlock and delete the access object
+        OBNNodeExtInt::unlockPointer(access_obj);
+        delete access_obj;
+    }
+    
+    // Unlock and delete the managegement objects (wrapper)
+    OBNNodeExtInt::unlockPointer(pMan);
+    delete wrapper;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 #define WRITE_OUTPUT_SCALAR_HELPER(A,B) \
@@ -890,177 +1321,6 @@ void write_output_matrix_helper(const InputArguments &input, OBNnode::PortBase *
 }
 
 /* === Port interface === */
-
-// Read the current value of a non-strict input port, or pop the top/front value of a strict input port.
-// Args: node object pointer, port's ID
-// Returns: value in an appropriate Matlab's type
-// For strict ports, if there is no value pending, a default / empty value will be returned.
-// If the port contains binary data, the function will return a string containing the binary data.
-MEX_DEFINE(readInput) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 2);
-    OutputArguments output(nlhs, plhs, 1);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    unsigned int id = input.get<unsigned int>(1);
-    if (id >= ynode->_all_ports.size()) {
-        reportError("MQTTNODE:readInput", "Invalid port ID to read from.");
-        return;
-    }
-    
-    // Obtain the port
-    MQTTNodeExt::PortInfo portinfo = ynode->_all_ports[id];
-    if (portinfo.type != OBNEI_Port_Input) {
-        reportError("MQTTNODE:readInput", "Given port is not an input.");
-        return;
-    }
-    
-    // Query its value based on its type, casting to the appropriate type
-    switch (portinfo.container) {
-        case 's':
-            switch (portinfo.elementType) {
-                case MQTTNodeExt::PortInfo::DOUBLE:
-                    if (portinfo.strict) {
-                        READ_INPUT_SCALAR_HELPER_STRICT(OBN_PB, double)
-                    } else {
-                        READ_INPUT_SCALAR_HELPER(OBN_PB, double)
-                    }
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::LOGICAL:
-                    if (portinfo.strict) {
-                        READ_INPUT_SCALAR_HELPER_STRICT(OBN_PB, bool)
-                    } else {
-                        READ_INPUT_SCALAR_HELPER(OBN_PB, bool)
-                    }
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::INT32:
-                    if (portinfo.strict) {
-                        READ_INPUT_SCALAR_HELPER_STRICT(OBN_PB, int32_t)
-                    } else {
-                        READ_INPUT_SCALAR_HELPER(OBN_PB, int32_t)
-                    }
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::INT64:
-                    if (portinfo.strict) {
-                        READ_INPUT_SCALAR_HELPER_STRICT(OBN_PB, int64_t)
-                    } else {
-                        READ_INPUT_SCALAR_HELPER(OBN_PB, int64_t)
-                    }
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::UINT32:
-                    if (portinfo.strict) {
-                        READ_INPUT_SCALAR_HELPER_STRICT(OBN_PB, uint32_t)
-                    } else {
-                        READ_INPUT_SCALAR_HELPER(OBN_PB, uint32_t)
-                    }
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::UINT64:
-                    if (portinfo.strict) {
-                        READ_INPUT_SCALAR_HELPER_STRICT(OBN_PB, uint64_t)
-                    } else {
-                        READ_INPUT_SCALAR_HELPER(OBN_PB, uint64_t)
-                    }
-                    break;
-                    
-                default:
-                    reportError("MQTTNODE:readInput", "Internal error: port's element type is invalid.");
-                    break;
-            }
-            break;
-            
-        case 'v':
-            switch (portinfo.elementType) {
-                case MQTTNodeExt::PortInfo::DOUBLE:
-                    output.set(0, read_input_vector_helper<double>(MxArray::Numeric<double>, portinfo.port, portinfo.strict));
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::LOGICAL:
-                    output.set(0, read_input_vector_helper<bool>(MxArray::Logical, portinfo.port, portinfo.strict));
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::INT32:
-                    output.set(0, read_input_vector_helper<int32_t>(MxArray::Numeric<int32_t>, portinfo.port, portinfo.strict));
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::INT64:
-                    output.set(0, read_input_vector_helper<int64_t>(MxArray::Numeric<int64_t>, portinfo.port, portinfo.strict));
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::UINT32:
-                    output.set(0, read_input_vector_helper<uint32_t>(MxArray::Numeric<uint32_t>, portinfo.port, portinfo.strict));
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::UINT64:
-                    output.set(0, read_input_vector_helper<uint64_t>(MxArray::Numeric<uint64_t>, portinfo.port, portinfo.strict));
-                    break;
-                    
-                default:
-                    reportError("MQTTNODE:readInput", "Internal error: port's element type is invalid.");
-                    break;
-            }
-            break;
-            
-        case 'm':
-            switch (portinfo.elementType) {
-                case MQTTNodeExt::PortInfo::DOUBLE:
-                    output.set(0, read_input_matrix_helper<double>(MxArray::Numeric<double>, portinfo.port, portinfo.strict));
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::LOGICAL:
-                    output.set(0, read_input_matrix_helper<bool>(MxArray::Logical, portinfo.port, portinfo.strict));
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::INT32:
-                    output.set(0, read_input_matrix_helper<int32_t>(MxArray::Numeric<int32_t>, portinfo.port, portinfo.strict));
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::INT64:
-                    output.set(0, read_input_matrix_helper<int64_t>(MxArray::Numeric<int64_t>, portinfo.port, portinfo.strict));
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::UINT32:
-                    output.set(0, read_input_matrix_helper<uint32_t>(MxArray::Numeric<uint32_t>, portinfo.port, portinfo.strict));
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::UINT64:
-                    output.set(0, read_input_matrix_helper<uint64_t>(MxArray::Numeric<uint64_t>, portinfo.port, portinfo.strict));
-                    break;
-                    
-                default:
-                    reportError("MQTTNODE:readInput", "Internal error: port's element type is invalid.");
-                    break;
-            }
-            break;
-            
-        case 'b':
-            if (portinfo.strict) {
-                // A binary string is read, the element type is ignored
-                MQTTInput<OBN_BIN,bool,true> *p = dynamic_cast<MQTTInput<OBN_BIN,bool,true>*>(portinfo.port);
-                if (p) {
-                    output.set(0, p->pop());
-                } else {
-                    reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
-                }
-            } else {
-                // A binary string is read, the element type is ignored
-                MQTTInput<OBN_BIN,bool,false> *p = dynamic_cast<MQTTInput<OBN_BIN,bool,false>*>(portinfo.port);
-                if (p) {
-                    output.set(0, p->get());
-                } else {
-                    reportError("MQTTNODE:readInput", "Internal error: port object type does not match its declared type.");
-                }
-            }
-            break;
-            
-        default:    // This should never happen
-            reportError("MQTTNODE:readInput", "Internal error: port's container type is invalid.");
-            break;
-    }
-}
 
 // Set the value of a physical output port, but does not send it immediately.
 // Usually the value will be sent out at the end of the event callback (UPDATEY).

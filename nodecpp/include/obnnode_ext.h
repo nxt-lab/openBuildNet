@@ -146,75 +146,61 @@ extern "C" {
     
     
     /** These functions read (or pop) the value from a non-strict (or strict) vector/matrix input port.
-     For each port, there are three functions: *Get, *Release, and *Copy.
+     For each port, there are two functions: *Get and *Release.
      - The *Get(nodeid, portid, void** pMan, <elem-type>** pVals, size_t* nrows, size_t* ncols) [for vector version, there is no ncols] gets the array of values and put its pointer to pVals (if pVals = NULL this won't be done) and also returns its dimensions (nrows, ncols) as well as a management object in pMan.  It is critical that pMan is received and used later on because it will be used to release the memory used in C.
-     - *Release(void* pMan) releases the management object.  When a port is read by *Get, it may allocate temporary memory and may be locked (so that new incoming messages will not override the current value).  It's CRITICALLY IMPORTANT to call *Release on the returned management object to release the memory and the lock on the port.
-     - *Copy(void* pMan, <elem-type>* pBuf) copies the values from the port to the given buffer (allocated by the external language), where pMan is the management returned by *Get.  This can be used instead of copying the data from pVals to the buffer in the external language (e.g., if pVals in *Get is NULL or ignored).  This function ALSO RELEASE the management object (hence the port) similarly to *Release, therefore IF *Copy IS USED *Release MUST NOT BE CALLED.  In other words, after *Get is called, either *Release or *Copy must be called but not both.
+     - *Release(void* pMan, <elem-type>* pBuf) copies the values to buffer pBuf if pBuf is not nill, then releases the management object.  When a port is read by *Get, it may allocate temporary memory and may be locked (so that new incoming messages will not override the current value).  It's CRITICALLY IMPORTANT to call *Release on the returned management object to release the memory and the lock on the port.  The copying is optional, only if pBuf is valid, which must be allocated by the external language.  This can be used instead of copying the data from pVals to the buffer in the external language (e.g., if pVals in *Get is NULL or ignored).
      
      There are two ways to use the returned values:
-     - The safest way is to copy the values to a vector / matrix managed by the external language, via pVals returned by *Get or via *Copy.
+     - The safest way is to copy the values to a vector / matrix managed by the external language, via pVals returned by *Get or via pBuf in *Release.
      - The values in pVals can also be used directly BUT MUST NOT BE CHANGED (i.e., they are constant) and *Release MUST BE CALLED after this is done.  For example if we simply want to take the sum of the elements, this can be the most efficient way.  However, note that between *Get and *Release, the port is usually locked, hence whatever operations are done on the values should be quick.  Another use case could be to access some elements to decide if we want to use the values in further calculation, in that case we can copy the values over, otherwise we just ignore them.
      
      Function *Get(...) returns 0 if successful, <0 if error; >0 if no value actually read (e.g., no pending value on a strict port).
-     For strict ports, if there is no value pending, the receiving variables won't be changed and the function will return 1, and there is no need to call *Release or *Copy (obviously).
+     For strict ports, if there is no value pending, the receiving variables won't be changed and the function will return 1, and there is no need to call *Release (obviously).  In other words, only call *Release if *Get returns 0.
      */
     int inputVectorDoubleGet(size_t nodeid, size_t portid, void** pMan, const double** pVals, size_t* nelems);      // Float64
-    void inputVectorDoubleRelease(void* pMan);
-    void inputVectorDoubleCopy(void* pMan, double* pBuf);
+    void inputVectorDoubleRelease(void* pMan, double* pBuf);
     
     int inputVectorBoolGet(size_t nodeid, size_t portid, void** pMan, const bool** pVals, size_t* nelems);          // C++ bool (1 byte)
-    void inputVectorBoolRelease(void* pMan);
-    void inputVectorBoolCopy(void* pMan, bool* pBuf);
+    void inputVectorBoolRelease(void* pMan, bool* pBuf);
     
     int inputVectorInt32Get(size_t nodeid, size_t portid, void** pMan, const int32_t** pVals, size_t* nelems);      // Int32
-    void inputVectorInt32Release(void* pMan);
-    void inputVectorInt32Copy(void* pMan, int32_t* pBuf);
+    void inputVectorInt32Release(void* pMan, int32_t* pBuf);
     
     int inputVectorInt64Get(size_t nodeid, size_t portid, void** pMan, const int64_t** pVals, size_t* nelems);      // Int64
-    void inputVectorInt64Release(void* pMan);
-    void inputVectorInt64Copy(void* pMan, int64_t* pBuf);
+    void inputVectorInt64Release(void* pMan, int64_t* pBuf);
     
     int inputVectorUInt32Get(size_t nodeid, size_t portid, void** pMan, const uint32_t** pVals, size_t* nelems);    // UInt32
-    void inputVectorUInt32Release(void* pMan);
-    void inputVectorUInt32Copy(void* pMan, uint32_t* pBuf);
+    void inputVectorUInt32Release(void* pMan, uint32_t* pBuf);
     
     int inputVectorUInt64Get(size_t nodeid, size_t portid, void** pMan, const uint64_t** pVals, size_t* nelems);    // UInt64
-    void inputVectorUInt64Release(void* pMan);
-    void inputVectorUInt64Copy(void* pMan, uint64_t* pBuf);
+    void inputVectorUInt64Release(void* pMan, uint64_t* pBuf);
     
     
     int inputMatrixDoubleGet(size_t nodeid, size_t portid, void** pMan, const double** pVals, size_t* nrows, size_t* ncols);      // Float64
-    void inputMatrixDoubleRelease(void* pMan);
-    void inputMatrixDoubleCopy(void* pMan, double* pBuf);
+    void inputMatrixDoubleRelease(void* pMan, double* pBuf);
     
     int inputMatrixBoolGet(size_t nodeid, size_t portid, void** pMan, const bool** pVals, size_t* nrows, size_t* ncols);          // C++ bool (1 byte)
-    void inputMatrixBoolRelease(void* pMan);
-    void inputMatrixBoolCopy(void* pMan, bool* pBuf);
+    void inputMatrixBoolRelease(void* pMan, bool* pBuf);
     
     int inputMatrixInt32Get(size_t nodeid, size_t portid, void** pMan, const int32_t** pVals, size_t* nrows, size_t* ncols);      // Int32
-    void inputMatrixInt32Release(void* pMan);
-    void inputMatrixInt32Copy(void* pMan, int32_t* pBuf);
+    void inputMatrixInt32Release(void* pMan, int32_t* pBuf);
     
     int inputMatrixInt64Get(size_t nodeid, size_t portid, void** pMan, const int64_t** pVals, size_t* nrows, size_t* ncols);      // Int64
-    void inputMatrixInt64Release(void* pMan);
-    void inputMatrixInt64Copy(void* pMan, int64_t* pBuf);
+    void inputMatrixInt64Release(void* pMan, int64_t* pBuf);
     
     int inputMatrixUInt32Get(size_t nodeid, size_t portid, void** pMan, const uint32_t** pVals, size_t* nrows, size_t* ncols);    // UInt32
-    void inputMatrixUInt32Release(void* pMan);
-    void inputMatrixUInt32Copy(void* pMan, uint32_t* pBuf);
+    void inputMatrixUInt32Release(void* pMan, uint32_t* pBuf);
     
     int inputMatrixUInt64Get(size_t nodeid, size_t portid, void** pMan, const uint64_t** pVals, size_t* nrows, size_t* ncols);    // UInt64
-    void inputMatrixUInt64Release(void* pMan);
-    void inputMatrixUInt64Copy(void* pMan, uint64_t* pBuf);
+    void inputMatrixUInt64Release(void* pMan, uint64_t* pBuf);
 
     
     /** These functions read (or pop) the array of bytes from a non-strict (or strict) binary input port.
      These work in the same way as those for vector/matrix ports, but with byte arrays.
      In other words, consider a binary input port as a vector-of-bytes input port.
      */
-    int inputBinaryGet(size_t nodeid, size_t portid, void** pMan, char** pVals, size_t* nbytes);          // C++ bool (1 byte)
-    void inputBinaryRelease(void* pMan);
-    void inputBinaryCopy(void* pMan, char* pBuf);
+    int inputBinaryGet(size_t nodeid, size_t portid, void** pMan, const char** pVals, size_t* nbytes);
+    void inputBinaryRelease(void* pMan, char* pBuf);
     
     
     /* === Misc === */
