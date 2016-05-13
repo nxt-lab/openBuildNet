@@ -203,6 +203,48 @@ extern "C" {
     void inputBinaryRelease(void* pMan, char* pBuf);
     
     
+    /** These functions set the value of a scalar output port, but does not send it immediately.
+     Usually the value will be sent out at the end of the event callback (UPDATE_Y).
+     Args: node ID, port's ID, scalar value.
+     Returns: 0 if successful; <0 if error
+     */
+    int outputScalarDoubleSet(size_t nodeid, size_t portid, double val);      // Float64
+    int outputScalarBoolSet(size_t nodeid, size_t portid, bool val);          // C++ bool (1 byte)
+    int outputScalarInt32Set(size_t nodeid, size_t portid, int32_t val);      // Int32
+    int outputScalarInt64Set(size_t nodeid, size_t portid, int64_t val);      // Int64
+    int outputScalarUInt32Set(size_t nodeid, size_t portid, uint32_t val);    // UInt32
+    int outputScalarUInt64Set(size_t nodeid, size_t portid, uint64_t val);    // UInt64
+    
+    
+    /** These functions set the vector/matrix value of a vector/matrix output port, but does not send it immediately.
+     Usually the value will be sent out at the end of the event callback (UPDATE_Y).
+     The data are copied over to the port's internal memory, so there is no need to maintain the array pval after calling these functions (i.e., the caller is free to deallocate the memory of pval).
+     Args: node ID, port's ID, <elem-type>* source, size_t nrows, size_t ncols  (for vector: size_t nelems)
+     Returns: 0 if successful; <0 if error
+     */
+    int outputVectorDoubleSet(size_t nodeid, size_t portid, const double* pval, size_t nelems);      // Float64
+    int outputVectorBoolSet(size_t nodeid, size_t portid, const bool* pval, size_t nelems);          // C++ bool (1 byte)
+    int outputVectorInt32Set(size_t nodeid, size_t portid, const int32_t* pval, size_t nelems);      // Int32
+    int outputVectorInt64Set(size_t nodeid, size_t portid, const int64_t* pval, size_t nelems);      // Int64
+    int outputVectorUInt32Set(size_t nodeid, size_t portid, const uint32_t* pval, size_t nelems);    // UInt32
+    int outputVectorUInt64Set(size_t nodeid, size_t portid, const uint64_t* pval, size_t nelems);    // UInt64
+
+    int outputMatrixDoubleSet(size_t nodeid, size_t portid, const double* pval, size_t nrows, size_t ncols);      // Float64
+    int outputMatrixBoolSet(size_t nodeid, size_t portid, const bool* pval, size_t nrows, size_t ncols);          // C++ bool (1 byte)
+    int outputMatrixInt32Set(size_t nodeid, size_t portid, const int32_t* pval, size_t nrows, size_t ncols);      // Int32
+    int outputMatrixInt64Set(size_t nodeid, size_t portid, const int64_t* pval, size_t nrows, size_t ncols);      // Int64
+    int outputMatrixUInt32Set(size_t nodeid, size_t portid, const uint32_t* pval, size_t nrows, size_t ncols);    // UInt32
+    int outputMatrixUInt64Set(size_t nodeid, size_t portid, const uint64_t* pval, size_t nrows, size_t ncols);    // UInt64
+
+    
+    /** This function sets the binary value of a binary output port, but does not send it immediately.
+     Usually the value will be sent out at the end of the event callback (UPDATE_Y).
+     Args: node ID, port's ID, const char* source, size_t nbytes
+     Returns: 0 if successful; <0 if error
+     */
+    int outputBinarySet(size_t nodeid, size_t portid, const char* pval, size_t nbytes);
+    
+    
     /* === Misc === */
     // Returns the maximum ID allowed for an update type.
     int maxUpdateID();

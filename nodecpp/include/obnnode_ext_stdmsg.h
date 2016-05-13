@@ -22,6 +22,7 @@ namespace OBNNodeExtInt {
         extern char INVALID_PORT_ID[];
         extern char INTERNAL_PORT_NOT_MATCH_DECL_TYPE[];
         extern char PORT_NOT_INPUT[];
+        extern char PORT_NOT_OUTPUT[];
         extern char INTERNAL_INVALID_VALUE_FROM_PORT[];
     }
 }

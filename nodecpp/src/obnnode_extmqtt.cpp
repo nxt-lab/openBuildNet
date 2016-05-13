@@ -1238,249 +1238,338 @@ void inputBinaryRelease(void* pMan, char* pBuf) {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#define WRITE_OUTPUT_SCALAR_HELPER(A,B) \
-MQTTOutput<A,obn_scalar<B>> *p = dynamic_cast<MQTTOutput<A,obn_scalar<B>>*>(portinfo.port); \
-if (p) { *p = input.get<B>(2); } \
-else { reportError("MQTTNODE:writeOutput", "Internal error: port object type does not match its declared type."); }
-
-
-// To convert a vector from mxArray to Eigen, with possibility that their types are different
-// - Use MEXPLUS to convert from mxArray to vector<D> of appropriate type
-// - Use Eigen::Map to create an Eigen's vector on the data returned by the vector object.
-// - Assign the map object to the Eigen vector object (inside the port object).
-template <typename ETYPE>
-void write_output_vector_helper(const InputArguments &input, OBNnode::PortBase *port) {
-    MQTTOutput<OBN_PB,obn_vector_raw<ETYPE>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_vector_raw<ETYPE>>*>(port);
+// Generic (template) function to write scalar value to a scalar output port
+template <typename T>
+int WRITE_OUTPUT_SCALAR_HELPER(size_t nodeid, size_t portid, T val) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    // Find port
+    if (portid >= pnode->_all_ports.size()) {
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
+        return -2;
+    }
+    
+    // Obtain the port's info
+    MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
+    
+    if (portinfo.type != OBNEI_Port_Output) {
+        reportError(OBNNodeExtInt::StdMsgs::PORT_NOT_OUTPUT);
+        return -3;
+    }
+    
+    if (portinfo.container != OBNEI_Container_Scalar) {
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+        return -4;
+    }
+    
+    // Cast the port to the actual object
+    MQTTOutput< OBN_PB,obn_scalar<T> > *p = dynamic_cast<MQTTOutput< OBN_PB,obn_scalar<T> >*>(portinfo.port);
+    
     if (p) {
-        auto from = MxArray(input.get(2)); // MxArray object
-        auto &to = *(*p);
-        if (from.isEmpty()) {
-            // if "from" is empty then we clear the data in the port, do not copy
-            to.resize(0);
-        } else {
-            // if "from" is not empty then we can copy the data
-            to = to.Map(from.getData<ETYPE>(), from.size());
-        }
-        
-        // // Another way to copy
-        //        std::vector<ETYPE> v(input.get<std::vector<ETYPE>>(2));
-        //        *p = (*(*p)).Map(v.data(), v.size());
+        *p = val;
+        return 0;
     } else {
-        reportError("MQTTNODE:writeOutput", "Internal error: port object type does not match its declared type.");
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+        return -4;
     }
 }
 
-// For matrices, the order in which Matlab and Eigen store matrices (column-major or row-major) will affect how data can be copied.  Because both Eigen and Matlab use column-major order by default, we can safely copy the data in memory between them without affecting the data.  For completeness, there are commented code lines that safely transfer data by accessing element-by-element, but this would be slower.
+
+// Float64
+EXPORT
+int outputScalarDoubleSet(size_t nodeid, size_t portid, double val) {
+    return WRITE_OUTPUT_SCALAR_HELPER(nodeid, portid, val);
+}
+
+// C++ bool (1 byte)
+EXPORT
+int outputScalarBoolSet(size_t nodeid, size_t portid, bool val) {
+    return WRITE_OUTPUT_SCALAR_HELPER(nodeid, portid, val);
+}
+
+// Int32
+EXPORT
+int outputScalarInt32Set(size_t nodeid, size_t portid, int32_t val) {
+    return WRITE_OUTPUT_SCALAR_HELPER(nodeid, portid, val);
+}
+
+// Int64
+EXPORT
+int outputScalarInt64Set(size_t nodeid, size_t portid, int64_t val) {
+    return WRITE_OUTPUT_SCALAR_HELPER(nodeid, portid, val);
+}
+
+// UInt32
+EXPORT
+int outputScalarUInt32Set(size_t nodeid, size_t portid, uint32_t val) {
+    return WRITE_OUTPUT_SCALAR_HELPER(nodeid, portid, val);
+}
+
+// UInt64
+EXPORT
+int outputScalarUInt64Set(size_t nodeid, size_t portid, uint64_t val) {
+    return WRITE_OUTPUT_SCALAR_HELPER(nodeid, portid, val);
+}
+
+
+// Generic (template) function to write vector value to a vector output port
 template <typename ETYPE>
-void write_output_matrix_helper(const InputArguments &input, OBNnode::PortBase *port) {
-    MQTTOutput<OBN_PB,obn_matrix_raw<ETYPE>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_matrix_raw<ETYPE>>*>(port);
+int write_output_vector_helper(size_t nodeid, size_t portid, const ETYPE* pval, size_t nelems) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    // Find port
+    if (portid >= pnode->_all_ports.size()) {
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
+        return -2;
+    }
+    
+    // Obtain the port's info
+    MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
+    
+    if (portinfo.type != OBNEI_Port_Output) {
+        reportError(OBNNodeExtInt::StdMsgs::PORT_NOT_OUTPUT);
+        return -3;
+    }
+    
+    if (portinfo.container != OBNEI_Container_Vector) {
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+        return -4;
+    }
+    
+    // Cast the port to the actual object
+    MQTTOutput< OBN_PB,obn_vector_raw<ETYPE> > *p = dynamic_cast<MQTTOutput< OBN_PB,obn_vector_raw<ETYPE> >*>(portinfo.port);
+    
     if (p) {
-        auto from = MxArray(input.get(2)); // MxArray object
-        auto nr = from.rows(), nc = from.cols();
-        auto &to = *(*p);
+        auto &to = *(*p);   // direct access to raw_array_container<ETYPE>
         
-        if (from.isEmpty()) {
-            // if "from" is empty then we clear the data in the port, do not copy
-            to.resize(nr, nc);
+        if (!pval || nelems == 0) {
+            // if no data is provided, we clear the port's value rather than copying data
+            to.clear();
         } else {
-            // if "from" is not empty then we can copy the data
-            to = to.Map(from.getData<ETYPE>(), nr, nc);
+            // copy values over
+            to.assign(pval, nelems);
         }
         
-        //        // The following lines copy element-by-element: it's safe but slow.
-        //        to.resize(nr, nc);
-        //        for (std::size_t c = 0; c < nc; ++c) {
-        //            for (std::size_t r = 0; r < nr; ++r) {
-        //                to(r, c) = from.at<ETYPE>(r, c);
-        //            }
-        //        }
+        return 0;
     } else {
-        reportError("MQTTNODE:writeOutput", "Internal error: port object type does not match its declared type.");
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+        return -4;
     }
 }
+
+
+// Float64
+EXPORT
+int outputVectorDoubleSet(size_t nodeid, size_t portid, double* pval, size_t nelems) {
+    return write_output_vector_helper(nodeid, portid, pval, nelems);
+}
+
+// C++ bool (1 byte)
+EXPORT
+int outputVectorBoolSet(size_t nodeid, size_t portid, bool* pval, size_t nelems) {
+    return write_output_vector_helper(nodeid, portid, pval, nelems);
+}
+
+// Int32
+EXPORT
+int outputVectorInt32Set(size_t nodeid, size_t portid, int32_t* pval, size_t nelems) {
+    return write_output_vector_helper(nodeid, portid, pval, nelems);
+}
+
+// Int64
+EXPORT
+int outputVectorInt64Set(size_t nodeid, size_t portid, int64_t* pval, size_t nelems) {
+    return write_output_vector_helper(nodeid, portid, pval, nelems);
+}
+
+// UInt32
+EXPORT
+int outputVectorUInt32Set(size_t nodeid, size_t portid, uint32_t* pval, size_t nelems) {
+    return write_output_vector_helper(nodeid, portid, pval, nelems);
+}
+
+// UInt64
+EXPORT
+int outputVectorUInt64Set(size_t nodeid, size_t portid, uint64_t* pval, size_t nelems) {
+    return write_output_vector_helper(nodeid, portid, pval, nelems);
+}
+
+
+// Generic (template) function to write matrix value to a matrix output port
+template <typename ETYPE>
+int write_output_matrix_helper(size_t nodeid, size_t portid, const ETYPE* pval, size_t nrows, size_t ncols) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    // Find port
+    if (portid >= pnode->_all_ports.size()) {
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
+        return -2;
+    }
+    
+    // Obtain the port's info
+    MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
+    
+    if (portinfo.type != OBNEI_Port_Output) {
+        reportError(OBNNodeExtInt::StdMsgs::PORT_NOT_OUTPUT);
+        return -3;
+    }
+    
+    if (portinfo.container != OBNEI_Container_Matrix) {
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+        return -4;
+    }
+    
+    // Cast the port to the actual object
+    MQTTOutput< OBN_PB,obn_matrix_raw<ETYPE> > *p = dynamic_cast<MQTTOutput< OBN_PB,obn_matrix_raw<ETYPE> >*>(portinfo.port);
+    
+    if (p) {
+        auto &to = *(*p);   // direct access to raw_array_container<ETYPE>
+        
+        if (!pval || nrows == 0 || ncols == 0) {
+            // if no data is provided, we clear the port's value rather than copying data
+            to.clear();
+        } else {
+            // copy values over
+            to.copy(pval, nrows, ncols);
+        }
+        
+        return 0;
+    } else {
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+        return -4;
+    }
+}
+
+
+// Float64
+EXPORT
+int outputMatrixDoubleSet(size_t nodeid, size_t portid, double* pval, size_t nrows, size_t ncols) {
+    return write_output_matrix_helper(nodeid, portid, pval, nrows, ncols);
+}
+
+// C++ bool (1 byte)
+EXPORT
+int outputMatrixBoolSet(size_t nodeid, size_t portid, bool* pval, size_t nrows, size_t ncols) {
+    return write_output_matrix_helper(nodeid, portid, pval, nrows, ncols);
+}
+
+// Int32
+EXPORT
+int outputMatrixInt32Set(size_t nodeid, size_t portid, int32_t* pval, size_t nrows, size_t ncols) {
+    return write_output_matrix_helper(nodeid, portid, pval, nrows, ncols);
+}
+
+// Int64
+EXPORT
+int outputMatrixInt64Set(size_t nodeid, size_t portid, int64_t* pval, size_t nrows, size_t ncols) {
+    return write_output_matrix_helper(nodeid, portid, pval, nrows, ncols);
+}
+
+// UInt32
+EXPORT
+int outputMatrixUInt32Set(size_t nodeid, size_t portid, uint32_t* pval, size_t nrows, size_t ncols) {
+    return write_output_matrix_helper(nodeid, portid, pval, nrows, ncols);
+}
+
+// UInt64
+EXPORT
+int outputMatrixUInt64Set(size_t nodeid, size_t portid, uint64_t* pval, size_t nrows, size_t ncols) {
+    return write_output_matrix_helper(nodeid, portid, pval, nrows, ncols);
+}
+
+
+EXPORT
+int outputBinarySet(size_t nodeid, size_t portid, const char* pval, size_t nbytes) {
+    // Sanity check
+    if (nbytes > 0 && !pval) {
+        return -1000;
+    }
+    
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    // Find port
+    if (portid >= pnode->_all_ports.size()) {
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
+        return -2;
+    }
+    
+    // Obtain the port's info
+    MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
+    
+    if (portinfo.type != OBNEI_Port_Output) {
+        reportError(OBNNodeExtInt::StdMsgs::PORT_NOT_OUTPUT);
+        return -3;
+    }
+    
+    if (portinfo.container != OBNEI_Container_Binary) {
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+        return -4;
+    }
+    
+    // Cast the port to the actual object
+    MQTTOutput<OBN_BIN,bool> *p = dynamic_cast<MQTTOutput<OBN_BIN,bool>*>(portinfo.port);
+    
+    if (p) {
+        p->message(pval, nbytes);
+        return 0;
+    } else {
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+        return -4;
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* === Port interface === */
-
-// Set the value of a physical output port, but does not send it immediately.
-// Usually the value will be sent out at the end of the event callback (UPDATEY).
-// Args: node object pointer, port's ID, value (in appropriate Matlab type)
-// Returns: none
-// This function will return an error if the given port is not a physical output port, or if the given value cannot be converted to the port's type (e.g. write a string to a numeric port).
-// If the port contains binary data, the value must be a string containing the binary data.
-MEX_DEFINE(writeOutput) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 3);
-    OutputArguments output(nlhs, plhs, 0);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    unsigned int id = input.get<unsigned int>(1);
-    if (id >= ynode->_all_ports.size()) {
-        reportError("MQTTNODE:writeOutput", "Invalid port ID to write to.");
-        return;
-    }
-    
-    // Obtain the port
-    MQTTNodeExt::PortInfo portinfo = ynode->_all_ports[id];
-    if (portinfo.type != OBNEI_Port_Output) {
-        reportError("MQTTNODE:writeOutput", "Given port is not a physical output.");
-        return;
-    }
-    
-    // std::cout << portinfo.container << " of " << portinfo.elementType << std::endl;
-    
-    // Set its value based on its type, trying to convert from the given Matlab type
-    switch (portinfo.container) {
-        case 's':
-            switch (portinfo.elementType) {
-                case MQTTNodeExt::PortInfo::DOUBLE: {
-                    WRITE_OUTPUT_SCALAR_HELPER(OBN_PB, double)
-                    break;
-                }
-                    
-                case MQTTNodeExt::PortInfo::LOGICAL: {
-                    WRITE_OUTPUT_SCALAR_HELPER(OBN_PB, bool)
-                    break;
-                }
-                    
-                case MQTTNodeExt::PortInfo::INT32: {
-                    WRITE_OUTPUT_SCALAR_HELPER(OBN_PB, int32_t)
-                    break;
-                }
-                    
-                case MQTTNodeExt::PortInfo::INT64: {
-                    WRITE_OUTPUT_SCALAR_HELPER(OBN_PB, int64_t)
-                    break;
-                }
-                    
-                case MQTTNodeExt::PortInfo::UINT32: {
-                    WRITE_OUTPUT_SCALAR_HELPER(OBN_PB, uint32_t)
-                    break;
-                }
-                    
-                case MQTTNodeExt::PortInfo::UINT64: {
-                    WRITE_OUTPUT_SCALAR_HELPER(OBN_PB, uint64_t)
-                    break;
-                }
-                    
-                default:
-                    reportError("MQTTNODE:writeOutput", "Internal error: port's element type is invalid.");
-                    break;
-            }
-            break;
-            
-        case 'v':
-            switch (portinfo.elementType) {
-                case MQTTNodeExt::PortInfo::DOUBLE:
-                    write_output_vector_helper<double>(input, portinfo.port);
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::LOGICAL: {
-                    // This case is special because vector<bool> does not have data()
-                    MQTTOutput<OBN_PB,obn_vector_raw<bool>> *p = dynamic_cast<MQTTOutput<OBN_PB,obn_vector_raw<bool>>*>(portinfo.port);
-                    if (p) {
-                        std::vector<bool> v(input.get<std::vector<bool>>(2));
-                        (*(*p)).resize(v.size());
-                        // Copy element-by-element
-                        for (std::size_t i = 0; i < v.size(); ++i) {
-                            (*(*p))(i) = v[i];
-                        }
-                    } else {
-                        reportError("MQTTNODE:writeOutput", "Internal error: port object type does not match its declared type.");
-                    }
-                    break;
-                }
-                    
-                case MQTTNodeExt::PortInfo::INT32:
-                    write_output_vector_helper<int32_t>(input, portinfo.port);
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::INT64:
-                    write_output_vector_helper<int64_t>(input, portinfo.port);
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::UINT32:
-                    write_output_vector_helper<uint32_t>(input, portinfo.port);
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::UINT64:
-                    write_output_vector_helper<uint64_t>(input, portinfo.port);
-                    break;
-                    
-                default:
-                    reportError("MQTTNODE:writeOutput", "Internal error: port's element type is invalid.");
-                    break;
-            }
-            break;
-            
-        case 'm':
-            switch (portinfo.elementType) {
-                case MQTTNodeExt::PortInfo::DOUBLE:
-                    write_output_matrix_helper<double>(input, portinfo.port);
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::LOGICAL:
-                    write_output_matrix_helper<bool>(input, portinfo.port);
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::INT32:
-                    write_output_matrix_helper<int32_t>(input, portinfo.port);
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::INT64:
-                    write_output_matrix_helper<int64_t>(input, portinfo.port);
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::UINT32:
-                    write_output_matrix_helper<uint32_t>(input, portinfo.port);
-                    break;
-                    
-                case MQTTNodeExt::PortInfo::UINT64:
-                    write_output_matrix_helper<uint64_t>(input, portinfo.port);
-                    break;
-                    
-                default:
-                    reportError("MQTTNODE:writeOutput", "Internal error: port's element type is invalid.");
-                    break;
-            }
-            break;
-            
-        case 'b': {
-            // A binary string is written, the element type is ignored
-            MQTTOutput<OBN_BIN,bool> *p = dynamic_cast<MQTTOutput<OBN_BIN,bool>*>(portinfo.port);
-            if (p) {
-                p->message(input.get<std::string>(2));
-            } else {
-                reportError("MQTTNODE:writeOutput", "Internal error: binary port object type does not match its declared type.");
-            }
-            break;
-        }
-            
-        default:    // This should never happen
-            reportError("MQTTNODE:writeOutput", "Internal error: port's container type is invalid.");
-            break;
-    }
-}
-
 
 //    // Get full MQTT name of a port
 //    MEX_DEFINE(MQTTName) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {

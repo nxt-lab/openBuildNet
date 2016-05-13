@@ -68,8 +68,6 @@ bool OBNsim::Utils::isValidNodeName(const std::string &name) {
 }
 
 void OBNsim::ResizableBuffer::allocateData(std::size_t newsize) {
-    assert(newsize >= 0);
-    
     m_data_size = newsize;
     
     if (m_data) {

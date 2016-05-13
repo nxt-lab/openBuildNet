@@ -18,4 +18,5 @@ char OBNNodeExtInt::StdMsgs::INVALID_PORT_NAME[] = "Invalid port name.";
 char OBNNodeExtInt::StdMsgs::INVALID_PORT_ID[] = "Invalid port ID.";
 char OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE[] = "Internal error: port type does not match its declared type.";
 char OBNNodeExtInt::StdMsgs::PORT_NOT_INPUT[] = "Port is not an input.";
+char OBNNodeExtInt::StdMsgs::PORT_NOT_OUTPUT[] = "Port is not an output.";
 char OBNNodeExtInt::StdMsgs::INTERNAL_INVALID_VALUE_FROM_PORT[] = "Internal error: invalid value returned from port.";
