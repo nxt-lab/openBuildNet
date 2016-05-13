@@ -11,8 +11,8 @@
 #ifndef OBNNODE_EXT_H_
 #define OBNNODE_EXT_H_
 
-#include <vector>
-#include <functional>
+#include <stdint.h>
+
 
 /** Types and functions the external interface can use. */
 #ifdef __cplusplus
@@ -22,19 +22,22 @@ extern "C" {
     /** The update mask type, see obnsim_basic.h for the definition. That should match the definition here. */
     typedef uint64_t OBNUpdateMask;
     
+    /** The type used for simulation time, see obnsim_basic.h for the definition of simtime_t. That should match the definition here. */
+    typedef int64_t OBNSimTimeType;
+    
     /** The event type */
     enum OBNEI_EventType {
-        OBNEI_INIT = 0,         // Init of simulation
-        OBNEI_Y = 1,            // Update Y
-        OBNEI_X = 2,            // Update X
-        OBNEI_TERM = 3,         // Termination of simulation
-        OBNEI_RCV = 4           // A port has received a message
+        OBNEI_Event_INIT = 0,         // Init of simulation
+        OBNEI_Event_Y = 1,            // Update Y
+        OBNEI_Event_X = 2,            // Update X
+        OBNEI_Event_TERM = 3,         // Termination of simulation
+        OBNEI_Event_RCV = 4           // A port has received a message
     };
 
     /** Type to pass arguments of an event */
-    union OBNEI_EventArg {
+    struct OBNEI_EventArg {
         OBNUpdateMask mask;     // Update mask (see above)
-        size_t index;     // Index, equivalent to uint32_t
+        size_t index;           // Index
     };
     
     
@@ -49,6 +52,68 @@ extern "C" {
     // Returns 0 if successful; <0 if node doesn't exist.
     int deleteOBNNode(size_t id);
     
+    // Request/notify the SMN to stop, then terminate the node's simulation regardless of whether the request was accepted or not. See MQTTNodeExt::stopSimulation for details.
+    // Args: node ID
+    // Return: 0 if successful
+    int nodeStopSimulation(size_t nodeid);
+    
+    // Requests the SMN/GC to stop the simulation (by sending a request message to the SMN) but does not terminate the node.
+    // If the SMN/GC accepts the request, it will broadcast a TERM message to all nodes, which in turn will terminate this node.
+    // See MQTTNodeExt::requestStopSimulation() for details.
+    // Args: node ID
+    // Return: 0 if successful
+    int nodeRequestStopSimulation(size_t nodeid);
+    
+    // Check if the current state of the node is STOPPED
+    // Args: node ID
+    // Returns: true if >0, false if =0, error if <0.
+    int nodeIsStopped(size_t nodeid);
+    
+    // Check if the current state of the node is ERROR
+    // Args: node ID
+    // Returns: true if >0, false if =0, error if <0.
+    int nodeIsError(size_t nodeid);
+    
+    // Check if the current state of the node is RUNNING
+    // Args: node ID
+    // Returns: true if >0, false if =0, error if <0.
+    int nodeIsRunning(size_t nodeid);
+    
+    // Returns the current simulation time of the node with a desired time unit.
+    // Args: node ID, the time unit, double* time
+    // Returns: 0 if successful
+    // *time receives the current simulation time as a double (real number)
+    // The time unit is an integer specifying the desired time unit. The allowed values are:
+    // 0 = second, -1 = millisecond, -2 = microsecond, 1 = minute, 2 = hour
+    int nodeSimulationTime(size_t nodeid, int timeunit, double* T);
+    
+    // Returns the current wallclock time of the node.
+    // Args: node ID, long* time
+    // Returns: 0 if successful
+    // *time receives the current wallclock time as a POSIX time value.
+    int nodeWallClockTime(size_t nodeid, long* T);
+    
+    
+    /* === Node simulation control interface === */
+    
+    // Get the next port event (e.g. message received) with a possible timeout.
+    // Args: node ID, timeout (double in seconds, can be <= 0.0 if no timeout, i.e. returns immediately), unsigned int* event_type, size_t* portID
+    // Returns: 0 if successful, >0 if timeout, <0 if other errors
+    // If returning 0: *event_type is the type of port event (an integer cast from OBNEI_EventType, OBNEI_Event_RCV for message received); *portID is the index of the port associated with the event.
+    int simGetPortEvent(size_t nodeid, double timeout, unsigned int* event_type, size_t* portid);
+    
+    
+    // Runs the node's simulation until the next event, or until the node stops or has errors
+    // Args: node ID, timeout (double in seconds, can be <= 0.0 if no timeout), unsigned int* event_type, OBNEI_EventArg* event_args
+    // Returns: 0 if everything is going well and there is an event pending, 1 if timeout (but the simulation won't stop automatically, it's still running), 2 if the simulation has stopped (properly, not because of an error), 3 if the simulation has stopped due to an error (the node's state becomes NODE_ERROR), <0 if other error (e.g., node ID is invalid).  Check the last error message for specifics.
+    // If returning 0: *event_type is the type of port event (an integer cast from OBNEI_EventType); *event_args are the event arguments depending on the event type (see the structure for details).
+    int simRunStep(size_t nodeid, double timeout, unsigned int* event_type, OBNEI_EventArg* event_args);
+    
+    // Request an irregular future update.
+    // This is a blocking call, possibly with a timeout, that waits until it receives the response from the SMN or until a timeout.
+    // Args: node ID, future time (integer value in the future), update mask of the requested update, timeout (double, can be <= 0)
+    // Returns: status of the request: 0 if successful (accepted), -1 if timeout (failed), -2 if request is invalid, >0 if other errors (failed, see OBN documents for details).
+    int simRequestFutureUpdate(size_t nodeid, OBNSimTimeType t, OBNUpdateMask mask, double timeout);
     
     
     /* === Port interface === */
@@ -130,6 +195,16 @@ extern "C" {
     // Arguments: node ID, port's ID, pointer to an OBNEI_PortInfo structure to receive info
     // Returns: 0 if successful.
     int portInfo(size_t nodeid, size_t portid, OBNEI_PortInfo* pInfo);
+    
+    // Request to connect a given port to a port on a node.
+    // Arguments: node ID, port's ID, source port's name (string)
+    // Returns: 0 if successful, otherwise error ID (last error message contains the error message).
+    int portConnect(size_t nodeid, size_t portid, const char* srcport);
+    
+    // Enables the message received event at an input port
+    // Args: node ID, port's ID
+    // Returns: 0 if successful
+    int portEnableRcvEvent(size_t nodeid, size_t portid);
     
     
     /** These functions read the current value of a non-strict scalar input port, or pop the top/front value of a strict scalar input port.

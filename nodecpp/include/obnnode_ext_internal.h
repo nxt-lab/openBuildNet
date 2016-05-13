@@ -11,6 +11,9 @@
 #ifndef obnnode_ext_internal_h
 #define obnnode_ext_internal_h
 
+#include <vector>
+#include <functional>
+
 namespace OBNNodeExtInt {
     
     /** These functions are used to lock and unlock a pointer.

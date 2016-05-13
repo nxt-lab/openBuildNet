@@ -111,7 +111,7 @@ public:
     /** \brief Callback for UPDATE_Y event */
     virtual void onUpdateY(OBNnode::updatemask_t m) override {
         // Post an external interface event for SIM_Y
-        _ml_current_event.type = OBNEI_Y;
+        _ml_current_event.type = OBNEI_Event_Y;
         _ml_current_event.arg.mask = m;
         _ml_pending_event = true;
         // mexPrintf("UpdateY for node %s mask = %d\n", name().c_str(), m);
@@ -120,7 +120,7 @@ public:
     /** \brief Callback for UPDATE_X event */
     virtual void onUpdateX(OBNnode::updatemask_t m) override {
         // Post an external interface event for SIM_X
-        _ml_current_event.type = OBNEI_X;
+        _ml_current_event.type = OBNEI_Event_X;
         _ml_current_event.arg.mask = m;
         _ml_pending_event = true;
         // mexPrintf("UpdateX for node %s mask = %d\n", name().c_str(), m);
@@ -129,7 +129,7 @@ public:
     /** \brief Callback to initialize the node before each simulation. */
     virtual void onInitialization() override {
         // Post an external interface event for SIM_INIT
-        _ml_current_event.type = OBNEI_INIT;
+        _ml_current_event.type = OBNEI_Event_INIT;
         _ml_pending_event = true;
         _node_is_stopping = false;
     }
@@ -138,7 +138,7 @@ public:
     /** \brief Callback before the node's current simulation is terminated. */
     virtual void onTermination() override {
         // Post an external interface event for SIM_TERM
-        _ml_current_event.type = OBNEI_TERM;
+        _ml_current_event.type = OBNEI_Event_TERM;
         _ml_pending_event = true;
         _node_is_stopping = true;
     }

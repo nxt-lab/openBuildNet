@@ -1218,7 +1218,7 @@ namespace OBNnode {
             }
             
             // Copy data
-            void copy(T* p, std::size_t trows, std::size_t tcols) {
+            void copy(const T* p, std::size_t trows, std::size_t tcols) {
                 nrows = trows;
                 ncols = tcols;
                 data.assign(p, trows*tcols);

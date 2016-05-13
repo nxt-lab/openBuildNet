@@ -227,7 +227,7 @@ int MQTTNodeExt::runStep(double timeout) {
                     assert(evt);    // The event must be valid
                     
                     // Create an external-interface event for this port event
-                    _ml_current_event.type = OBNEI_RCV;   // The default event is Message Received; check evt->event_type for other types
+                    _ml_current_event.type = OBNEI_Event_RCV;   // The default event is Message Received; check evt->event_type for other types
                     _ml_current_event.arg.index = evt->port_index;
                     _ml_pending_event = true;
                     _current_node_event.reset();    // The node event pointer is set to null
@@ -387,6 +387,210 @@ EXPORT
 int deleteOBNNode(size_t id) {
     return (OBNNodeExtInt::Session<MQTTNodeExt>::destroy(id))?0:-1;
 }
+
+
+// Request/notify the SMN to stop, then terminate the node's simulation
+EXPORT
+int nodeStopSimulation(size_t nodeid) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    pnode->stopSimulation();
+    return 0;
+}
+
+
+// Requests the SMN/GC to stop the simulation (by sending a request message to the SMN) but does not terminate the node.
+EXPORT
+int nodeRequestStopSimulation(size_t nodeid) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    pnode->requestStopSimulation();
+    return 0;
+}
+
+
+// Check if node has stopped
+EXPORT
+int nodeIsStopped(size_t nodeid) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    return (pnode->nodeState() == OBNnode::MQTTNode::NODE_STOPPED)?1:0;
+}
+
+// Check if node is in error state
+EXPORT
+int nodeIsError(size_t nodeid) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    return pnode->hasError()?1:0;
+}
+
+
+// Check if the current state of the node is RUNNING
+EXPORT
+int nodeIsRunning(size_t nodeid) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    return (pnode->nodeState() == OBNnode::MQTTNode::NODE_RUNNING)?1:0;
+}
+
+
+// Get the next port event (e.g. message received) with a possible timeout.
+EXPORT
+int simGetPortEvent(size_t nodeid, double timeout, unsigned int* event_type, size_t* portid) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    // get next PortEvent from node
+    auto evt = pnode->getNextPortEvent(timeout);
+    
+    if (!evt) {
+        // No event
+        return 1;
+    }
+    
+    switch (evt->event_type) {
+        case MQTTNodeExt::PortEvent::RCV:
+            *event_type = OBNEI_Event_RCV;
+            break;
+    }
+    
+    *portid = evt->port_index;
+    return 0;
+}
+
+
+// Runs the node's simulation until the next event, or until the node stops or has errors.
+EXPORT
+int simRunStep(size_t nodeid, double timeout, unsigned int* event_type, OBNEI_EventArg* event_args) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    // Call node's runStep
+    int result = pnode->runStep(timeout);
+    
+    // Handle the special cases
+    if (result == 3) {
+        reportError("Node is in error state; can't continue simulation; please stop the node to clear the error state before continuing.");
+        return result;
+    }
+    
+    if (pnode->_ml_pending_event) {
+        *event_type = pnode->_ml_current_event.type;
+        *event_args = pnode->_ml_current_event.arg;
+    }
+    
+    return result;
+}
+
+
+// Returns the current simulation time of the node with a desired time unit.
+// 0 = second, -1 = millisecond, -2 = microsecond, 1 = minute, 2 = hour
+EXPORT
+int nodeSimulationTime(size_t nodeid, int timeunit, double* T) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    switch (timeunit) {
+        case 0:
+            *T = pnode->currentSimulationTime<std::chrono::seconds>();
+            break;
+            
+        case 1:
+            *T = pnode->currentSimulationTime<std::chrono::minutes>();
+            break;
+            
+        case 2:
+            *T = pnode->currentSimulationTime<std::chrono::hours>();
+            break;
+            
+        case -1:
+            *T = pnode->currentSimulationTime<std::chrono::milliseconds>();
+            break;
+            
+        case -2:
+            *T = pnode->currentSimulationTime<std::chrono::microseconds>();
+            break;
+            
+        default:
+            reportError("Invalid time unit.");
+            return -2;  // Invalid time unit
+    }
+    
+    return 0;
+}
+
+
+EXPORT
+int nodeWallClockTime(size_t nodeid, long* T) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    *T = static_cast<long>(pnode->currentWallClockTime());
+    
+    return 0;
+}
+
+
+EXPORT
+int simRequestFutureUpdate(size_t nodeid, OBNSimTimeType t, OBNUpdateMask mask, double timeout) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1001;
+    }
+    
+    auto *pCond = pnode->requestFutureUpdate(t, mask, false);
+    if (pCond) {
+        return pnode->resultFutureUpdate(pCond, timeout);
+    } else {
+        return -2;
+    }
+}
+
+
 
 // Create a new input port on a node
 // Arguments: node ID, port's name, format type, container type, element type, strict or not
@@ -655,7 +859,7 @@ typedef std::pair<bool, void*> AccessManagementWrapper;
 
 // Generic (template) function to read from vector input port - the *GET function
 template <typename ETYPE>
-int read_input_vector_get(size_t nodeid, size_t portid, void** pMan, ETYPE** pVals, size_t* nelems)
+int read_input_vector_get(size_t nodeid, size_t portid, void** pMan, const ETYPE** pVals, size_t* nelems)
 {
     // Sanity check
     if (pMan == nullptr || nelems == nullptr) {
@@ -876,7 +1080,7 @@ void inputVectorUInt64Release(void* pMan, uint64_t* pBuf) {
 
 // Generic (template) function to read from matrix input port - the *GET function
 template <typename ETYPE>
-int read_input_matrix_get(size_t nodeid, size_t portid, void** pMan, ETYPE** pVals, size_t* nrows, size_t* ncols)
+int read_input_matrix_get(size_t nodeid, size_t portid, void** pMan, const ETYPE** pVals, size_t* nrows, size_t* ncols)
 {
     // Sanity check
     if (pMan == nullptr || nrows == nullptr || ncols == nullptr) {
@@ -1539,37 +1743,73 @@ int outputBinarySet(size_t nodeid, size_t portid, const char* pval, size_t nbyte
 }
 
 
+EXPORT
+int portConnect(size_t nodeid, size_t portid, const char* srcport) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1001;
+    }
+    
+    // Find port
+    if (portid >= pnode->_all_ports.size()) {
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
+        return -1002;
+    }
+    
+    // Obtain the port's info
+    MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
+    
+    // Request to connect
+    auto result = portinfo.port->connect_from_port(srcport);
+    
+    // Get the result
+    if (result.first != 0) {
+        reportError(result.second.c_str());
+    }
+    
+    return result.first;
+}
+
+
+EXPORT
+int portEnableRcvEvent(size_t nodeid, size_t portid) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    // Find port
+    if (portid >= pnode->_all_ports.size()) {
+        reportError(OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
+        return -2;
+    }
+    
+    // Obtain the port's info
+    MQTTNodeExt::PortInfo portinfo = pnode->_all_ports[portid];
+    if (portinfo.type != OBNEI_Port_Input) {
+        reportError(OBNNodeExtInt::StdMsgs::PORT_NOT_INPUT);
+        return -3;
+    }
+    
+    // Cast the port to input port
+    InputPortBase* p = dynamic_cast<InputPortBase*>(portinfo.port);
+    if (p) {
+        // Set the callback for the port
+        p->setMsgRcvCallback(std::bind(&MQTTNodeExt::extint_inputport_msgrcvd_callback, pnode, portid), false);
+        return 0;
+    } else {
+        reportError(OBNNodeExtInt::StdMsgs::INTERNAL_PORT_NOT_MATCH_DECL_TYPE);
+        return -4;
+    }
+}
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* === Port interface === */
 
 //    // Get full MQTT name of a port
 //    MEX_DEFINE(MQTTName) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
@@ -1597,297 +1837,6 @@ int outputBinarySet(size_t nodeid, size_t portid, const char* pval, size_t nbyte
 //        output.set(0, ynode->portID(input.get<string>(1)));
 //    }
 
-
-
-/* === MQTTNode interface === */
-
-// Get the next port event (e.g. message received) with a possible timeout.
-// Args: node object pointer, timeout (double in seconds, can be <= 0.0 if no timeout, i.e. returns immediately).
-// Returns: [status, event_type, port_index]
-// where:
-// - status = true if there is an event returned (hence the remaining returned values are valid); = false if there is no event (i.e. timeout).
-// - event_type = 0 for Message Received.
-// - port_index is the index of the port associated with the event.
-MEX_DEFINE(portEvent) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 2);
-    OutputArguments output(nlhs, plhs, 3);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    
-    // get next PortEvent from node
-    auto evt = ynode->getNextPortEvent(input.get<double>(1));
-    
-    if (!evt) {
-        // No event -> returns immediately
-        output.set(0, false);
-        output.set(1, -1);
-        output.set(2, -1);
-        return;
-    }
-    
-    // Convert the event to outputs of this MEX function
-    output.set(0, true);
-    output.set(2, evt->port_index);
-    
-    switch (evt->event_type) {
-        case OBNnode::MQTTNodeExt::PortEvent::RCV:
-            output.set(1, 0);
-            break;
-            
-        default:
-            reportError("MQTTNODE:portEvent", "Internal error: unrecognized port event type.");
-            break;
-    }
-}
-
-
-// Runs the node's simulation until the next event, or until the node stops or has errors
-// Args: node object pointer, timeout (double in seconds, can be <= 0.0 if no timeout)
-// Returns: status (see MQTTNodeExt::runStep()), event type (a string), event argument (of an appropriate data type depending on the event type)
-MEX_DEFINE(runStep) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 2);
-    OutputArguments output(nlhs, plhs, 3);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    
-    // Call node's runStep
-    int result = ynode->runStep(input.get<double>(1));
-    
-    /* Results:
-     3 -> reportError("MQTTNODE:runStep", "Node is in error state; can't continue simulation; please stop the node (restart it) to clear the error state before continuing.");
-     
-     
-    
-    // Convert the result to outputs of this MEX function
-    output.set(0, result);
-    if (ynode->_ml_pending_event) {
-        switch (ynode->_ml_current_event.type) {
-            case OBNnode::MQTTNodeExt::MLE_Y:
-                output.set(1, "Y");
-                output.set(2, ynode->_ml_current_event.arg.mask);
-                break;
-                
-            case OBNnode::MQTTNodeExt::MLE_X:
-                output.set(1, "X");
-                output.set(2, ynode->_ml_current_event.arg.mask);   // This mask is set to the current update mask
-                break;
-                
-            case OBNnode::MQTTNodeExt::MLE_INIT:
-                output.set(1, "INIT");
-                output.set(2, 0);
-                break;
-                
-            case OBNnode::MQTTNodeExt::MLE_TERM:
-                output.set(1, "TERM");
-                output.set(2, 0);
-                break;
-                
-            case OBNnode::MQTTNodeExt::MLE_RCV:
-                output.set(1, "RCV");
-                output.set(2, ynode->_ml_current_event.arg.index);
-                break;
-                
-            default:
-                reportError("MQTTNODE:runStep", "Internal error: unrecognized Matlab event type.");
-                break;
-        }
-    } else {
-        output.set(1, "");
-        output.set(2, 0);
-    }
-}
-
-
-// Returns the current simulation time of the node with a desired time unit.
-// Args: node object pointer, the time unit
-// Returns: current simulation time as a double (real number)
-// The time unit is an integer specifying the desired time unit. The allowed values are:
-// 0 = second, -1 = millisecond, -2 = microsecond, 1 = minute, 2 = hour
-MEX_DEFINE(simTime) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 2);
-    OutputArguments output(nlhs, plhs, 1);
-    
-    int timeunit = input.get<int>(1);
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    
-    double timevalue;
-    
-    switch (timeunit) {
-        case 0:
-            timevalue = ynode->currentSimulationTime<std::chrono::seconds>();
-            break;
-            
-        case 1:
-            timevalue = ynode->currentSimulationTime<std::chrono::minutes>();
-            break;
-            
-        case 2:
-            timevalue = ynode->currentSimulationTime<std::chrono::hours>();
-            break;
-            
-        case -1:
-            timevalue = ynode->currentSimulationTime<std::chrono::milliseconds>();
-            break;
-            
-        case -2:
-            timevalue = ynode->currentSimulationTime<std::chrono::microseconds>();
-            break;
-            
-        default:
-            reportError("MQTTNODE:simTime", "Internal error: Unrecognized time unit argument.");
-            break;
-    }
-    
-    output.set(0, timevalue);
-}
-
-// Returns the current wallclock time of the node.
-// Args: node object pointer
-// Returns: current wallclock time as a POSIX time value.
-MEX_DEFINE(wallclock) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 1);
-    OutputArguments output(nlhs, plhs, 1);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    output.set(0, ynode->currentWallClockTime());
-}
-
-
-// Request an irregular future update.
-// This is a blocking call, possibly with a timeout, that waits until it receives the response from the SMN or until a timeout.
-// Args: node object pointer, future time (integer value in the future), update mask of the requested update (int64), timeout (double, can be <= 0)
-// Returns: status of the request: 0 if successful (accepted), -1 if timeout (failed), -2 if request is invalid, >0 if other errors (failed, see OBN documents for details).
-MEX_DEFINE(futureUpdate) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 4);
-    OutputArguments output(nlhs, plhs, 1);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    auto *pCond = ynode->requestFutureUpdate(input.get<simtime_t>(1), input.get<updatemask_t>(2), false);
-    if (pCond) {
-        output.set(0, ynode->resultFutureUpdate(pCond, input.get<double>(3)));
-    } else {
-        output.set(0, -2);
-    }
-}
-
-
-// Request/notify the SMN to stop, then terminate the node's simulation regardless of whether the request was accepted or not. See MQTTNodeExt::stopSimulation for details.
-// Args: node object pointer
-// Return: none
-MEX_DEFINE(stopSim) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 1);
-    OutputArguments output(nlhs, plhs, 0);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    ynode->stopSimulation();
-}
-
-// This method requests the SMN/GC to stop the simulation (by sending a request message to the SMN).
-// See MQTTNodeExt::requestStopSimulation() for details.
-// Args: node object pointer
-// Return: none
-MEX_DEFINE(requestStopSim) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 1);
-    OutputArguments output(nlhs, plhs, 0);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    ynode->requestStopSimulation();
-}
-
-
-// Check if the current state of the node is ERROR
-// Args: node object pointer
-// Returns: true/false
-MEX_DEFINE(isNodeErr) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 1);
-    OutputArguments output(nlhs, plhs, 1);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    output.set(0, ynode->hasError());
-}
-
-// Check if the current state of the node is RUNNING
-// Args: node object pointer
-// Returns: true/false
-MEX_DEFINE(isNodeRunning) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 1);
-    OutputArguments output(nlhs, plhs, 1);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    output.set(0, ynode->nodeState() == OBNnode::MQTTNode::NODE_RUNNING);
-}
-
-// Check if the current state of the node is STOPPED
-// Args: node object pointer
-// Returns: true/false
-MEX_DEFINE(isNodeStopped) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 1);
-    OutputArguments output(nlhs, plhs, 1);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    output.set(0, ynode->nodeState() == OBNnode::MQTTNode::NODE_STOPPED);
-}
-
-
-
-// Enable the message received event at an input port
-// Args: node object pointer, port's ID
-// Returns: true if successful; false otherwise
-MEX_DEFINE(enableRcvEvent) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 2);
-    OutputArguments output(nlhs, plhs, 1);
-    output.set(0, false);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    unsigned int id = input.get<unsigned int>(1);
-    if (id >= ynode->_all_ports.size()) {
-        reportError("MQTTNODE:enableRcvEvent", OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
-        return;
-    }
-    
-    // Obtain the port
-    MQTTNodeExt::PortInfo portinfo = ynode->_all_ports[id];
-    if (portinfo.type != OBNEI_Port_Input) {
-        reportError("MQTTNODE:enableRcvEvent", "Given port is not an input.");
-        return;
-    }
-    
-    // Cast the port to input port
-    InputPortBase* p = dynamic_cast<InputPortBase*>(portinfo.port);
-    if (p) {
-        // Set the callback for the port
-        p->setMsgRcvCallback(std::bind(&MQTTNodeExt::matlab_inputport_msgrcvd_callback, ynode, id), false);
-        output.set(0, true);
-    } else {
-        reportError("MQTTNODE:enableRcvEvent", "Internal error: port object is not an input.");
-        return;
-    }
-}
-
-
-// Request to connect a given port to a port on this node.
-// Arguments: node object pointer, port's ID, source port's name (string)
-// Returns: result (int), message (string)
-MEX_DEFINE(connectPort) (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
-    InputArguments input(nrhs, prhs, 3);
-    OutputArguments output(nlhs, plhs, 2);
-    
-    MQTTNodeExt *ynode = Session<MQTTNodeExt>::get(input.get(0));
-    unsigned int id = input.get<unsigned int>(1);
-    if (id >= ynode->_all_ports.size()) {
-        reportError("MQTTNODE:connectPort", OBNNodeExtInt::StdMsgs::INVALID_PORT_ID);
-        return;
-    }
-    
-    // Obtain the port
-    MQTTNodeExt::PortInfo portinfo = ynode->_all_ports[id];
-    
-    // Request to connect
-    auto result = portinfo.port->connect_from_port(input.get<string>(2));
-    
-    output.set(0, result.first);
-    output.set(1, result.second);
-}
 
 // Returns the name of the node (without workspace name)
 // Args: node object pointer
