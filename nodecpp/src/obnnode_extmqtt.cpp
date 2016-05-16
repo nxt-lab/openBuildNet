@@ -1574,37 +1574,37 @@ int write_output_vector_helper(size_t nodeid, size_t portid, const ETYPE* pval, 
 
 // Float64
 EXPORT
-int outputVectorDoubleSet(size_t nodeid, size_t portid, double* pval, size_t nelems) {
+int outputVectorDoubleSet(size_t nodeid, size_t portid, const double* pval, size_t nelems) {
     return write_output_vector_helper(nodeid, portid, pval, nelems);
 }
 
 // C++ bool (1 byte)
 EXPORT
-int outputVectorBoolSet(size_t nodeid, size_t portid, bool* pval, size_t nelems) {
+int outputVectorBoolSet(size_t nodeid, size_t portid, const bool* pval, size_t nelems) {
     return write_output_vector_helper(nodeid, portid, pval, nelems);
 }
 
 // Int32
 EXPORT
-int outputVectorInt32Set(size_t nodeid, size_t portid, int32_t* pval, size_t nelems) {
+int outputVectorInt32Set(size_t nodeid, size_t portid, const int32_t* pval, size_t nelems) {
     return write_output_vector_helper(nodeid, portid, pval, nelems);
 }
 
 // Int64
 EXPORT
-int outputVectorInt64Set(size_t nodeid, size_t portid, int64_t* pval, size_t nelems) {
+int outputVectorInt64Set(size_t nodeid, size_t portid, const int64_t* pval, size_t nelems) {
     return write_output_vector_helper(nodeid, portid, pval, nelems);
 }
 
 // UInt32
 EXPORT
-int outputVectorUInt32Set(size_t nodeid, size_t portid, uint32_t* pval, size_t nelems) {
+int outputVectorUInt32Set(size_t nodeid, size_t portid, const uint32_t* pval, size_t nelems) {
     return write_output_vector_helper(nodeid, portid, pval, nelems);
 }
 
 // UInt64
 EXPORT
-int outputVectorUInt64Set(size_t nodeid, size_t portid, uint64_t* pval, size_t nelems) {
+int outputVectorUInt64Set(size_t nodeid, size_t portid, const uint64_t* pval, size_t nelems) {
     return write_output_vector_helper(nodeid, portid, pval, nelems);
 }
 
@@ -1662,37 +1662,37 @@ int write_output_matrix_helper(size_t nodeid, size_t portid, const ETYPE* pval, 
 
 // Float64
 EXPORT
-int outputMatrixDoubleSet(size_t nodeid, size_t portid, double* pval, size_t nrows, size_t ncols) {
+int outputMatrixDoubleSet(size_t nodeid, size_t portid, const double* pval, size_t nrows, size_t ncols) {
     return write_output_matrix_helper(nodeid, portid, pval, nrows, ncols);
 }
 
 // C++ bool (1 byte)
 EXPORT
-int outputMatrixBoolSet(size_t nodeid, size_t portid, bool* pval, size_t nrows, size_t ncols) {
+int outputMatrixBoolSet(size_t nodeid, size_t portid, const bool* pval, size_t nrows, size_t ncols) {
     return write_output_matrix_helper(nodeid, portid, pval, nrows, ncols);
 }
 
 // Int32
 EXPORT
-int outputMatrixInt32Set(size_t nodeid, size_t portid, int32_t* pval, size_t nrows, size_t ncols) {
+int outputMatrixInt32Set(size_t nodeid, size_t portid, const int32_t* pval, size_t nrows, size_t ncols) {
     return write_output_matrix_helper(nodeid, portid, pval, nrows, ncols);
 }
 
 // Int64
 EXPORT
-int outputMatrixInt64Set(size_t nodeid, size_t portid, int64_t* pval, size_t nrows, size_t ncols) {
+int outputMatrixInt64Set(size_t nodeid, size_t portid, const int64_t* pval, size_t nrows, size_t ncols) {
     return write_output_matrix_helper(nodeid, portid, pval, nrows, ncols);
 }
 
 // UInt32
 EXPORT
-int outputMatrixUInt32Set(size_t nodeid, size_t portid, uint32_t* pval, size_t nrows, size_t ncols) {
+int outputMatrixUInt32Set(size_t nodeid, size_t portid, const uint32_t* pval, size_t nrows, size_t ncols) {
     return write_output_matrix_helper(nodeid, portid, pval, nrows, ncols);
 }
 
 // UInt64
 EXPORT
-int outputMatrixUInt64Set(size_t nodeid, size_t portid, uint64_t* pval, size_t nrows, size_t ncols) {
+int outputMatrixUInt64Set(size_t nodeid, size_t portid, const uint64_t* pval, size_t nrows, size_t ncols) {
     return write_output_matrix_helper(nodeid, portid, pval, nrows, ncols);
 }
 

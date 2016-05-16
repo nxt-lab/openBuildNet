@@ -11,6 +11,7 @@
 #ifndef obnnode_ext_internal_h
 #define obnnode_ext_internal_h
 
+#include <memory>       // smart pointer
 #include <vector>
 #include <functional>
 
@@ -31,7 +32,7 @@ namespace OBNNodeExtInt {
     template<class T>
     class Session {
     public:
-        typedef std::vector< std::shared_ptr<T> > InstanceList;
+        typedef std::vector< std::unique_ptr<T> > InstanceList;
         
         /** Create an instance.
          */
