@@ -63,12 +63,12 @@ ADD_EXECUTABLE(nodecpp-mynode
 	${OBNNODE_CORE_SRCFILES}
 )
 
-ADD_EXECUTABLE(nodecpp-extmqtt
+ADD_LIBRARY(obnext-mqtt SHARED
 	extmqtt.cpp
-  src/obnnode_ext.cpp
+	src/obnnode_ext.cpp
 	src/obnnode_ext_stderr.cpp
-  src/obnnode_ext_stdmsg.cpp
-  src/obnnode_extmqtt.cpp
+	src/obnnode_ext_stdmsg.cpp
+	src/obnnode_extmqtt.cpp
 	${OBNNODE_CORE_SRCFILES}
 )
 
@@ -89,7 +89,7 @@ if(APPLE)
   list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
 else()
   set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD 11)
-  set_property(TARGET nodecpp-extmqtt PROPERTY CXX_STANDARD 11)
+  set_property(TARGET obnext-mqtt PROPERTY CXX_STANDARD 11)
   set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD_REQUIRED ON)
-  set_property(TARGET nodecpp-extmqtt PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_property(TARGET obnext-mqtt PROPERTY CXX_STANDARD_REQUIRED ON)
 endif()

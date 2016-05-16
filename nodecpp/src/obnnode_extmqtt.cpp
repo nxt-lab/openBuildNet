@@ -1,5 +1,5 @@
 /* -*- mode: C++; indent-tabs-mode: nil; -*- */
-/** \file obnsim_extmqtt.cpp
+/** \file obnnode_extmqtt.cpp
  * \brief Generic external interface for MQTTNode of the openBuildNet simulation framework.
  *
  * This file is typically used by external interfaces in other languages (e.g., Matlab, Python).
