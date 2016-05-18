@@ -22,6 +22,8 @@
 #include <chaiscript/chaiscript.hpp>
 #include "chaiscript_stdlib.h"
 
+#include <boost/filesystem.hpp>     // manipulate paths
+
 using namespace NodeChai;
 
 void show_usage(char *prog) {
@@ -82,8 +84,58 @@ int main(int argc, char **argv) {
         show_usage(argv[0]);
         exit(1);
     }
+
+    // Construct the module path and use path for Chaiscript
+    std::vector<std::string> chai_usepath;
+    std::vector<std::string> modulepaths;
+
+    // Module path contains the current directory and the path in CHAI_MODULE_PATH, if defined
+    modulepaths.push_back("");
+    {
+        const char *modulepath = getenv("CHAI_MODULE_PATH");
+        if (modulepath)
+        {
+            std::string s_usepath(modulepath);
+            if (s_usepath.back() == boost::filesystem::path::preferred_separator) {
+                modulepaths.emplace_back(s_usepath);
+            } else {
+                modulepaths.emplace_back(s_usepath + boost::filesystem::path::preferred_separator);
+            }
+        }
+    }
     
-    chaiscript::ChaiScript chai(NodeChai::create_chaiscript_stdlib());
+    // Add the use paths: the current path (as "") and the directory containing the script file, and CHAI_USE_PATH if defined
+    chai_usepath.emplace_back(""); // boost::filesystem::current_path().string() + boost::filesystem::path::preferred_separator);
+    
+    {
+        // Check that the script file exists
+        boost::filesystem::path script_file_path = boost::filesystem::canonical(boost::filesystem::path(script_file));
+        if (!boost::filesystem::exists(script_file_path) || !boost::filesystem::is_regular_file(script_file_path)) {
+            std::cout << "ERROR: The given script file is invalid.\n";
+            show_usage(argv[0]);
+            exit(2);
+        }
+        
+        // Extract the path of the script file and add it to the use path if not the same as current path
+        boost::filesystem::path script_file_parent = script_file_path.parent_path();
+        if (script_file_parent.compare(boost::filesystem::current_path()) != 0) {
+            chai_usepath.emplace_back(script_file_parent.string() + boost::filesystem::path::preferred_separator);
+        }
+
+        const char *usepath = getenv("CHAI_USE_PATH");
+        if (usepath) {
+            std::string s_usepath(usepath);
+            if (s_usepath.back() == boost::filesystem::path::preferred_separator) {
+                chai_usepath.emplace_back(s_usepath);
+            } else {
+                chai_usepath.emplace_back(s_usepath + boost::filesystem::path::preferred_separator);
+            }
+        }
+    }
+
+
+    // Create the ChaiScript engine
+    chaiscript::ChaiScript chai(NodeChai::create_chaiscript_stdlib(), modulepaths, chai_usepath);
     global_variables.chaiscript_engine = &chai;
     
     // Add the named arguments to the chai engine as a const map variable

@@ -963,7 +963,7 @@ namespace OBNnode {
         void message(const char* s, std::size_t n) {
             m_isChanged = true;
             m_cur_message.allocateData(n);
-            std::copy_n(s, n, m_cur_message.data());
+            if (n > 0) std::copy_n(s, n, m_cur_message.data());
         }
         
         /** Send data synchronously */

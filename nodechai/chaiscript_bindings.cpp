@@ -420,7 +420,7 @@ namespace NodeChai {
         switch (global_variables.comm_protocol) {
             case OBNnode::COMM_MQTT:
 #ifdef OBNNODE_COMM_MQTT
-                global_variables.node_factory.reset(new NodeFactoryMQTT());
+                global_variables.node_factory.reset(new NodeFactoryMQTT(global_variables.mqtt_server));
 #else
                 throw nodechai_exception("MQTT is not supported.");
 #endif
@@ -523,6 +523,7 @@ namespace NodeChai {
         m->add(user_type<NodeFactoryMQTT::OutputScalarDouble>(), "OutputScalarDouble");
         m->add(fun(&NodeFactoryMQTT::OutputScalarDouble::operator()), "get");
         m->add(fun([](NodeFactoryMQTT::OutputScalarDouble& p, const double v) { p = v; }), "set");
+        m->add(fun(&NodeFactoryMQTT::OutputScalarDouble::sendSync), "sendSync");
         
         bindings_for_nonstrict_input<NodeFactoryMQTT::InputVectorDouble>("InputVectorDouble", m);
         m->add(fun([](NodeFactoryMQTT::InputVectorDouble& p) { return Eigen::MatrixXd(p.get()); }), "get");
@@ -542,6 +543,7 @@ namespace NodeChai {
                 throw nodechai_exception(std::string("Vector output port ") + p.getPortName() + " expects a vector but got a matrix.");
             }
         }), "set");
+        m->add(fun(&NodeFactoryMQTT::OutputVectorDouble::sendSync), "sendSync");
         
         bindings_for_nonstrict_input<NodeFactoryMQTT::InputMatrixDouble>("InputMatrixDouble", m);
         m->add(fun(&NodeFactoryMQTT::InputMatrixDouble::get), "get");
@@ -552,6 +554,7 @@ namespace NodeChai {
         m->add(user_type<NodeFactoryMQTT::OutputMatrixDouble>(), "OutputMatrixDouble");
         m->add(fun([](NodeFactoryMQTT::OutputMatrixDouble& p) { return p(); }), "get");
         m->add(fun([](NodeFactoryMQTT::OutputMatrixDouble& p, const Eigen::MatrixXd& v) { p = v; }), "set");
+        m->add(fun(&NodeFactoryMQTT::OutputMatrixDouble::sendSync), "sendSync");
         
         ////////////////////////////////////////////////////////////////
         // Methods to create ports

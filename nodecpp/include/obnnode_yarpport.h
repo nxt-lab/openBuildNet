@@ -98,7 +98,7 @@ namespace OBNnode {
         
         mutable yarp::os::Mutex _valueMutex;    ///< Mutex for accessing the value
         
-        virtual void onRead(_port_content_type& b) {
+        virtual void onRead(_port_content_type& b) override {
             // printf("Callback[%s]\n", getName().c_str());
             
             // This managed input port does not generate events in the main thread
@@ -175,7 +175,7 @@ namespace OBNnode {
             return *this;
         }
         
-        virtual bool configure() {
+        virtual bool configure() override {
             // Turn on callback
             this->useCallback();
             return true;

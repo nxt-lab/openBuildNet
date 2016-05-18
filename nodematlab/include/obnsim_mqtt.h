@@ -99,8 +99,20 @@ namespace OBNnode {
         /** This variable stores the current node event in the event queue. This is because while this node is running, whenever it needs to execute a callback in Matlab, which is usually in the middle of an event's execution, it must return to Matlab, so later on, when the node is called again, it must resume the current event's execution. Therefore we must save the event object to return to it (to run its post-execution. */
         std::shared_ptr<NodeEvent> _current_node_event;
         
+        /** Port events get special treatment. They are queued in a separate queue and are given higher priority than other node events. */
+        struct PortEvent {
+            enum {
+                RCV    // Message received at the port
+            } event_type;
+            std::size_t port_index; // Index of the port
+        };
+        shared_queue<PortEvent> m_port_events;
+        
         /** \brief Run the node until it stops or until a callback event. */
         int runStep(double timeout);
+        
+        /** \brief Get the next port event; often used to process port events inside node event callback. */
+        std::unique_ptr<PortEvent> getNextPortEvent(double timeout);
         
         /** Override stopSimulation. */
         void stopSimulation() {
@@ -150,12 +162,11 @@ namespace OBNnode {
         /* =========== Callbacks for other events ============ */
 
         /** Callback function for message received event at input ports.
-            This callback simply creates a new Matlab event c.t. the port event.
-            It is run on the main thread of the OBN node. */
+            This callback simply pushes a new port event to the queue for port events.
+            This callback is run on the communication thread.
+         */
         void matlab_inputport_msgrcvd_callback(const std::size_t idx) {
-            _ml_current_event.type = MLE_RCV;
-            _ml_current_event.arg.index = idx;
-            _ml_pending_event = true;
+            m_port_events.push(new PortEvent{PortEvent::RCV, idx});
         }
         
         

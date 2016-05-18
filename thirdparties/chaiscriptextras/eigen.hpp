@@ -75,7 +75,7 @@ namespace chaiscript {
                 m->add(fun([](typename CLS::Index r, typename CLS::Index c) {
                     return CLS(r, c);
                 }), CLSNAME);
-                m->add(bootstrap::copy_constructor<CLS>(CLSNAME));
+                bootstrap::copy_constructor<CLS>(CLSNAME, *m);
                 m->add(fun(static_cast<CLS& (CLS::*)(const CLS&)>(&CLS::operator=)), "=");
                 
                 // Conversions from vector to matrix
@@ -124,6 +124,24 @@ namespace chaiscript {
                     s << v.format(EigenMatlabFmt);
                     return s.str();
                 }), "to_string");
+                
+                return m;
+            }
+            
+            // Predefined matrices
+            template<typename CLS>
+            ModulePtr eigen_matrix_predefined(ModulePtr m = std::make_shared<Module>()) {
+                m->add(fun([](typename CLS::Index r, typename CLS::Index c) { return CLS(CLS::Zero(r,c)); }), "zeros");  // Zero matrix
+                m->add(fun([](CLS &m) { m.setZero(); }), "setZero");  // set all coefficients to 0
+                
+                m->add(fun([](typename CLS::Index r, typename CLS::Index c) { return CLS(CLS::Ones(r,c)); }), "ones");  // matrix of 1's
+                m->add(fun([](CLS &m) { m.setOnes(); }), "setOnes");  // set all coefficients to 1
+                
+                m->add(fun(&CLS::fill), "fill");  // set all coefficients to a given constant
+                
+                m->add(fun([](typename CLS::Index r, typename CLS::Index c) { return CLS(CLS::Identity(r,c));}), "eyes");  // Identity matrix
+                m->add(fun([](CLS &m) { m.setIdentity(); }), "setIdentity");  // set the matrix to identity
+                m->add(fun([](CLS &m, typename CLS::Index r, typename CLS::Index c) { m.setIdentity(r,c); }), "setIdentity");  // resize and set the matrix to identity
                 
                 return m;
             }

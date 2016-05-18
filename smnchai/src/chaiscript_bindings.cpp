@@ -10,13 +10,15 @@ using namespace SMNChai;
  \param ws The WorkSpace object to which nodes and connections are added.
  */
 void SMNChai::registerSMNAPI(ChaiScript &chai, SMNChai::WorkSpace &ws) {
+    ModulePtr module = std::make_shared<Module>();  // A module to add stuff to chai engine (because Chaiscript's API has changed)
+    
     // *********************************************
     // Register the Node class and its constructor
     // *********************************************
     
     chai.add(user_type<Node>(), "Node");
     chai.add(constructor<Node (const std::string&)>(), "new_node");
-    chai.add(bootstrap::copy_constructor<Node>("Node"));
+    bootstrap::copy_constructor<Node>("Node", *module);
     
     
     // *********************************************
@@ -45,7 +47,7 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, SMNChai::WorkSpace &ws) {
 
     // PortInfo from a node: used for connecting ports, and methods to access it
     chai.add(user_type<SMNChai::PortInfo>(), "PortInfo");
-    chai.add(bootstrap::copy_constructor<SMNChai::PortInfo>("PortInfo"));
+    bootstrap::copy_constructor<SMNChai::PortInfo>("PortInfo", *module);
     chai.add(fun(&Node::port), "port");
     // Returns the type of a PortInfo: 0 = input, 1 = output, 2 = data
     //chai.add(fun<int (const SMNChai::PortInfo&)>([](const SMNChai::PortInfo& p) { return p.port_type; }), "port_type");
@@ -59,7 +61,7 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, SMNChai::WorkSpace &ws) {
     chai.add(user_type<SubSystem>(), "SubSystem");
     chai.add(constructor<SubSystem (const std::string&)>(), "new_subsystem");
     chai.add(constructor<SubSystem (const SubSystem&, const std::string&)>(), "new_subsystem");
-    chai.add(bootstrap::copy_constructor<SubSystem>("SubSystem"));
+    bootstrap::copy_constructor<SubSystem>("SubSystem", *module);
     
     chai.add(fun(&SubSystem::new_node), "new_node");
     chai.add(fun(&SubSystem::new_subsystem), "new_subsystem");
@@ -172,11 +174,14 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, SMNChai::WorkSpace &ws) {
     chai.add(fun([&ws](const std::string &fn) { ws.export2graphmlfile(fn); }), "export2graphml");
     
     
+    // Add the module which contains bootstrap's stuff
+    chai.add(module);
+    
     // Add utility API
     chaiscript::ModulePtr util_module(SMNChai::APIUtils::smnchai_api_utils_io());
     util_module = SMNChai::APIUtils::smnchai_api_utils_math(util_module);
     util_module = SMNChai::APIUtils::smnchai_api_utils_fixes(util_module);
-    //util_module = SMNChai::APIUtils::smnchai_api_utils_misc(util_module);
+    util_module = SMNChai::APIUtils::smnchai_api_utils_misc(util_module);
     chai.add(util_module);
 }
 

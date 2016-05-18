@@ -16,54 +16,44 @@
 // The general syntax for bind in Chaiscript is: bind(func,arg1,arg2,...) where arg* is either an object or _; the latter causes the corresponding argument in func to be an argument in the new function.
 // Binding, and passing arguments to functions in general, is done via references; therefore any changes to the arguments made by the function are directly applied to the top-level variables (unless the passed arguments are constants). In other words, everything will work as expected, as if the function has direct access to the top-level variables.
 
-// Create a CSV file to write some inputs into; this tests a simple recorder
-GLOBAL recorder = CSVWriter("output.csv");
-
 set_comm_mqtt("tcp://localhost:1883");
-set_node_name("receiver");
-set_workspace("test4");
-// set_timeout(10);	// you can set timeout for the node (in seconds)
+set_node_name("othernode");
+set_workspace("testext");
+set_timeout(20);	// you can set timeout for the node (in seconds)
 create_node();
 
-// The ports
-var u1 = new_input_double_strict("u1");
-var u2 = new_input_double_vector_strict("u2");
-var u3 = new_input_double_strict("u3");
+// Input ports
+global uScalarDouble = new_input_double("uScalarDouble");
+global uVectorDouble = new_input_double_vector("uVectorDouble");
+global uMatrixDouble = new_input_double_matrix("uMatrixDouble");
 
-// Define the callback functions
-// Here we use the second solution to allow functions to use top-level variables, i.e. function binding
-def simple_print_update(string s) {
-	print(s);
+// Output ports
+global yScalarDouble = new_output_double("yScalarDouble");
+global yVectorDouble = new_output_double_vector("yVectorDouble");
+global yMatrixDouble = new_output_double_matrix("yMatrixDouble");
+
+global yVectorDouble2 = new_output_double_vector("yVectorDouble2");
+
+global d = 0.0;
+global v = MatrixD(2,1, [0.0, 0.5]);
+global m = zeros(2,3);
+global vm = MatrixD(2,1, [0.0, 1.0]);
+
+def maincallback() {
+    // Print inputs 
+    print("Scalar: ${uScalarDouble.get()}");
+    print("Vector: ${uVectorDouble.get()}");
+    print("Matrix: ${uMatrixDouble.get()}");
+
+    // Write outputs
+    yScalarDouble.set(d); d = d + 1.0;
+    yVectorDouble.set(v); v = v + 1.0;
+    yMatrixDouble.set(m); m = m + 0.5;
+
+    yVectorDouble2.set(vm); vm = vm + 0.5;
 }
 
-callback_y(0, bind(simple_print_update, "First update"));
-callback_y(1, bind(simple_print_update, "Second update"));
-
-def printInputs(u2) {
-	print("At ${current_time_s()}");
-	if (u2.pending()) {
-		print("u2:");
-		while (u2.pending()) {
-			var u2data = u2.pop().transpose();
-			print(u2data);
-			recorder.write(u2data);
-			recorder.new_row();
-		}
-		print("");
-	}
-}
-
-callback_x(0, bind(printInputs, u2));
-callback_x(1, bind(printInputs, u2));
-
-def msgrcv_callback(string uname, u) {
-	if (u.pending()) {
-		print("${uname}: ${u.pop()}");
-	}
-}
-
-u1.callback_msgrcv(bind(msgrcv_callback, "u1", u1));
-u3.callback_msgrcv(bind(msgrcv_callback, "u3", u3));
+callback_y(0, maincallback);
 
 def my_init() {
 	print("At ${current_time_s()} INIT");
@@ -76,5 +66,3 @@ def my_term() {
 // Set the callbacks
 callback_init(my_init);
 callback_term(my_term);
-
-// After the script file ends, if the node was created (by create_node()), the node will be run

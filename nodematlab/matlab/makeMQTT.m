@@ -1,5 +1,15 @@
 %% Build the MEX interface for MQTTNode
 
+% Get the path to the directory containing this script
+mypath = fileparts(mfilename('fullpath'));
+assert(~isempty(mypath));
+
+% Save the current folder
+current_folder = pwd;
+
+% Change the toolbox folder
+cd(mypath);
+
 % Create private directory
 if ~exist('private', 'dir')
     mkdir('private');
@@ -24,3 +34,6 @@ mexargs = [mexargs '../../nodecpp/src/obnnode_mqttnode.cpp ../../nodecpp/src/obn
 
 % Call mex to compile
 eval(mexargs);
+
+% Change back to the working folder
+cd(current_folder);

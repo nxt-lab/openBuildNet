@@ -9,7 +9,7 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.1.0 FATAL_ERROR)
 
 ## Here comes the name of your project:
-SET(PROJECT_NAME nodecpp_mynode)
+SET(PROJECT_NAME testext)
 
 SET(PROJECT_VERSION "0.1"  ## "hg-tip"
     CACHE STRING "${PROJECT_NAME} version string")
@@ -18,7 +18,7 @@ SET(PROJECT_VERSION "0.1"  ## "hg-tip"
 PROJECT(${PROJECT_NAME})
 
 ## Change OBN_MAIN_DIR to the path to the main directory of openBuildNet
-set (OBN_MAIN_DIR ${PROJECT_SOURCE_DIR}/../)
+set (OBN_MAIN_DIR ${PROJECT_SOURCE_DIR}/../../)
 
 # Include the common CMake code for node.C++
 INCLUDE(${OBN_MAIN_DIR}/nodecpp/CMakeCommon.txt)
@@ -58,29 +58,17 @@ ENDIF(CMAKE_COMPILER_IS_GNUCXX)
 # ENDIF(MSVC)
 
 
-ADD_EXECUTABLE(nodecpp-mynode
-	nodemain.cpp
-	${OBNNODE_CORE_SRCFILES}
-)
-
-ADD_LIBRARY(obnext-mqtt SHARED
+ADD_EXECUTABLE(testextmqtt
 	extmqtt.cpp
-	src/obnnode_ext.cpp
-	src/obnnode_ext_stderr.cpp
-	src/obnnode_ext_stdmsg.cpp
-	src/obnnode_extmqtt.cpp
+	${OBN_MAIN_DIR}/nodecpp/src/obnnode_ext.cpp
+	${OBN_MAIN_DIR}/nodecpp/src/obnnode_ext_stderr.cpp
+	${OBN_MAIN_DIR}/nodecpp/src/obnnode_ext_stdmsg.cpp
+	${OBN_MAIN_DIR}/nodecpp/src/obnnode_extmqtt.cpp
 	${OBNNODE_CORE_SRCFILES}
 )
 
-# TARGET_LINK_LIBRARIES(nodecpp-mynode
+# TARGET_LINK_LIBRARIES(testextmqtt
 # 	extra libraries here if necessary
-# )
-
-
-# INSTALL(
-#   TARGETS nodecpp-mynode
-#   RUNTIME DESTINATION ${INSTALL_BIN_DIR}
-#   COMPONENT bin
 # )
 
 
@@ -88,8 +76,6 @@ ADD_LIBRARY(obnext-mqtt SHARED
 if(APPLE)
   list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
 else()
-  set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD 11)
-  set_property(TARGET obnext-mqtt PROPERTY CXX_STANDARD 11)
-  set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD_REQUIRED ON)
-  set_property(TARGET obnext-mqtt PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_property(TARGET testextmqtt PROPERTY CXX_STANDARD 11)
+  set_property(TARGET testextmqtt PROPERTY CXX_STANDARD_REQUIRED ON)
 endif()

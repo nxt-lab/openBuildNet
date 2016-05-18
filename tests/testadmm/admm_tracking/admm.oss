@@ -1,0 +1,121 @@
+// -*- mode: javascript; indent-tabs-mode: nil; -*-
+// SMN script for ADMM tracking example
+// To be used with the Matlab code in admm_tracking
+
+workspace("disttracking");
+settings.time_unit(millisecond);
+settings.final_time(10*minute);
+settings.default_comm("mqtt");	// Can change the default communication
+
+// Do not run simulation
+//run_simulation(false);
+
+var nNodes = 4;	// The number of local nodes = the number of plants
+
+// We will build the aggregator and recorder nodes gradually
+var aggregator = node(["name" : "Aggregator",
+					   "blocks" : [
+						   ["name" : "main",
+							"id" : 0,
+							"sampling" : 1*minute]
+						   ]
+						  ], false);
+aggregator.need_updateX(false);
+
+var recorder = new_node("recorder");
+recorder.need_updateX(false);
+recorder.add_block(0, 1*minute);
+
+for (auto i = 1; i <= nNodes; ++i) {
+    // Create the plant node
+    var plant = node(["name" : "plant${i}",
+		              "inputs" : ["u"],
+		              "outputs" : ["s", "usat"],
+				      "blocks" : [
+					      ["id" : 0,
+					       "sampling" : 1*minute,
+					       "outputs" : ["s"]
+					      ],
+					      ["id": 1,
+					       "sampling" : 1*minute,
+					       "inputs" : ["u"],
+					       "outputs" : ["usat"]
+					      ]]
+		             ], false);
+    plant.need_updateX(false);
+    add_node(plant);  // add the node to the system; after this, it can't be changed
+
+    // Start remote plant/battery nodes early
+    start_remote_node(plant, "/truongpc",
+                      "/Users/truong/work/working/obn/nodechai/build/Debug/obnchai",
+                      "/Users/truong/work/working/obn/tests/testadmm/admm_tracking/plant.ons id=${i} alpha=1 lstate=0 hstate=20 istate=10 linput=-1 hinput=1");
+  
+    // Create the local controller node
+    var ctrl = node(["name" : "Controller${i}",
+		             "inputs" : ["Gamma", "delta", "x"],
+		             "outputs" : ["u", "U"],
+		             "blocks" : [
+                         ["name": "obtainstate",
+                          "id": 0,
+                          "sampling": 1*minute,
+				          "inputs" : ["x"],
+				          "outputs" : ["U"]
+                         ],
+                         ["name": "control",
+                          "id": 1,
+                          "sampling": 1*minute,
+                          "inputs": ["Gamma"],
+                          "outputs": ["u"]
+                         ]
+                     ]], false);
+    ctrl.need_updateX(false);
+    add_node(ctrl);  // add the node to the system; after this, it can't be changed
+    
+    // Create the ports on the aggregator that talks with the local controller
+    var Gi = "Gamma${i}";
+    var di = "delta${i}";
+    var Ui = "U${i}";
+    aggregator.add_output(Gi);
+    aggregator.add_output(di);
+    aggregator.add_input(Ui);
+
+    // Specify the inputs and outputs of the main update (Ui -> Gi) to ensure dependency between the aggregator and the local nodes
+    aggregator.output_from_block(0, Gi);
+    // aggregator.output_from_block(0, di);
+    aggregator.input_to_block(0, Ui, true);
+
+    // Create the port on the recorder to receive the output from plant
+    recorder.add_input("u${i}");
+    recorder.input_to_block(0, "u${i}", true);
+
+    // Connect the ports between aggregator - local - plant
+    connect(aggregator.port(Gi), ctrl.port("Gamma"));
+    connect(aggregator.port(di), ctrl.port("delta"));
+    connect(ctrl.port("U"), aggregator.port(Ui));
+
+    connect(ctrl.port("u"), plant.port("u"));
+    connect(plant.port("s"), ctrl.port("x"));
+
+    // Connect the plant to the recorder
+    connect(plant.port("usat"), recorder.port("u${i}"));
+}
+
+// Now we can add the aggregator and the recorder to the system
+add_node(aggregator);
+add_node(recorder);
+
+// Start the recorder
+start_remote_node(recorder, "/truongpc",
+				  "/Users/truong/work/working/obn/nodechai/build/Debug/obnchai",
+				  "/Users/truong/work/working/obn/tests/testadmm/admm_tracking/recorder.ons n=${nNodes} file=/Users/truong/work/working/obn/tests/testadmm/admm_tracking/plantoutputs.txt");
+
+// Print the system to the screen to check its correctness
+print_system();
+
+// Export the system to DOT for visualization
+//export2dot("system.dot", true);
+
+// Export a few nodes to DOT
+//export2dot(aggregator, "aggregator.dot");
+
+waitfor_all_nodes(30);

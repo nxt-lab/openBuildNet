@@ -3,8 +3,8 @@
 ##   OBN_MAIN_DIR = main OBN directory
 ##
 ## Options/macros:
-##   WITH_YARP to use Yarp (default: ON)
-##   WITH_MQTT to use MQTT (default: OFF)
+##   WITH_YARP to use Yarp (default: OFF)
+##   WITH_MQTT to use MQTT (default: ON)
 ##
 ## The following will be defined in this file:
 ##   OBN_NODECPP_INCLUDE_DIR = include directory of node.C++
@@ -44,7 +44,7 @@ set(OBNNODE_COMM_SRC "")
 set(OBNNODE_COMM_HDR "")
 
 ## To use YARP (optionally)
-option(WITH_YARP "Build with YARP support for communication." ON)
+option(WITH_YARP "Build with YARP support for communication." OFF)
 if(WITH_YARP)
   find_package(YARP REQUIRED)
   if(YARP_FOUND)
@@ -67,7 +67,7 @@ endif(WITH_YARP)
 
 
 ## To use MQTT (optionally)
-option(WITH_MQTT "Build with Paho MQTT3 support for communication." OFF)
+option(WITH_MQTT "Build with Paho MQTT3 support for communication." ON)
 if(WITH_MQTT)
   find_library(PAHOMQTT3A NAMES paho-mqtt3a)
   if(PAHOMQTT3A_NOTFOUND)
@@ -119,7 +119,7 @@ set(OBNNODE_CORE_HDRFILES
 	${OBN_NODECPP_INCLUDE_DIR}/obnnode.h
 	${OBN_NODECPP_INCLUDE_DIR}/obnnode_basic.h
 	${OBN_NODECPP_INCLUDE_DIR}/obnnode_exceptions.h
-        ${OBN_NODECPP_INCLUDE_DIR}/sharedqueue_std.h
+	${OBN_NODECPP_INCLUDE_DIR}/sharedqueue_std.h
 	${OBNSIM_INCLUDE_DIR}/obnsim_basic.h
 	${PROTO_HDRS}
 	${OBNNODE_COMM_HDR}

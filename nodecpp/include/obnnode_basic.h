@@ -232,6 +232,11 @@ namespace OBNnode {
             return _workspace + _nodeName + '/' + portName;
         }
         
+        /** Returns the time unit, an integer in microseconds. */
+        simtime_t timeunit() const {
+            return _timeunit;
+        }
+        
         /** Return the current simulation time.
          This is an integer number of clock ticks from the start of the simulation.
          One clock tick is equivalent to one time unit.
@@ -251,9 +256,9 @@ namespace OBNnode {
             return 1.0e-6 * _current_sim_time * _timeunit * U::period::den / U::period::num;
         }
         
-        /** Return the current wallclock time, as std::time_t value, rounded downward to a second. */
-        std::time_t currentWallClockTime() const {
-            return static_cast<std::time_t>(std::floor( _initial_wallclock + (_timeunit * 1.0e-6) * _current_sim_time ));
+        /** Return the current wallclock time, as UNIX / POSIX time value, rounded downward to a second. */
+        int64_t currentWallClockTime() const {
+            return static_cast<int64_t>(std::floor( _initial_wallclock + (_timeunit * 1.0e-6) * _current_sim_time ));
         }
         
         /** Returns the current state of the node. */
@@ -342,7 +347,7 @@ namespace OBNnode {
         simtime_t _current_sim_time;
         
         /** The initial wallclock time. */
-        std::time_t _initial_wallclock = 0;
+        int64_t _initial_wallclock = 0;
         
         /** The simulation time unit, in microseconds. */
         simtime_t _timeunit = 1;
@@ -472,7 +477,7 @@ namespace OBNnode {
         
         /** Event class for cosimulation's INITIALIZE messages. */
         class NodeEvent_INITIALIZE: public NodeEventSMN {
-            std::time_t _wallclock;
+            int64_t _wallclock;
             simtime_t _timeunit;
             bool _has_wallclock = false;
             bool _has_timeunit = false;
@@ -831,6 +836,106 @@ namespace OBNnode {
     template <> struct obn_matrix_PB_message_class<double> { using theclass = OBNSimIOMsg::MatrixDouble; };
     
     
+    /** \brief Utility structure that manages raw arrays. */
+    template <typename T>
+    struct raw_array_container {
+        // Dafault constructor
+        raw_array_container(): m_data(nullptr), m_len(0), m_owned(false) { }
+        
+        // Copy from const data
+        raw_array_container(const T* p, std::size_t n) {
+            copy_data(p, n);
+        }
+        
+        // Copy or attach data, depending on "copy"
+        raw_array_container(T* p, std::size_t n, bool copy) {
+            if (copy) {
+                copy_data(p, n);
+            } else {
+                attach_data(p, n);
+            }
+        }
+        
+        // Copy constructor always copy the data
+        raw_array_container(const raw_array_container& c) {
+            copy_data(c.data(), c.size());
+        }
+        
+        ~raw_array_container() {
+            destroy_data();
+        }
+        
+        // Copy new const array to the container
+        template<typename InputIter>
+        T* assign(InputIter p, std::size_t n) {
+            destroy_data();             // destroy current data if needs to
+            copy_data(p, n);            // get new data
+            return m_data;
+        }
+        
+        // Copy or attach new data
+        T* assign(T* p, std::size_t n, bool copy) {
+            destroy_data();             // destroy current data if needs to
+            if (copy) {
+                copy_data(p, n);
+            } else {
+                attach_data(p, n);
+            }
+            return m_data;
+        }
+        
+        // Clear data
+        void clear() {
+            destroy_data();
+            m_owned = false;
+            m_data = nullptr;
+            m_len = 0;
+        }
+        
+        T* data() { return m_data; }
+        const T* data() const { return m_data; }
+        
+        std::size_t size() const { return m_len; }
+    private:
+        T* m_data;  // pointer to the array
+        std::size_t m_len;  // length of the array
+        bool m_owned;   // whether the container owns the data (if true, it must delete the pointer when it's not used anymore)
+
+        void attach_data(T* p, std::size_t n) {
+            if (p == nullptr || n == 0) {
+                m_data = nullptr;
+                m_len = 0;
+                m_owned = false;
+            } else {
+                // Just store the pointer
+                m_len = n;
+                m_data = p;
+                m_owned = false;
+            }
+        }
+        
+        template <typename InputIter>
+        void copy_data(InputIter p, std::size_t n) {
+            if (n == 0) {
+                m_data = nullptr;
+                m_len = 0;
+                m_owned = false;
+            } else {
+                // Copy the data over to our own array
+                m_len = n;
+                m_data = new T[n];
+                m_owned = true;
+                std::copy_n(p, n, m_data);
+            }
+        }
+        
+        void destroy_data() {
+            if (m_owned && m_data != nullptr) {
+                delete[] m_data;
+            }
+        }
+    };
+    
     /** \brief Template class for input data as a scalar of a given type. */
     template <typename T>
     class obn_scalar {
@@ -905,7 +1010,9 @@ namespace OBNnode {
             auto sz = data.size();
             auto dest = msg.mutable_value();
             dest->Resize(sz, T());    // resize the field in msg to hold the values
-            std::copy_n(data.data(), sz, dest->begin());
+            if (sz > 0) {
+                std::copy_n(data.data(), sz, dest->begin());
+            }
         }
         
         /** Static function to read data from a ProtoBuf message.
@@ -946,6 +1053,61 @@ namespace OBNnode {
             return true;
         }
     };
+    
+    /** \brief Template class for input data as a vector of a given type, using raw array in column-major. */
+    template <typename T>
+    class obn_vector_raw {
+    public:
+        /** The input data type for reading from an encoded format (e.g. ProtoBuf) into the given type. */
+        using input_data_type = raw_array_container<T>; // for vectors, size() returns the number of elements
+        
+        /** Container and Initializer for the input type.
+         We directly access the internal data of the encoded message if strict = false, otherwise copy the data over,
+         therefore the message must be permanent (it can't be a temporary variable that will be destroyed) and
+         anytime the message changes, the vector variable must be updated. */
+        struct input_data_container {
+            using data_type = input_data_type;
+            data_type v{nullptr, 0};
+        };
+        
+        /** The output data type for writing from the given type to an encoded format (e.g. ProtoBuf). */
+        using output_data_type = raw_array_container<T>;
+        
+        /** The class type of the ProtoBuf message. */
+        using PB_message_class = typename obn_vector_PB_message_class<T>::theclass;
+        
+        /** Static function to write data to a ProtoBuf message.
+         It works with raw arrays as much as possible because speed is important.
+         */
+        static void writePBMessage(const output_data_type& data, PB_message_class& msg) {
+            msg.Clear();
+            auto sz = data.size();
+            auto dest = msg.mutable_value();
+            dest->Resize(sz, T());    // resize the field in msg to hold the values
+            if (sz > 0) {
+                std::copy_n(data.data(), sz, dest->begin());
+            }
+        }
+        
+        /** Static function to read data from a ProtoBuf message.
+         It works with raw arrays as much as possible because speed is important.
+         */
+        static bool readPBMessage(input_data_container& data, PB_message_class& msg) {
+            auto sz = msg.value_size();
+            data.v.assign(msg.mutable_value()->begin(), sz, false);
+            return true;
+        }
+        
+        /** The type for the queue in strict ports. */
+        using input_queue_elem_type = std::unique_ptr<input_data_type>;
+        using input_queue_type = std::deque<input_queue_elem_type>;
+        
+        /** Static function to read data from a ProtoBuf message to the queue. */
+        static bool readPBMessageStrict(input_queue_type& data, const PB_message_class& msg) {
+            data.emplace_back(new input_data_type(msg.value().data(), msg.value_size()));   // copy the data from msg
+            return true;
+        }
+    };
 
     
     /** \brief Template class for input data as a dynamic-sized matrix of a given type. */
@@ -979,7 +1141,9 @@ namespace OBNnode {
             auto sz = data.size();
             auto dest = msg.mutable_value();
             dest->Resize(sz, T());    // resize the field in msg to hold the values
-            std::copy_n(data.data(), sz, dest->begin());
+            if (sz > 0) {
+                std::copy_n(data.data(), sz, dest->begin());
+            }
         }
         
         /** Static function to read data from a ProtoBuf message. */
@@ -1025,6 +1189,103 @@ namespace OBNnode {
             if (sz > 0) {
                 std::copy_n(msg.value().begin(), sz, elem->data());
             }
+            return true;
+        }
+    };
+    
+    /** \brief Template class for input data as a 2-D matrix of a given type, using raw array in column-major. */
+    template <typename T>
+    class obn_matrix_raw {
+    public:
+        /** The input data type for reading from an encoded format (e.g. ProtoBuf) into the given type. */
+        struct raw_matrix_data_type {
+            // for matrices, we need numbers of rows and columns, and nrows*ncols = data.size()
+            std::size_t nrows, ncols;
+            raw_array_container<T> data;
+            
+            // default constructor
+            raw_matrix_data_type(): nrows(0), ncols(0), data(nullptr, 0) { }
+            
+            // constructor that copies data
+            raw_matrix_data_type(const T* p, std::size_t trows, std::size_t tcols): nrows(trows), ncols(tcols), data(p, trows*tcols) { }
+            
+            // constructor that copies or attaches data
+            raw_matrix_data_type(T* p, std::size_t trows, std::size_t tcols, bool copy): nrows(trows), ncols(tcols), data(p, trows*tcols, copy) { }
+            
+            // Copy constructor
+            raw_matrix_data_type(const raw_matrix_data_type& c): nrows(c.nrows), ncols(c.ncols), data(c.data) { }
+            
+            // Clear the data
+            void clear() {
+                nrows = 0;
+                ncols = 0;
+                data.clear();
+            }
+            
+            // Copy data
+            void copy(const T* p, std::size_t trows, std::size_t tcols) {
+                nrows = trows;
+                ncols = tcols;
+                data.assign(p, trows*tcols);
+            }
+        };
+        
+        using input_data_type = raw_matrix_data_type;
+        
+        /** Container and Initializer for the input type.
+         We directly access the internal data of the encoded message if strict = false, otherwise copy the data over,
+         therefore the message must be permanent (it can't be a temporary variable that will be destroyed) and
+         anytime the message changes, the vector variable must be updated. */
+        struct input_data_container {
+            using data_type = raw_matrix_data_type;
+            data_type v;
+        };
+        
+        /** The output data type for writing from the given type to an encoded format (e.g. ProtoBuf). */
+        using output_data_type = raw_matrix_data_type;
+        
+        /** The class type of the ProtoBuf message. */
+        using PB_message_class = typename obn_matrix_PB_message_class<T>::theclass;
+        
+        /** Static function to write data to a ProtoBuf message. */
+        static void writePBMessage(const output_data_type& data, PB_message_class& msg) {
+            msg.Clear();
+            msg.set_nrows(data.nrows);
+            msg.set_ncols(data.ncols);
+            auto sz = data.data.size();
+            auto dest = msg.mutable_value();
+            dest->Resize(sz, T());    // resize the field in msg to hold the values
+            if (sz > 0) {
+                std::copy_n(data.data.data(), sz, dest->begin());
+            }
+        }
+        
+        /** Static function to read data from a ProtoBuf message. */
+        static bool readPBMessage(input_data_container& data, PB_message_class& msg) {
+            auto nrows = msg.nrows();
+            auto ncols = msg.ncols();
+            auto sz = nrows * ncols;
+            if (msg.value_size() < sz) return false;
+            
+            data.v.data.assign(msg.mutable_value()->begin(), sz, false);
+            data.v.nrows = nrows;
+            data.v.ncols = ncols;
+            
+            return true;
+        }
+        
+        /** The type for the queue in strict ports. */
+        using input_queue_elem_type = std::unique_ptr<input_data_type>;
+        using input_queue_type = std::deque<input_queue_elem_type>;
+        
+        /** Static function to read data from a ProtoBuf message which really copies the data. */
+        static bool readPBMessageStrict(input_queue_type& data, const PB_message_class& msg) {
+            auto nrows = msg.nrows();
+            auto ncols = msg.ncols();
+            auto sz = nrows * ncols;
+            if (msg.value_size() < sz) return false;
+            
+            data.emplace_back(new input_data_type(msg.value().data(), nrows, ncols));   // create a matrix of the given size and assign data
             return true;
         }
     };
@@ -1111,7 +1372,9 @@ namespace OBNnode {
             auto sz = data.size();
             auto dest = msg.mutable_value();
             dest->Resize(sz, T());    // resize the field in msg to hold the values
-            std::copy_n(data.data(), sz, dest->begin());
+            if (sz > 0) {
+                std::copy_n(data.data(), sz, dest->begin());
+            }
         }
         
         /** The element type for the queue in strict ports. */
@@ -1154,18 +1417,29 @@ namespace OBNnode {
         const V* m_value;
         
     public:
-        LockedAccess(V* t_value, M* t_mutex): m_mutex(t_mutex), m_value(t_value) {
-            m_mutex->lock();
-            //std::cout << "Locked\n";
+        LockedAccess(V* t_value, M* t_mutex): m_mutex{t_mutex}, m_value{t_value} {
+            // Lock the mutex to access the value
+            if (m_mutex) m_mutex->lock();
         }
         
-        LockedAccess(const LockedAccess& other) = delete;   // no copy constructor, so we force it to move
-        LockedAccess() = delete;    // no default
-        LockedAccess(LockedAccess&& rvalue) = default;
+        LockedAccess(const LockedAccess&) = delete;   // no copy constructor, so we force it to move
+        LockedAccess() = delete;    // no default constructor
+        LockedAccess& operator=(const LockedAccess&) = delete;  // no assignment
+        LockedAccess& operator=(LockedAccess&&) = delete;  // no move-assignment
+        
+        // Move constructor that:
+        // - Moves all members from rvalue to this object.
+        // - Marks the original object (rvalue) as invalid / unused, so that it won't unlock the mutex when it's destroyed.
+        LockedAccess(LockedAccess&& rvalue): m_mutex{std::move(rvalue.m_mutex)}, m_value{std::move(rvalue.m_value)}
+        {
+            rvalue.m_mutex = nullptr;   // NULL mutex pointer means ununsed / invalid
+        }
         
         ~LockedAccess() {
-            m_mutex->unlock();
-            //std::cout << "Unlocked\n";
+            // Only unlock the mutex if the pointer m_mutex is not NULL (i.e., a valid / used LockedAccess object)
+            if (m_mutex) {
+                m_mutex->unlock();
+            }
         }
         
         const V& operator*() const {

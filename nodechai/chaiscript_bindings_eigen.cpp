@@ -24,6 +24,9 @@ namespace NodeChai {
         //// Matrix of doubles
         chaiscript::extras::eigenlinalg::eigen_matrix_type<Eigen::MatrixXd, double>("MatrixD", m);
         
+        //// Predefined matrices
+        chaiscript::extras::eigenlinalg::eigen_matrix_predefined<Eigen::MatrixXd>(m);
+        
         //// Column vector of doubles
         //chaiscript::extras::eigenlinalg::eigen_vector_type<Eigen::VectorXd, double>("VectorD", m);
         

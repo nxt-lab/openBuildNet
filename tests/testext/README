@@ -1,0 +1,4 @@
+This is a C++ program that tests the OBN External Interface Library (a C++ library with C API).
+This is not a test of the external libraries in other languages (e.g., Matlab and Python).
+The purpose is to test the C API (for node operation and standard input and output ports), before they are used in external libraries.
+
