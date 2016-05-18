@@ -1,0 +1,34 @@
+// -*- mode: javascript; indent-tabs-mode: nil; -*-
+
+//run_simulation(false);
+settings.time_unit(millisecond);
+settings.final_time(15*second);
+workspace("simplempc");
+
+settings.default_comm("mqtt");	// Can change the default communication
+
+var plant = node(
+  ["name" : "plant",
+  "inputs" : ["u"],
+  "outputs" : ["y"],
+  "blocks" : [["sampling" : 1*second, "outputs" : ["y"]]
+]
+]);
+
+var controller = node(
+  ["name" : "controller",
+  "inputs" : ["x"],
+  "outputs" : ["u"],
+  "blocks" : [
+    ["sampling" : 1*second,
+    "inputs" : ["x"],
+    "outputs" : ["u"]
+  ]
+]
+]);
+
+connect(controller.port("u"), plant.port("u"))
+connect(plant.port("y"), controller.port("x"))
+print_system();
+
+waitfor_all_nodes(30);
