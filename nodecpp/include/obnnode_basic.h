@@ -232,6 +232,11 @@ namespace OBNnode {
             return _workspace + _nodeName + '/' + portName;
         }
         
+        /** Returns the time unit, an integer in microseconds. */
+        simtime_t timeunit() const {
+            return _timeunit;
+        }
+        
         /** Return the current simulation time.
          This is an integer number of clock ticks from the start of the simulation.
          One clock tick is equivalent to one time unit.
@@ -251,9 +256,9 @@ namespace OBNnode {
             return 1.0e-6 * _current_sim_time * _timeunit * U::period::den / U::period::num;
         }
         
-        /** Return the current wallclock time, as std::time_t value, rounded downward to a second. */
-        std::time_t currentWallClockTime() const {
-            return static_cast<std::time_t>(std::floor( _initial_wallclock + (_timeunit * 1.0e-6) * _current_sim_time ));
+        /** Return the current wallclock time, as UNIX / POSIX time value, rounded downward to a second. */
+        int64_t currentWallClockTime() const {
+            return static_cast<int64_t>(std::floor( _initial_wallclock + (_timeunit * 1.0e-6) * _current_sim_time ));
         }
         
         /** Returns the current state of the node. */
@@ -342,7 +347,7 @@ namespace OBNnode {
         simtime_t _current_sim_time;
         
         /** The initial wallclock time. */
-        std::time_t _initial_wallclock = 0;
+        int64_t _initial_wallclock = 0;
         
         /** The simulation time unit, in microseconds. */
         simtime_t _timeunit = 1;
@@ -472,7 +477,7 @@ namespace OBNnode {
         
         /** Event class for cosimulation's INITIALIZE messages. */
         class NodeEvent_INITIALIZE: public NodeEventSMN {
-            std::time_t _wallclock;
+            int64_t _wallclock;
             simtime_t _timeunit;
             bool _has_wallclock = false;
             bool _has_timeunit = false;

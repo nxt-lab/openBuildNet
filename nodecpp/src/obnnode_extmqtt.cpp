@@ -557,9 +557,8 @@ int nodeSimulationTime(size_t nodeid, int timeunit, double* T) {
     return 0;
 }
 
-
 EXPORT
-int nodeWallClockTime(size_t nodeid, long* T) {
+int nodeTimeUnit(size_t nodeid, OBNSimTimeType* tu) {
     // Find node
     MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
     if (!pnode) {
@@ -567,7 +566,21 @@ int nodeWallClockTime(size_t nodeid, long* T) {
         return -1;
     }
     
-    *T = static_cast<long>(pnode->currentWallClockTime());
+    *tu = pnode->timeunit();
+    return  0;
+}
+
+
+EXPORT
+int nodeWallClockTime(size_t nodeid, int64_t* T) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    *T = pnode->currentWallClockTime();
     
     return 0;
 }
