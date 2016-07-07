@@ -77,6 +77,8 @@ public:
         OBNEI_EventArg arg;
     } _ml_current_event;
     
+    int64_t _ml_event_result;           ///< Result of the processing of the current event by the external code; it's not always automatically reset on every event because each event may have a unique interpretation of this result value.
+    
     bool _ml_pending_event = false;     ///< if there is a external interface event pending
     bool _node_is_stopping = false;     ///< true if the node is going to stop (node's state is already STOPPED but we still need to push the TERM event to external interface)
     
@@ -127,11 +129,27 @@ public:
     }
     
     /** \brief Callback to initialize the node before each simulation. */
-    virtual void onInitialization() override {
+    virtual int64_t onInitialization() override {
         // Post an external interface event for SIM_INIT
         _ml_current_event.type = OBNEI_Event_INIT;
         _ml_pending_event = true;
         _node_is_stopping = false;
+        
+        _ml_event_result = 0;   // Default is successful
+        
+        return 0;
+    }
+    
+    /** \brief Callback to restart the node during running. */
+    virtual int64_t onRestart() override {
+        // Post an external interface event
+        _ml_current_event.type = OBNEI_Event_RESTART;
+        _ml_pending_event = true;
+        _node_is_stopping = false;
+        
+        _ml_event_result = 0;   // Default is successful
+        
+        return 0;   // Successful, without calling onInitialization()
     }
     
     

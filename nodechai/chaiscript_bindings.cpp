@@ -383,6 +383,7 @@ namespace NodeChai {
         }
         
         m->add(fun(&NodeFactory::callback_init, pNF), "callback_init");
+        m->add(fun(&NodeFactory::callback_restart, pNF), "callback_restart");
         m->add(fun(&NodeFactory::callback_term, pNF), "callback_term");
         m->add(fun(&NodeFactory::callback_x, pNF), "callback_x");
         m->add(fun(&NodeFactory::callback_y, pNF), "callback_y");

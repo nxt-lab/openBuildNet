@@ -50,6 +50,8 @@ namespace OBNsmn {
             MQTTAsync m_client;     ///< The MQTT client, used for all communication needs
             std::atomic_bool m_running{false};     ///< Whether the MQTT client is running
             
+            std::atomic_int m_msgout_count{0};      ///< Keep track of the current number of out messages
+            
             // The result variable, mutex and condition variable is used by MQTT callbacks to notify the main execution.
             bool m_notify_done;
             int m_notify_result;    // Result of the action, typically 0 means success
@@ -158,6 +160,11 @@ namespace OBNsmn {
             
             /** Stop the MQTT client. */
             void stop();
+            
+            /** Returns number of pending out messages. */
+            int outMsgCount() const {
+                return m_msgout_count;
+            }
             
             /** Start waiting for nodes to announce their arrivals.
              \param t_workspace The workspace name; either "" (default) or of the form "workspace/" (note the / at the end)

@@ -24,23 +24,16 @@ namespace NodeChai {
     /** Similar to MQTTNode but with callbacks for init, termination, etc. */
     class MQTTNodeChai: public OBNnode::MQTTNode {
         /** The callbacks for initialization and termination. */
-        std::function<void ()> m_onInitialization_callback, m_onTermination_callback;
+        std::function<void ()> m_onTermination_callback;
+        std::function<chaiscript::Boxed_Value ()> m_onInitialization_callback, m_onRestart_callback;
         
         friend class NodeFactoryMQTT;
     public:
         MQTTNodeChai(const std::string& t_name, const std::string& t_workspace): OBNnode::MQTTNode(t_name, t_workspace) { }
         
-        virtual void onInitialization() override {
-            if (m_onInitialization_callback) {
-                m_onInitialization_callback();
-            }
-        }
-        
-        virtual void onTermination() override {
-            if (m_onTermination_callback) {
-                m_onTermination_callback();
-            }
-        }
+        virtual int64_t onInitialization() override;
+        virtual int64_t onRestart() override;
+        virtual void onTermination() override;
     };
     
     /** The abstract factory class for creating nodes. */
@@ -185,7 +178,8 @@ namespace NodeChai {
          */
         virtual bool callback_x(int t_id, const OBNnode::UpdateType::UPDATE_CALLBACK& t_f) override;
         virtual bool callback_y(int t_id, const OBNnode::UpdateType::UPDATE_CALLBACK& t_f) override;
-        virtual bool callback_init(const std::function<void ()>& f) override;
+        virtual bool callback_init(const std::function<chaiscript::Boxed_Value ()>& f) override;
+        virtual bool callback_restart(const std::function<chaiscript::Boxed_Value ()>& f) override;
         virtual bool callback_term(const std::function<void ()>& f) override;
         
         virtual std::shared_ptr<chaiscript::Module> create_bindings(std::shared_ptr<chaiscript::Module> m = std::make_shared<chaiscript::Module>()) override;

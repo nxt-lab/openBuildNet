@@ -34,7 +34,7 @@ bool MQTTClient::start() {
     }
     
     // Set the callback
-    if ((rc = MQTTAsync_setCallbacks(m_client, this, &MQTTClient::on_connection_lost, &MQTTClient::on_message_arrived, NULL)) != MQTTASYNC_SUCCESS)  // &MQTTClient::on_message_delivered
+    if ((rc = MQTTAsync_setCallbacks(m_client, this, &MQTTClient::on_connection_lost, &MQTTClient::on_message_arrived, &MQTTClient::on_message_delivered)) != MQTTASYNC_SUCCESS)
     {
         OBNsmn::report_error(0, "MQTT error: could not set callbacks with error code = " + std::to_string(rc));
         return false;
@@ -107,6 +107,8 @@ int MQTTClient::sendMessage(char* msg, std::size_t msglen, const std::string& to
     pubmsg.payloadlen = msglen;
     pubmsg.qos = MQTTClient::QOS;
     pubmsg.retained = retained;
+    
+    ++m_msgout_count;   // Increase the message count (assuming the next function will be successful).
     
     // Request to send the message
     return MQTTAsync_sendMessage(m_client, topic.c_str(), &pubmsg, &opts);
@@ -296,6 +298,10 @@ int MQTTClient::on_message_arrived(void *context, char *topicName, int topicLen,
 
 void MQTTClient::on_message_delivered(void *context, MQTTAsync_token token) {
     // std::cout << "Message delivered: " << std::chrono::duration <double, std::nano> (std::chrono::steady_clock::now()-OBNsim::clockStart).count() << " ns\n";
+    MQTTClient* client = static_cast<MQTTClient*>(context);
+    if (--(client->m_msgout_count) < 0) {
+        client->m_msgout_count = 0;     // Must be an internal error
+    }
 }
 
 

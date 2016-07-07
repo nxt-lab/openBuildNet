@@ -71,7 +71,8 @@ namespace NodeChai {
          */
         virtual bool callback_x(int t_id, const OBNnode::UpdateType::UPDATE_CALLBACK& t_f) = 0;
         virtual bool callback_y(int t_id, const OBNnode::UpdateType::UPDATE_CALLBACK& t_f) = 0;
-        virtual bool callback_init(const std::function<void ()>& f) = 0;
+        virtual bool callback_init(const std::function<chaiscript::Boxed_Value ()>& f) = 0;
+        virtual bool callback_restart(const std::function<chaiscript::Boxed_Value ()>& f) = 0;
         virtual bool callback_term(const std::function<void ()>& f) = 0;
         
         /** Create the bindings specific for this node factory. */

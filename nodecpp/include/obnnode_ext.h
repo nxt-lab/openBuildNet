@@ -27,11 +27,12 @@ extern "C" {
 
     /** The event type */
     enum OBNEI_EventType {
-        OBNEI_Event_INIT = 0,         // Init of simulation
-        OBNEI_Event_Y = 1,            // Update Y
-        OBNEI_Event_X = 2,            // Update X
-        OBNEI_Event_TERM = 3,         // Termination of simulation
-        OBNEI_Event_RCV = 4           // A port has received a message
+        OBNEI_Event_INIT = 0,           // Init of simulation
+        OBNEI_Event_Y = 1,              // Update Y
+        OBNEI_Event_X = 2,              // Update X
+        OBNEI_Event_TERM = 3,           // Termination of simulation
+        OBNEI_Event_RCV = 4,            // A port has received a message
+        OBNEI_Event_RESTART = 5         // Restarting simulation (INIT while it's running)
     };
 
     /** Type to pass arguments of an event */
@@ -113,6 +114,13 @@ extern "C" {
     // Returns: 0 if everything is going well and there is an event pending, 1 if timeout (but the simulation won't stop automatically, it's still running), 2 if the simulation has stopped (properly, not because of an error), 3 if the simulation has stopped due to an error (the node's state becomes NODE_ERROR), <0 if other error (e.g., node ID is invalid).  Check the last error message for specifics.
     // If returning 0: *event_type is the type of port event (an integer cast from OBNEI_EventType); *event_args are the event arguments depending on the event type (see the structure for details).
     int simRunStep(size_t nodeid, double timeout, unsigned int* event_type, OBNEI_EventArg* event_args);
+    
+    
+    // Sets the result of the event processing, which is an integer value. Some events use this result (e.g., INIT).
+    // Args: node ID, result (int64)
+    // Returns: 0 if successful; <0 if other error (e.g., node ID is invalid).  Check the last error message for specifics.
+    int simSetEventResult(size_t nodeid, int64_t result);
+    
 
     // Request an irregular future update.
     // This is a blocking call, possibly with a timeout, that waits until it receives the response from the SMN or until a timeout.

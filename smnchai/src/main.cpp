@@ -69,7 +69,7 @@ void show_usage() {
 // should be called before exiting NORMALLY, but not when being terminated unexpectedly
 void shutdown_SMN() {
     // Wait a bit before shutting down so that we won't overload the nameserver (hopefully)
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    //std::this_thread::sleep_for(std::chrono::seconds(2));
     
     // Delete the communication objects (which are created dynamically in loadscript())
 #ifdef OBNSIM_COMM_YARP
@@ -95,7 +95,26 @@ OBNsmn::GCThread *main_gcthread = nullptr;
 
 void shutdown_communication_threads(OBNsmn::GCThread& gc) {
     gc.simple_thread_terminate = true;
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    
+#ifdef OBNSIM_COMM_MQTT
+    if (comm_objects.mqttClient) {
+        // Loop until MQTT finishes or a max timeout
+        int niters = 0;
+        while (niters++ <= 9 && comm_objects.mqttClient->outMsgCount() > 0) {
+            // Messages are still pending -> wait
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+        
+        comm_objects.mqttClient->stop();    // Force stop MQTT
+    }
+#endif
+    
+#ifdef OBNSIM_COMM_YARP
+    if (comm_objects.yarpThread && !comm_objects.yarpThread->done_execution) {
+        // Wait a fixed amount of time for Yarp
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+#endif
 }
 
 // The handler called when the program is interrupted unexpectedly (e.g. Ctrl-C)
@@ -233,6 +252,10 @@ int main(int argc, char* argv[]) {
         
         //Join the threads with the main thread
         gc.joinThread();
+        
+        // Shutdown communications
+        shutdown_communication_threads(gc);
+        
         comm_objects.joinThreads();
         
         main_gcthread = nullptr;    // No more access to the GC

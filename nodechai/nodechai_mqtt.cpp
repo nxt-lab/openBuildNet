@@ -13,6 +13,40 @@
 #include <chaiscript/chaiscript.hpp>  // Chaiscript definitions
 
 namespace NodeChai {
+    int64_t MQTTNodeChai::onInitialization() {
+        if (m_onInitialization_callback) {
+            chaiscript::Boxed_Value bval = m_onInitialization_callback();
+            if (bval.get_type_info().is_arithmetic()) {
+                // Cast to integer and return
+                return chaiscript::Boxed_Number(bval).get_as<int64_t>();
+            }
+            // else let's just return 0
+        }
+        
+        return 0;
+    }
+    
+    int64_t MQTTNodeChai::onRestart() {
+        if (m_onRestart_callback) {
+            chaiscript::Boxed_Value bval = m_onRestart_callback();
+            if (bval.get_type_info().is_arithmetic()) {
+                // Cast to integer and return
+                return chaiscript::Boxed_Number(bval).get_as<int64_t>();
+            }
+            // else let's just return 0
+        }
+        
+        return 0;
+    }
+    
+    void MQTTNodeChai::onTermination() {
+        if (m_onTermination_callback) {
+            m_onTermination_callback();
+        }
+    }
+
+    
+    
     bool NodeChai::NodeFactoryMQTT::callback_x(int t_id, const OBNnode::UpdateType::UPDATE_CALLBACK& t_f) {
         if (!check_node_object()) {
             return false;
@@ -57,12 +91,21 @@ namespace NodeChai {
         }
     }
     
-    bool NodeChai::NodeFactoryMQTT::callback_init(const std::function<void ()>& f) {
+    bool NodeChai::NodeFactoryMQTT::callback_init(const std::function<chaiscript::Boxed_Value ()>& f) {
         if (!check_node_object()) {
             return false;
         }
         
         m_node->m_onInitialization_callback = f;
+        return true;
+    }
+   
+    bool NodeChai::NodeFactoryMQTT::callback_restart(const std::function<chaiscript::Boxed_Value ()>& f) {
+        if (!check_node_object()) {
+            return false;
+        }
+        
+        m_node->m_onRestart_callback = f;
         return true;
     }
     

@@ -208,7 +208,8 @@ int MQTTNodeExt::runStep(double timeout) {
     // If there is a pending event, which means the current event has just been processed in Matlab, we must resume the execution of the event object to finish it, then we can continue
     if (_ml_pending_event) {
         if (_current_node_event) {
-            // If there is a valid event object, call the post execution method
+            // If there is a valid event object, set the event processing result and call the post execution method
+            _current_node_event->set_result(_ml_event_result);
             _current_node_event->executePost(this);
         }
         _ml_pending_event = false;      // Clear the current event
@@ -514,6 +515,20 @@ int simRunStep(size_t nodeid, double timeout, unsigned int* event_type, OBNEI_Ev
     }
     
     return result;
+}
+
+// Sets the event processing result.
+EXPORT
+int simSetEventResult(size_t nodeid, int64_t result) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    pnode->_ml_event_result = result;
+    return 0;
 }
 
 

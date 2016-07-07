@@ -560,13 +560,31 @@ void NodeBase::NodeEvent_UPDATEY::executePost(NodeBase* pnode) {
 
 /** Handle Initialization before simulation: Main. */
 void NodeBase::NodeEvent_INITIALIZE::executeMain(NodeBase* pnode) {
+    _run_result = -1;      // By default, onInitialization() will be called
+    
+    basic_processing(pnode);
+    
+    // If the node is running, attempt to restart it
+    if (pnode->_node_state == NodeBase::NODE_RUNNING) {
+        _run_result = pnode->onRestart();
+        
+        // onRestart() returns 0 if successful and onInitialization() not needed to be called; >0 if failed; <0 if the initialization is passed to onInitialization()
+        if (_run_result > 0) {
+            // Failed to restart --> put the node in ERROR state and return
+            // The ACK to the GC will be sent in executePost().
+            pnode->_node_state = NodeBase::NODE_ERROR;
+            return;
+        }
+        
+        // At this point, restarting is successful so far --> Set the state to STARTED
+        pnode->_node_state = NodeBase::NODE_STARTED;
+    }
+    
+    
     // Skip if the node is not STARTED.
-    // This actually should never happen if the node is used properly, because the run() method will not let the node run unless it's in a proper state.
     if (pnode->_node_state != NodeBase::NODE_STARTED) {
         return;
     }
-    
-    basic_processing(pnode);
     
     // Save the initial settings sent from the SMN
     if (_has_wallclock) {
@@ -576,33 +594,42 @@ void NodeBase::NodeEvent_INITIALIZE::executeMain(NodeBase* pnode) {
         pnode->_timeunit = _timeunit;
     }
     
-    pnode->onInitialization();
+    if (_run_result < 0) {
+        _run_result = pnode->onInitialization();
+    }
 }
 
 /** Handle Initialization before simulation: Post. */
 void NodeBase::NodeEvent_INITIALIZE::executePost(NodeBase* pnode) {
-    // Send out values from output ports if they have been set / updated
-    for (auto port: pnode->_output_ports) {
-        //TODO: Should change this to asynchronous send.
-        if (port.first->isChanged()) {
-            port.first->sendSync();
-            if (pnode->hasError()) {
-                break;
-            }
-        }
+    if (_run_result) {
+        // Error initializing the node => ACK with data.I > 0
+        pnode->_node_state = NodeBase::NODE_ERROR;
+        pnode->sendACK(OBNSimMsg::N2SMN::MSGTYPE::N2SMN_MSGTYPE_SIM_INIT_ACK, _run_result);
+        return;
     }
-    
+
     // Set the node's state to RUNNING if it's still STARTED (if it's ERROR, we won't change it)
     if (pnode->_node_state == NodeBase::NODE_STARTED) {
         pnode->_node_state = NodeBase::NODE_RUNNING;
     }
-    
-    // Send an ACK message to the SMN
+
+    // If not error, send output values.
+    // Then send an ACK message to the SMN.
     if (pnode->_node_state == NodeBase::NODE_RUNNING) {
-        // Successful
+        // Send out values from output ports if they have been set / updated
+        for (auto port: pnode->_output_ports) {
+            //TODO: Should change this to asynchronous send.
+            if (port.first->isChanged()) {
+                port.first->sendSync();
+                if (pnode->hasError()) {
+                    break;
+                }
+            }
+        }
+        
         pnode->sendACK(OBNSimMsg::N2SMN::MSGTYPE::N2SMN_MSGTYPE_SIM_INIT_ACK);
     } else {
-        // Unsuccessful => ACK with data.I > 0
+        // Not running --> problem
         pnode->sendACK(OBNSimMsg::N2SMN::MSGTYPE::N2SMN_MSGTYPE_SIM_INIT_ACK, 1);
     }
 }

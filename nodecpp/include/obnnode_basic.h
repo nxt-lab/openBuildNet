@@ -202,6 +202,23 @@ namespace OBNnode {
             NODE_ERROR = 3     ///< The node has had an error, which caused it to stop. The error must be cleared before the node can restart
         };
         
+        /* State transition of the node: note that if a node is running (RUNNING) and it receives INIT command from the Global Clock, it will attempt to restart by supplying the Initilization function an argument indicating this is a restart.
+         
+                                           +-------+
+                                        +--+ ERROR <---------------------+
+                                  clear |  +----^--+                     |
+                                  error |       |                        |
+                                        |       +-------+                |
+           +-----------------+     +----v----+ run +----+----+ INIT +----+----+
+           | node exe starts +-----> STOPPED +-----> STARTED +------> RUNNING +---+
+           +-----------------+     +----^----+     +----^----+      +-------+-+   |
+                                        |               |   INIT (restart)  |     |
+                                        |               +-------------------+     |
+                                        |                   TERMINATE             |
+                                        +-----------------------------------------+
+         
+         */
+        
         /** Returns true if the node has had an error causing it to stop. An error must be cleared for the node to restart. */
         bool hasError() const {
             return (_node_state == NODE_ERROR);
@@ -397,10 +414,16 @@ namespace OBNnode {
          The execution of the event handler consists of two functions, in the following order: executeMain, executePost.
          */
         class NodeEvent {
+        protected:
+            int64_t _run_result;    // Result of the processing of the event (e.g., whether Initialization was successful)
         public:
             virtual ~NodeEvent() { }                    // VERY IMPORTANT because NodeEvent will be derived; this is to make sure child classes will be destroyed cleanly
             virtual void executeMain(NodeBase*) { }     ///< Main Execution of the event
             virtual void executePost(NodeBase*) { }     ///< Post-Execution of the event
+            
+            // Set the result of the event processing (depending on the event)
+            void set_result(int64_t r) { _run_result = r; }
+
         };
         
         /* An implementation of a node should manage a queue of NodeEvent objects, and implements the following methods. */
@@ -606,8 +629,17 @@ namespace OBNnode {
          
          This callback is called when the node is initialized before each simualtion (when it receives the INITIALIZE message from the SMN. Note that during the life of a node process, it can be simulated multiple times (by restarting the simulation), each time this callback will be called. This callback is often used to initialize the node's state, outputs, etc.
          After this callback finishes, all output ports will send out their current values, so if the node needs to initialize its outputs, it should do so in this callback.
+         This callback returns an integer: 0 if successful; >0 if failed (and it is the error code to be returned to the SMN/GC).
          */
-        virtual void onInitialization() { }
+        virtual int64_t onInitialization() { return 0; }
+        
+        /** \brief Callback to restart the node.
+         
+         This callback is called when the node is running and it receives a system command from the SMN/GC to initialize, in which case it will attempt to restart the node.
+         This callback returns an integer: 0 if restarting is successful and onInitialization() won't be called; >0 if restarting fails; <0 if restarting is successful and onInitialization() will be called to continue the restarting/initializing process.
+         The default callback will return -1 (essentially make onInitiliazation() called).
+         */
+        virtual int64_t onRestart() { return -1; }
         
         
         /** \brief Callback before the node's current simulation is terminated.
