@@ -214,6 +214,7 @@ namespace SMNChai {
          */
         PortInfo port(const std::string &t_port) const;
         
+#ifdef OBNSIM_COMM_YARP
         /** \brief Create an Yarp node object for this node associated with the given system port.
          Note that the new Yarp node object will own the port object, i.e. when the node is destructed, it will also delete the port.
          \param sys_port Pointer to the system port on the SMN associated with this node; must be dynamically allocated as it will be deleted.
@@ -221,13 +222,16 @@ namespace SMNChai {
          \return Pointer to the new node object; nullptr if there is any error.
          */
         OBNsmn::YARP::OBNNodeYARP* create_yarp_node(OBNsmn::YARP::YARPPort *sys_port, const WorkSpace &ws) const;
+#endif
         
+#ifdef OBNSIM_COMM_MQTT
         /** \brief Create an MQTT node object for this node.
          \param client Pointer to the MQTTClient object to which this node is associated (for sending messages)
          \param ws The WorkSpace object to whom this node belongs (to access system settings).
          \return Pointer to the new node object; nullptr if there is any error.
          */
         OBNsmn::MQTT::OBNNodeMQTT* create_mqtt_node(OBNsmn::MQTT::MQTTClient* client, const WorkSpace &ws) const;
+#endif
         
         /** Returns the update mask of a given input port, exception if port does not exist. */
         OBNsim::updatemask_t input_updatemask(const std::string &port_name) const {
@@ -443,13 +447,17 @@ namespace SMNChai {
         void register_settings_with_Chaiscript(chaiscript::ChaiScript &chai);
         
     private:
+#ifdef OBNSIM_COMM_YARP
         // Configure the YARP node for the given mynode in the given GC. Used by generate_obn_system().
         void generate_obn_system_yarp(decltype(SMNChai::WorkSpace::m_nodes)::iterator &mynode,
                                       OBNsmn::GCThread &gc);
-
+#endif
+        
+#ifdef OBNSIM_COMM_MQTT
         // Configure the MQTT node for the given mynode in the given GC. Used by generate_obn_system().
         void generate_obn_system_mqtt(decltype(SMNChai::WorkSpace::m_nodes)::iterator &mynode,
                                       OBNsmn::GCThread &gc, OBNsmn::MQTT::MQTTClient *mqttclient);
+#endif
         
     public:
         /** Construct a workspace object with a given name. */

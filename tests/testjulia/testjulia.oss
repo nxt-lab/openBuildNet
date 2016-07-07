@@ -1,11 +1,18 @@
 // -*- mode: javascript; indent-tabs-mode: nil; -*-
 
-//run_simulation(false);
+// run_simulation(false);
 settings.time_unit(millisecond);
 settings.final_time(2*second);
 workspace("testext");
 
 settings.default_comm("mqtt");	// Can change the default communication
+
+settings.MQTT_server((args.count("mqtt")>0)?args.at("mqtt"):"tcp://localhost:1883");
+
+// Different choices for MQTT server
+//settings.MQTT_server("tcp://128.178.5.139:1883");  // MQTT server on Mac mini BNET01
+//settings.MQTT_server("tcp://test.mosquitto.org:1883");  // Public Mosquitto test server
+//settings.MQTT_server("tcp://172.17.0.3:1883");
 
 var othernode = node(
     ["name" : "othernode",

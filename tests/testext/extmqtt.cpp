@@ -206,12 +206,19 @@ bool print_matrix_input(int portid) {
 
 
 
-int main() {
+int main(int argc, char* argv[]) {
     int result;     // result of calling API functions
     
     /* ==== Creating node ==== */
-    std::cout << "Create a node with local MQTT server ... ";
-    result = createOBNNode("extnode", "testext", nullptr, &node_id);
+    if (argc > 1) {
+        // First argument is the server address
+        std::cout << "Create a node with given MQTT server: " << argv[1];
+        result = createOBNNode("extnode", "testext", argv[1], &node_id);
+    } else {
+        std::cout << "Create a node with local MQTT server ... ";
+        result = createOBNNode("extnode", "testext", nullptr, &node_id);
+    }
+    
     if (result == 0) {
         std::cout << "Node ID: " << node_id << '\n';
     } else {

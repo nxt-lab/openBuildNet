@@ -1,7 +1,7 @@
 using openbuildnet
 
 # Create the node
-node = OBNNode("extnode", "testext")
+node = OBNNode("extnode", "testext", length(ARGS)>0?ASCIIString(ARGS[1]):"tcp://localhost:1883")
 
 # Create the ports
 udouble = create_input(node, "input_scalardouble", Float64)

@@ -14,6 +14,8 @@
 #ifndef smnchai_smnchai_h
 #define smnchai_smnchai_h
 
+#include <chaiscript/chaiscript.hpp>
+
 #include <obnsmn_report.h>
 #include <obnsmn_gc.h>   // The GC thread
 
@@ -84,7 +86,7 @@ namespace SMNChai {
      \param comm Reference to a structure containing the pointers to the communication client objects. This function will fill the structure with dynamic objects. The caller (the SMN program) must delete these object upon exiting.
      \return First value is true if the simulation will continue, false if the program should exit with the return code given in the second value.
      */
-    std::pair<bool, int> smnchai_loadscript(const std::string& script_file, const std::vector<std::string>& script_args, const std::string& default_workspace,
+    std::pair<bool, int> smnchai_loadscript(const std::string& script_file, const std::map<std::string, chaiscript::Boxed_Value>& arguments_map, const std::string& default_workspace,
                                             OBNsmn::GCThread& gc, SMNChaiComm& comm);
 }
 #endif

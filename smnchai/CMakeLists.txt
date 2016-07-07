@@ -5,8 +5,13 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.1.0 FATAL_ERROR)
 ## Here comes the name of your project:
 SET(PROJECT_NAME "smnchai")
 
-PROJECT(${PROJECT_NAME})
+PROJECT(${PROJECT_NAME} C CXX)
 
+## Installation directory
+SET(CMAKE_INSTALL_PREFIX /usr/local/obn)
+
+# Select the desired build type
+set(CMAKE_BUILD_TYPE Release)
 
 ## Change OBN_MAIN_DIR to the path to the main directory of openBuildNet
 set (OBN_MAIN_DIR ../)
@@ -22,6 +27,9 @@ set (OBNSIM_INCLUDE_DIR ${OBN_MAIN_DIR}/include)
 
 
 option(BUILD_STATIC_CHAI "Build SMNChai with static ChaiScript standard library instead of dynamic one." OFF)
+
+## Require thread library (pthread)
+FIND_PACKAGE ( Threads REQUIRED )
 
 ## Generate code for the message formats using Google ProtoBuf, see http://www.cmake.org/cmake/help/v3.0/module/FindProtobuf.html
 ## The source files and header files are listed in PROTO_SRCS and PROTO_HDRS respectively
@@ -213,6 +221,8 @@ endif()
 TARGET_LINK_LIBRARIES(smnchai
   ${PROTOBUF_LITE_LIBRARIES}
   ${Boost_LIBRARIES}
+  ${CMAKE_THREAD_LIBS_INIT}
+  ${CMAKE_DL_LIBS}
 )
 
 
@@ -221,5 +231,7 @@ TARGET_LINK_LIBRARIES(smnchai
 
 # ADD_SUBDIRECTORY(doc)
 
-# Select the desired build type
-set(CMAKE_BUILD_TYPE Release)
+## Installation rules
+install(TARGETS smnchai 
+        RUNTIME DESTINATION bin)
+install(DIRECTORY libraries/ DESTINATION smnchai/libraries)  # Copy the SMNChai library

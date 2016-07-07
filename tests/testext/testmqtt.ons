@@ -16,7 +16,7 @@
 // The general syntax for bind in Chaiscript is: bind(func,arg1,arg2,...) where arg* is either an object or _; the latter causes the corresponding argument in func to be an argument in the new function.
 // Binding, and passing arguments to functions in general, is done via references; therefore any changes to the arguments made by the function are directly applied to the top-level variables (unless the passed arguments are constants). In other words, everything will work as expected, as if the function has direct access to the top-level variables.
 
-set_comm_mqtt("tcp://localhost:1883");
+set_comm_mqtt((args.count("mqtt")>0)?args.at("mqtt"):"tcp://localhost:1883");
 set_node_name("othernode");
 set_workspace("testext");
 set_timeout(20);	// you can set timeout for the node (in seconds)

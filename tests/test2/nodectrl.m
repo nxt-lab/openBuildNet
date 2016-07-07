@@ -29,9 +29,9 @@ classdef nodectrl < OBNNode
     end
     
     methods
-        function obj = nodectrl()
+        function obj = nodectrl(varargin)
             % Node 'ctr' in workspace 'test2'
-            obj = obj@OBNNode('ctrl', 'test2');
+            obj = obj@OBNNode('ctrl', 'test2', varargin{:});
             
             % Create input for velocity 'v': a double scalar
             obj.createInputPort('v', 's', 'double');

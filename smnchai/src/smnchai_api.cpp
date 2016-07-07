@@ -21,7 +21,9 @@
 #include <obnsmn_report.h>
 #include <smnchai_api.h>
 
+#ifdef OBNSIM_COMM_YARP
 #include <yarp/os/Run.h>        // YarpRun support
+#endif
 
 using namespace SMNChai;
 
@@ -33,6 +35,7 @@ const char* CommProtocolNames[] = {
 
 
 void SMNChai::run_remote_command(const std::string &t_node, const std::string &t_tag, const std::string &t_prog, const std::string &t_args) {
+#ifdef OBNSIM_COMM_YARP
     // Run a command on a remote node/computer using YarpRun
     if (t_node.empty() || t_tag.empty() || t_prog.empty()) {
         throw smnchai_exception("run_remote_command error: node/computer name and tag and command must be non-empty.");
@@ -51,6 +54,9 @@ void SMNChai::run_remote_command(const std::string &t_node, const std::string &t
         // Failed
         throw smnchai_exception("start_remote_node error: could not run the remote command.");
     }
+#else
+    throw smnchai_exception("Error: YARP communication is not supported in this SMN.");
+#endif
 }
 
 
@@ -252,6 +258,7 @@ bool SMNChai::Node::port_exists(const std::string &t_name) const {
     return (m_inputs.count(t_name) > 0) || (m_outputs.count(t_name) > 0) || (m_dataports.count(t_name) > 0);
 }
 
+#ifdef OBNSIM_COMM_YARP
 OBNsmn::YARP::OBNNodeYARP* SMNChai::Node::create_yarp_node(OBNsmn::YARP::YARPPort *sys_port, const WorkSpace &ws) const {
     assert(sys_port);
     
@@ -267,7 +274,9 @@ OBNsmn::YARP::OBNNodeYARP* SMNChai::Node::create_yarp_node(OBNsmn::YARP::YARPPor
     
     return p_node;
 }
+#endif
 
+#ifdef OBNSIM_COMM_MQTT
 OBNsmn::MQTT::OBNNodeMQTT* SMNChai::Node::create_mqtt_node(OBNsmn::MQTT::MQTTClient* t_mqttclient, const WorkSpace &ws) const {
     auto *p_node = new OBNsmn::MQTT::OBNNodeMQTT(m_name, m_updates.size(), ws.get_full_path(m_name, OBNsim::NODE_GC_PORT_NAME), t_mqttclient);
     
@@ -281,7 +290,7 @@ OBNsmn::MQTT::OBNNodeMQTT* SMNChai::Node::create_mqtt_node(OBNsmn::MQTT::MQTTCli
     
     return p_node;
 }
-
+#endif
 
 SMNChai::CommProtocol SMNChai::comm_protocol_from_string(const std::string& t_comm) {
     std::string comm = OBNsim::Utils::toLower(t_comm);
@@ -598,7 +607,7 @@ OBNsim::simtime_t SMNChai::WorkSpace::get_time_value(double t) const {
     return result;
 }
 
-
+#ifdef OBNSIM_COMM_YARP
 void SMNChai::WorkSpace::generate_obn_system_yarp(decltype(SMNChai::WorkSpace::m_nodes)::iterator &mynode, OBNsmn::GCThread &gc) {
     // Create a GC port for it and try to open it
     OBNsmn::YARP::YARPPort *p_port = new OBNsmn::YARP::YARPPort();
@@ -647,8 +656,9 @@ void SMNChai::WorkSpace::generate_obn_system_yarp(decltype(SMNChai::WorkSpace::m
         throw smnchai_exception("Could not connect from remote node " + mynode->first + " to the SMN.");
     }
 }
+#endif
 
-
+#ifdef OBNSIM_COMM_MQTT
 void SMNChai::WorkSpace::generate_obn_system_mqtt(decltype(SMNChai::WorkSpace::m_nodes)::iterator &mynode, OBNsmn::GCThread &gc, OBNsmn::MQTT::MQTTClient *mqttclient) {
     // Create the node
     auto *p_node = mynode->second.node.create_mqtt_node(mqttclient, *this);
@@ -668,7 +678,7 @@ void SMNChai::WorkSpace::generate_obn_system_mqtt(decltype(SMNChai::WorkSpace::m
     // to which the node should subscribe.
     // So there is no need to "connect" the ports here.
 }
-
+#endif
 
 bool SMNChai::WorkSpace::is_comm_protocol_used(SMNChai::CommProtocol comm) const {
     assert(comm != SMNChai::COMM_DEFAULT);

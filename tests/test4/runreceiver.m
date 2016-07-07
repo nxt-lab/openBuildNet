@@ -10,5 +10,5 @@ pause
 
 receivernode = receiver();
 disp('Starting the receiver node: please start all other nodes then the SMN...');
-b = receivernode.runSimulation(20);
+b = receivernode.runSimulation(30);
 fprintf('Simulation stopped with result (1/true means success): %d.\n', b);

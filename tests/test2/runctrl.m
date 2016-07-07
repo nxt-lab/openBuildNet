@@ -8,10 +8,12 @@
 %
 % Authors: Truong X. Nghiem (xuan.nghiem@epfl.ch)
 
-disp('Please check that yarpserver is running. Press any key to continue...');
+server = 'mqtt';
+
+disp('Please check that the server is running. Press any key to continue...');
 pause
 
-ctrlnode = nodectrl();
+ctrlnode = nodectrl(server);
 disp('Starting the controller node: please start all other nodes then the SMN...');
 b = ctrlnode.runSimulation(20, false);
 fprintf('Simulation stopped with result (1/true means success): %d.\n', b);

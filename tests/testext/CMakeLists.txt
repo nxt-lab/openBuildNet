@@ -76,6 +76,7 @@ ADD_EXECUTABLE(testextmqtt
 if(APPLE)
   list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
 else()
-  set_property(TARGET testextmqtt PROPERTY CXX_STANDARD 11)
-  set_property(TARGET testextmqtt PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_target_properties(testextmqtt PROPERTIES
+    CXX_STANDARD 11
+	CXX_STANDARD_REQUIRED ON)
 endif()

@@ -9,13 +9,16 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.1.0 FATAL_ERROR)
 
 ## Here comes the name of your project:
-SET(PROJECT_NAME nodecpp_mynode)
-
-SET(PROJECT_VERSION "0.1"  ## "hg-tip"
-    CACHE STRING "${PROJECT_NAME} version string")
+SET(PROJECT_NAME obnext)
 
 ## Do not edit this.
-PROJECT(${PROJECT_NAME})
+PROJECT(${PROJECT_NAME} C CXX)
+
+## Installation directory
+SET(CMAKE_INSTALL_PREFIX /usr/local/obn)
+
+# Select the desired build type
+set(CMAKE_BUILD_TYPE Release)
 
 ## Change OBN_MAIN_DIR to the path to the main directory of openBuildNet
 set (OBN_MAIN_DIR ${PROJECT_SOURCE_DIR}/../)
@@ -58,11 +61,6 @@ ENDIF(CMAKE_COMPILER_IS_GNUCXX)
 # ENDIF(MSVC)
 
 
-ADD_EXECUTABLE(nodecpp-mynode
-	nodemain.cpp
-	${OBNNODE_CORE_SRCFILES}
-)
-
 ADD_LIBRARY(obnext-mqtt SHARED
 	extmqtt.cpp
 	src/obnnode_ext.cpp
@@ -72,24 +70,18 @@ ADD_LIBRARY(obnext-mqtt SHARED
 	${OBNNODE_CORE_SRCFILES}
 )
 
-# TARGET_LINK_LIBRARIES(nodecpp-mynode
-# 	extra libraries here if necessary
-# )
-
-
-# INSTALL(
-#   TARGETS nodecpp-mynode
-#   RUNTIME DESTINATION ${INSTALL_BIN_DIR}
-#   COMPONENT bin
-# )
-
 
 ## Make sure that C++ 11 is used (for thread, mutex...)
 if(APPLE)
   list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
 else()
-  set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD 11)
-  set_property(TARGET obnext-mqtt PROPERTY CXX_STANDARD 11)
-  set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD_REQUIRED ON)
-  set_property(TARGET obnext-mqtt PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_target_properties(obnext-mqtt PROPERTIES
+      CXX_STANDARD 11
+	  CXX_STANDARD_REQUIRED ON)
 endif()
+
+## Installation rules
+install(TARGETS obnext-mqtt
+		RUNTIME DESTINATION ${INSTALL_BIN_DIR}
+        LIBRARY DESTINATION lib)
+install(FILES include/obnnode_ext.h DESTINATION include)

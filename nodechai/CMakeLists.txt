@@ -5,14 +5,17 @@
 
 CMAKE_MINIMUM_REQUIRED(VERSION 3.1.0 FATAL_ERROR)
 
-## Here comes the name of your project:
-SET(PROJECT_NAME nodechai)
-
 SET(PROJECT_VERSION "0.1"  ## "hg-tip"
     CACHE STRING "${PROJECT_NAME} version string")
 
+## Here comes the name of your project:
+SET(PROJECT_NAME nodechai)
+
 ## Do not edit this.
-PROJECT(${PROJECT_NAME})
+PROJECT(${PROJECT_NAME} C CXX)
+
+## Installation directory
+SET(CMAKE_INSTALL_PREFIX /usr/local/obn)
 
 ## Change OBN_MAIN_DIR to the path to the main directory of openBuildNet
 set (OBN_MAIN_DIR ${PROJECT_SOURCE_DIR}/../)
@@ -121,20 +124,20 @@ ADD_EXECUTABLE(obnchai
 
 TARGET_LINK_LIBRARIES(obnchai
 	${Boost_LIBRARIES}
-)
-
-
-INSTALL(
-  TARGETS obnchai
-  RUNTIME DESTINATION ${INSTALL_BIN_DIR}
-  COMPONENT bin
+	${CMAKE_DL_LIBS}
 )
 
 
 ## Make sure that C++ 14 is used (for thread, mutex...)
-# if(APPLE)
-#   list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++14 ${CMAKE_CXX_FLAGS}")
-# else()
-  set_property(TARGET obnchai PROPERTY CXX_STANDARD 14)
-  set_property(TARGET obnchai PROPERTY CXX_STANDARD_REQUIRED ON)
-# endif()
+if(APPLE)
+  list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++14 ${CMAKE_CXX_FLAGS}")
+else()
+  set_target_properties(obnchai PROPERTIES
+      CXX_STANDARD 14
+	  CXX_STANDARD_REQUIRED ON)
+endif()
+
+
+## Installation rules
+install(TARGETS obnchai
+		RUNTIME DESTINATION ${INSTALL_BIN_DIR})

@@ -15,6 +15,7 @@
 #include <iostream>
 #include <memory>               // shared_ptr
 #include <atomic>
+#include <mutex>
 //#include <unordered_map>         // std::unordered_map
 #include <forward_list>
 #include <functional>
@@ -1262,9 +1263,9 @@ namespace OBNnode {
         
         /** Static function to read data from a ProtoBuf message. */
         static bool readPBMessage(input_data_container& data, PB_message_class& msg) {
-            auto nrows = msg.nrows();
-            auto ncols = msg.ncols();
-            auto sz = nrows * ncols;
+            int nrows = msg.nrows();
+            int ncols = msg.ncols();
+            int sz = nrows * ncols;
             if (msg.value_size() < sz) return false;
             
             data.v.data.assign(msg.mutable_value()->begin(), sz, false);

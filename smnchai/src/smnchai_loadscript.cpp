@@ -28,7 +28,7 @@ const char *SMNCHAI_STDLIB_NAME = "stdlib.chai";    // name of the standard libr
 
 // Return true if simulation should continue, false if should exit with given return code in the second value
 std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
-                                                 const std::vector<std::string>& script_args,
+                                                 const std::map<std::string, chaiscript::Boxed_Value>& arguments_map,
                                                  const std::string& default_workspace,
                                                  OBNsmn::GCThread& gc,
                                                  SMNChai::SMNChaiComm& comm)
@@ -142,6 +142,9 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
     SMNChai::WorkSpace ws(default_workspace, comm, gc);  // default workspace name is the name of the script file
     SMNChai::registerSMNAPI(chai, ws);
     
+    // Add the named arguments to the chai engine as a const map variable
+    chai.add(chaiscript::const_var(&arguments_map), "args");
+    
     std::cout << "Loading the Chaiscript file: " << script_file << std::endl;
     try {
         chai.use(SMNCHAI_STDLIB_NAME);
@@ -172,7 +175,9 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
     std::cout << "Done loading the script file. Now constructing the simulation network...\n";
     
     // Need to create and start the communication threads here to get certain messages from the nodes
+#ifdef OBNSIM_COMM_YARP
     bool create_yarp = (comm.yarpThread == nullptr);
+#endif
     
     if (ws.is_comm_protocol_used(SMNChai::COMM_YARP)) {
         // Create and Open Yarp port
@@ -251,6 +256,7 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
         }
 #else
         std::cerr << "Error: MQTT communication is not supported in this SMN." << std::endl;
+#ifdef OBNSIM_COMM_YARP
         if (comm.yarpThread) {
             shutdown_communication_threads(gc);
             if (create_yarp) {
@@ -258,6 +264,7 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
                 comm.yarpThread = nullptr;
             }
         }
+#endif
         return std::make_pair(false, 5);
 #endif
     }

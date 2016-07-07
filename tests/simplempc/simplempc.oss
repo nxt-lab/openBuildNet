@@ -8,12 +8,13 @@ workspace("simplempc");
 settings.default_comm("mqtt");	// Can change the default communication
 
 var plant = node(
-  ["name" : "plant",
-  "inputs" : ["u"],
-  "outputs" : ["y"],
-  "blocks" : [["sampling" : 1*second, "outputs" : ["y"]]
-]
-]);
+    ["name" : "plant",
+     "inputs" : ["u"],
+     "outputs" : ["y"],
+     "blocks" : [["sampling" : 1*second,
+                  "outputs" : ["y"]]
+                ]
+    ]);
 
 var controller = node(
   ["name" : "controller",

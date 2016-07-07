@@ -16,15 +16,16 @@
 #include <thread>
 #include <chrono>
 #include <vector>
+#include <map>
 
 #include <boost/filesystem.hpp>     // manipulate paths
 
+#include <chaiscript/chaiscript.hpp>
 #include <smnchai.h>
 
-
-// Currently we require YARP for running remote nodes
-#ifndef OBNSIM_COMM_YARP
-#error YARP is required for SMNChai as YarpRun is used to start remote nodes
+// At least one of the communication protocols must be supported
+#if !defined(OBNSIM_COMM_YARP) && !defined(OBNSIM_COMM_MQTT)
+#error At least one communication protocol must be supported (YARP, MQTT)
 #endif
 
 // Implement reporting functions for the SMN
@@ -113,8 +114,44 @@ static void interrupt_signal_handler(int signal_value) {
     // We won't delete the objects, etc., just let the program exit abnormally
 }
 
+// Get the named arguments to the script
+bool process_script_args(int argc, char** argv, std::map<std::string, chaiscript::Boxed_Value>& argmap)
+{
+    // We consider argument #2 onwards as named arguments to the node script; Argument #1 is the script file name.
+    char* equalsign = nullptr;
+    for (auto i=2; i < argc; ++i) {
+        // Each named argument must have the form "keyword=value" and the keyword must be unique
+        
+        equalsign = std::strchr(argv[i], '=');  // Find the equal sign position
+        if (!equalsign || equalsign == argv[i]) {
+            // '=' not found or keyword is empty -> invalid
+            std::cerr << "ERROR: Invalid named argument: " << argv[i] << '\n';
+            return false;
+        }
+        
+        // Extract the key string and trim it
+        std::string keystr(OBNsim::Utils::trim(std::string(argv[i], equalsign-argv[i])));
+        if (keystr.empty()) {
+            std::cerr << "ERROR: Named argument has empty key: " << argv[i] << '\n';
+            return false;
+        }
+        
+        // Check if the key already exists
+        if (argmap.count(keystr) > 0) {
+            std::cerr << "ERROR: Key of named argument is not unique: " <<  keystr << '\n';
+            return false;
+        }
+        
+        // Now we can register the key-value pair to the map
+        argmap.emplace(keystr, chaiscript::Boxed_Value(std::string(equalsign+1)));
+    }
+    
+    return true;
+}
 
-int main(int argc, const char* argv[]) {
+
+
+int main(int argc, char* argv[]) {
     // Save the program name
     SMNChai_program_name = argv[0];
     
@@ -142,9 +179,10 @@ int main(int argc, const char* argv[]) {
     }
     
     // Extract input arguments to the script
-    std::vector<std::string> script_args;
-    for (auto i = 2; i < argc; ++i) {
-        script_args.emplace_back(argv[i]);
+    std::map<std::string, chaiscript::Boxed_Value> arguments_map;   // The map of arguments to the node script
+    if (!process_script_args(argc, argv, arguments_map)) {
+        show_usage();
+        return 2;
     }
     
     {
@@ -163,7 +201,7 @@ int main(int argc, const char* argv[]) {
         main_gcthread = &gc;
         
         // Run Chaiscript to load the network
-        auto load_script_result = SMNChai::smnchai_loadscript(script_file.string(), script_args, script_file.stem().string(), gc, comm_objects);
+        auto load_script_result = SMNChai::smnchai_loadscript(script_file.string(), arguments_map, script_file.stem().string(), gc, comm_objects);
         
         if (!load_script_result.first) {
             shutdown_SMN();

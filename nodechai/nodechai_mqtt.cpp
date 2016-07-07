@@ -10,7 +10,7 @@
 
 #include <exception>
 #include "nodechai_mqtt.h"
-
+#include <chaiscript/chaiscript.hpp>  // Chaiscript definitions
 
 namespace NodeChai {
     bool NodeChai::NodeFactoryMQTT::callback_x(int t_id, const OBNnode::UpdateType::UPDATE_CALLBACK& t_f) {

@@ -72,7 +72,7 @@ int MQTTNodeExt::createInputPort(const std::string &name,
     }
     
     MQTTNodeExt::PortInfo portinfo;
-    OBNnode::InputPortBase *port;
+    OBNnode::InputPortBase *port = nullptr;
     portinfo.type = OBNEI_Port_Input;
     switch (container) {
         case OBNEI_Container_Scalar:
@@ -141,7 +141,7 @@ int MQTTNodeExt::createOutputPort(const std::string &name,
         return -1000;       // Unsupported format
     }
 
-    MQTTOutputPortBase *port;
+    MQTTOutputPortBase *port = nullptr;
     MQTTNodeExt::PortInfo portinfo;
     portinfo.type = OBNEI_Port_Output;
     switch (container) {

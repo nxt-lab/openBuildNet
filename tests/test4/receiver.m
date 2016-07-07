@@ -43,15 +43,15 @@ classdef receiver < OBNNode
     methods (Access=private)
         % These are the callbacks
         function simple_callback(this, s)
-            fprintf('At %d %s\n', this.currentSimTime, s);
+            fprintf('At %g %s\n', this.currentSimTime, s);
         end
         
         function onInit(this)
-            fprintf('At %d INIT\n', this.currentSimTime);
+            fprintf('At %g INIT\n', this.currentSimTime);
         end
         
         function print_inputs(this)
-            fprintf('At %d UPDATE_X\n', this.currentSimTime());
+            fprintf('At %g UPDATE_X\n', this.currentSimTime());
             if this.inputPending('u2')
                 disp('u2:');
                 while this.inputPending('u2')
