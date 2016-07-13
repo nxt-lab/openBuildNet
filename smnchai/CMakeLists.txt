@@ -101,6 +101,7 @@ INCLUDE_DIRECTORIES(
   ${OBNSIM_INCLUDE_DIR}
   ${OBN_MAIN_DIR}/thirdparties
   ${OBN_MAIN_DIR}/thirdparties/chaiscript/include
+  ${OBN_MAIN_DIR}/thirdparties/json
 )
 
 IF(CMAKE_COMPILER_IS_GNUCXX)
