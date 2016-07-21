@@ -123,6 +123,15 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, SMNChai::WorkSpace &ws) {
     
     chai.add(fun(&WorkSpace::waitfor_all_nodes_online, &ws), "waitfor_all_nodes");
     
+    // *********************************************
+    // Functions to generate node list for Docker
+    // *********************************************
+    if (ws.m_settings.m_dockerlist) {
+        chai.add(fun(&WorkSpace::obndocker_node, &ws), "obndocker_node");
+    } else {
+        // empty function
+        chai.add(fun([](const SMNChai::Node&, const std::string&, const std::string&, const std::string&, const std::string&){}), "obndocker_node");
+    }
     
     // *********************************************
     // Functions to configure the GC/simulation

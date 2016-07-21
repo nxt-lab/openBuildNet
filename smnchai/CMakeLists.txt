@@ -47,7 +47,7 @@ PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS ${OBN_MAIN_DIR}/msg/obnsim_msg.proto
 # set(Boost_USE_STATIC_LIBS OFF) 
 # set(Boost_USE_MULTITHREADED ON)  
 # set(Boost_USE_STATIC_RUNTIME OFF) 
-find_package(Boost 1.55.0 REQUIRED COMPONENTS graph filesystem system) 
+find_package(Boost 1.55.0 REQUIRED COMPONENTS graph filesystem system program_options)
 
 
 ## Find communication libraries and add appropriate source files

@@ -10,6 +10,7 @@
  * \author Truong X. Nghiem (xuan.nghiem@epfl.ch)
  */
 
+#include <fstream>
 #include <boost/filesystem.hpp>     // manipulate paths
 
 #include "smnchai.h"        // Common defs
@@ -31,7 +32,8 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
                                                  const std::map<std::string, chaiscript::Boxed_Value>& arguments_map,
                                                  const std::string& default_workspace,
                                                  OBNsmn::GCThread& gc,
-                                                 SMNChai::SMNChaiComm& comm)
+                                                 SMNChai::SMNChaiComm& comm,
+                                                 const SMNChai::SystemSettings& sys_settings)        // Whether to generate the node list for Docker (without running simulation)
 {
     // Get the main directory of SMNChai
     boost::filesystem::path smnchai_main_dir;
@@ -44,7 +46,6 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
             // Check the path
             if (!boost::filesystem::exists(smnchai_main_dir) || !boost::filesystem::is_directory(smnchai_main_dir)) {
                 std::cerr << "ERROR: SMNChai main directory is invalid. Please set the environment variable " << SMNCHAI_ENV_VAR << "\n\n";
-                show_usage();
                 return std::make_pair(false, 1);
             }
 
@@ -52,7 +53,6 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
             smnchai_main_dir /= "libraries";
             if (!boost::filesystem::exists(smnchai_main_dir) || !boost::filesystem::is_directory(smnchai_main_dir)) {
                 std::cerr << "ERROR: SMNChai library directory " << smnchai_main_dir << " does not exist.\nPlease check the environment variable " << SMNCHAI_ENV_VAR << "\n\n";
-                show_usage();
                 return std::make_pair(false, 1);
             }
 
@@ -69,7 +69,6 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
         stdlib /= SMNCHAI_STDLIB_NAME;
         if (!boost::filesystem::exists(stdlib) || !boost::filesystem::is_regular_file(stdlib)) {
             std::cerr << "ERROR: SMNChai standard library " << stdlib << " does not exist.\nYou may want to check the environment variable " << SMNCHAI_ENV_VAR << "\n\n";
-            show_usage();
             return std::make_pair(false, 1);
         }
     }
@@ -103,7 +102,6 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
         boost::filesystem::path script_file_path = boost::filesystem::canonical(boost::filesystem::path(script_file));
         if (!boost::filesystem::exists(script_file_path) || !boost::filesystem::is_regular_file(script_file_path)) {
             std::cerr << "ERROR: The given script file is invalid.\n";
-            show_usage();
             return std::make_pair(false, 2);
         }
         
@@ -140,6 +138,13 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
 #endif
     
     SMNChai::WorkSpace ws(default_workspace, comm, gc);  // default workspace name is the name of the script file
+    
+    // Transfer the system settings to WorkSpace settings
+    if (sys_settings.dryrun || sys_settings.dockerlist) {
+        ws.m_settings.m_sys_run_simulation = false;     // Force no-simulation
+        ws.m_settings.m_dockerlist = sys_settings.dockerlist;
+    }
+    
     SMNChai::registerSMNAPI(chai, ws);
     
     // Add the named arguments to the chai engine as a const map variable
@@ -167,8 +172,21 @@ std::pair<bool, int> SMNChai::smnchai_loadscript(const std::string& script_file,
     
     
     // If it's set not to run the simulation, we can exit now
-    if (!ws.m_settings.m_run_simulation) {
-        std::cout << "THE SIMULATION IS SET NOT TO BE RUN AUTOMATICALLY (DRY-RUN)." << std::endl;
+    if (sys_settings.dryrun || !ws.m_settings.m_run_simulation) {
+        std::cout << "\nTHE SIMULATION IS SET NOT TO BE RUN AUTOMATICALLY (DRY-RUN).\n";
+        return std::make_pair(false, 0);
+    }
+    
+    if (sys_settings.dockerlist) {
+        std::cout << "\nGENERATE NODE LIST FOR DOCKER WITHOUT RUNNING THE SIMULATION.\n";
+        try {
+            std::ofstream dockerlistfile(sys_settings.dockerlistfile);
+            ws.obndocker_dump(dockerlistfile);
+            dockerlistfile.close();
+        } catch (std::ofstream::failure e) {
+            std::cerr << "Error while writing to Docker node list file.\n";
+        }
+        
         return std::make_pair(false, 0);
     }
     

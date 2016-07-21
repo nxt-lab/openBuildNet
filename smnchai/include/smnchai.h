@@ -82,11 +82,22 @@ namespace SMNChai {
         }
     };
     
+    /** System settings from the main program to the Chaiscript engine. */
+    struct SystemSettings {
+        bool dockerlist{false};     ///< Whether to generate node list for Docker
+        std::string dockerlistfile; ///< File name to write the node list for Docker
+        bool dryrun{false};         ///< Whether the user specifies dry-run option in the command-line
+    };
+    
     /** The function to load the Chaiscript simulation file.
      \param comm Reference to a structure containing the pointers to the communication client objects. This function will fill the structure with dynamic objects. The caller (the SMN program) must delete these object upon exiting.
      \return First value is true if the simulation will continue, false if the program should exit with the return code given in the second value.
      */
-    std::pair<bool, int> smnchai_loadscript(const std::string& script_file, const std::map<std::string, chaiscript::Boxed_Value>& arguments_map, const std::string& default_workspace,
-                                            OBNsmn::GCThread& gc, SMNChaiComm& comm);
+    std::pair<bool, int> smnchai_loadscript(const std::string& script_file,
+                                            const std::map<std::string, chaiscript::Boxed_Value>& arguments_map,
+                                            const std::string& default_workspace,
+                                            OBNsmn::GCThread& gc,
+                                            SMNChaiComm& comm,
+                                            const SystemSettings& sys_settings);
 }
 #endif

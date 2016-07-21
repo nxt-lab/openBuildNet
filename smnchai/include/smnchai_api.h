@@ -16,6 +16,7 @@
 #include <map>
 #include <forward_list>
 #include <unordered_set>
+#include <list>
 //#include <utility>      // std::pair
 #include <limits>       // limits of integers (time, etc.)
 #include <iostream>
@@ -383,6 +384,10 @@ namespace SMNChai {
         
         /** Class that contains the settings of a workspace/simulation. */
         struct Settings {
+            // System settings
+            bool m_sys_run_simulation = true;   ///< System (force) setting similar to m_run_simulation which overrides that setting; not accessible to users
+            bool m_dockerlist = false;          ///< Whether to generate node list for Docker
+            
             int m_ack_timeout = 0;        ///< Timeout for ACK, in milliseconds.
             double m_final_time = std::numeric_limits<OBNsim::simtime_t>::max();      ///< The final time of simulation, real number in microseconds.
             unsigned int m_time_unit = 1;     ///< The atomic time unit, positive integer number in microseconds [default = 1 microseconds]
@@ -437,6 +442,11 @@ namespace SMNChai {
             
             std::string MQTT_server() const {
                 return m_mqtt_server;
+            }
+            
+            /* Check if the simulation will run. */
+            bool will_run_simulation() const {
+                return m_sys_run_simulation && m_run_simulation;
             }
         };
         
@@ -567,7 +577,6 @@ namespace SMNChai {
         void start_remote_node(const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag = "");
         void start_remote_node(const Node &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag = "");
         
-
         /** Wait until a node is online or a timeout.
             If the simulation is not going to run, this function will return immediately.
          \param t_node The node to wait for.
@@ -619,6 +628,31 @@ namespace SMNChai {
          Nodes are exported with compact descriptions.
          */
         void export2graphmlfile(const std::string &fn) const;
+        
+        
+        /* Register Docker container information for a given node. */
+    private:
+        struct DockerNodeInfo {
+            std::string name;       // Name of the node
+            std::string machine;    // Machine name
+            std::string image;      // Docker image name
+            std::string cmd;        // Command to run in the container
+            std::string src;        // Source of the node (code files, model files, etc.)
+        };
+        
+        std::list<DockerNodeInfo> m_docker_nodelist;
+    public:
+        // Register a Docker node
+        void obndocker_node(const SMNChai::Node& node, const std::string& machine, const std::string& image, const std::string& cmd, const std::string& src);
+        
+        // Dump to a string
+        std::string obndocker_dump() const;
+        
+        // Dump to a stream
+        std::ostream& obndocker_dump( std::ostream &os ) const {
+            os << obndocker_dump();
+            return os;
+        }
     };
     
     

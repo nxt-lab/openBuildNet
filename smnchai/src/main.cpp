@@ -19,6 +19,7 @@
 #include <map>
 
 #include <boost/filesystem.hpp>     // manipulate paths
+#include <boost/program_options.hpp>    // To parse program options (command-line arguments)
 
 #include <chaiscript/chaiscript.hpp>
 #include <smnchai.h>
@@ -50,19 +51,21 @@ const char *copyright = R"txt(
 This program is part of the openBuildNet framework developed at EPFL.
 )txt";
 
-const char *SMNChai_program_name;
+std::string SMNChai_program_name;
 
 // This structure will contain the pointers to the communication client objects (or threads)
 SMNChai::SMNChaiComm comm_objects;
 
 
 // The usage of this program
-void show_usage() {
+void show_usage(const boost::program_options::options_description& desc) {
     std::cout << "Usage:\n" <<
-    "  " << SMNChai_program_name << " SCRIPT [ARGS]\n\n" <<
+    "  " << SMNChai_program_name << " [OPTIONS] SCRIPT [SCRIPT-ARGS]\n\n" <<
     "where\n" <<
+    "  OPTIONS are options to the server program (rather than to the script)\n" <<
     "  SCRIPT is the name of the main Chaiscript file\n" <<
-    "  ARGS is an optional list of arguments to the script file.\n";
+    "  SCRIPT-ARGS is a list of key-value argument pairs to the script\n\n" <<
+    desc << '\n';
 }
 
 // Function to shut down the SMN properly
@@ -134,24 +137,24 @@ static void interrupt_signal_handler(int signal_value) {
 }
 
 // Get the named arguments to the script
-bool process_script_args(int argc, char** argv, std::map<std::string, chaiscript::Boxed_Value>& argmap)
+bool process_script_args(const std::vector<std::string>& script_args, std::map<std::string, chaiscript::Boxed_Value>& argmap)
 {
-    // We consider argument #2 onwards as named arguments to the node script; Argument #1 is the script file name.
-    char* equalsign = nullptr;
-    for (auto i=2; i < argc; ++i) {
+    using namespace std;
+    size_t equalsign;
+    for (const string& arg: script_args) {
         // Each named argument must have the form "keyword=value" and the keyword must be unique
         
-        equalsign = std::strchr(argv[i], '=');  // Find the equal sign position
-        if (!equalsign || equalsign == argv[i]) {
+        equalsign = arg.find_first_of('=');  // Find the equal sign position
+        if (equalsign == string::npos || equalsign == 0) {
             // '=' not found or keyword is empty -> invalid
-            std::cerr << "ERROR: Invalid named argument: " << argv[i] << '\n';
+            std::cerr << "ERROR: Invalid script argument: " << arg << '\n';
             return false;
         }
         
         // Extract the key string and trim it
-        std::string keystr(OBNsim::Utils::trim(std::string(argv[i], equalsign-argv[i])));
+        std::string keystr = OBNsim::Utils::trim(arg.substr(0, equalsign));
         if (keystr.empty()) {
-            std::cerr << "ERROR: Named argument has empty key: " << argv[i] << '\n';
+            std::cerr << "ERROR: Named argument has empty key: " << arg << '\n';
             return false;
         }
         
@@ -162,17 +165,15 @@ bool process_script_args(int argc, char** argv, std::map<std::string, chaiscript
         }
         
         // Now we can register the key-value pair to the map
-        argmap.emplace(keystr, chaiscript::Boxed_Value(std::string(equalsign+1)));
+        argmap.emplace(keystr, chaiscript::Boxed_Value( (equalsign+1<arg.length())?arg.substr(equalsign+1):"" ));   // If value is empty => ""
     }
     
     return true;
 }
 
-
-
 int main(int argc, char* argv[]) {
     // Save the program name
-    SMNChai_program_name = argv[0];
+    SMNChai_program_name = boost::filesystem::path(argv[0]).filename().string();
     
 #ifdef OBNSIM_COMM_YARP
     yarp::os::Network yarp;
@@ -181,28 +182,87 @@ int main(int argc, char* argv[]) {
     
     std::cout << copyright << std::endl;
     
-    // Check input arguments
-    if (argc < 2) {
-        // Not enough input args
-        std::cerr << "ERROR: Not enough input arguments\n\n";
-        show_usage();
+    /***************** Parse input arguments ******************/
+    
+    namespace po = boost::program_options;
+    
+    po::options_description smnchai_options("SMNChai options");
+    smnchai_options.add_options()
+    ("help,h", "Show help")
+    ("dry-run", "Force dry-run (no simulation)")
+    ("dockerlist", po::value<std::string>(), "Generate node list for Docker without running simulation")
+    ;
+    
+    // Hidden options, will not be shown to the user
+    po::options_description hidden_options("Hidden options");
+    hidden_options.add_options()
+    ("script-file", po::value<std::string>(), "script file")
+    ("script-args", po::value< std::vector<std::string> >(), "script args")
+    ;
+    
+    po::positional_options_description pos_options;
+    pos_options.add("script-file", 1).add("script-args", -1);
+    
+    // All options to parse
+    po::options_description all_options;
+    all_options.add(smnchai_options).add(hidden_options);
+    
+    // Parse the arguments
+    po::variables_map args_map;
+    try {
+        po::store(po::command_line_parser(argc, argv).
+                  options(all_options).positional(pos_options).run(), args_map);
+        po::notify(args_map);
+    } catch ( po::error& e) {
+        std::cerr << "ERROR: Invalid command-line arguments. Use --help for help.\n";
+        return 2;
+    }
+    
+    if (args_map.count("help")) {
+        // Print help
+        show_usage(smnchai_options);
         return 1;
     }
     
+    if (!args_map.count("script-file")) {
+        // No script file
+        std::cerr << "ERROR: A script file is not provided. Use --help for help.\n";
+        return 2;
+    }
+    
     // Get and check the script file
-    boost::filesystem::path script_file(argv[1]);
+    boost::filesystem::path script_file(args_map["script-file"].as<std::string>());
     if (!boost::filesystem::exists(script_file) || !boost::filesystem::is_regular_file(script_file)) {
-        std::cerr << "ERROR: The script file " << script_file << " does not exist.\n\n";
-        show_usage();
-        return 1;
+        std::cerr << "ERROR: The script file " << script_file << " does not exist.\n";
+        return 2;
     }
     
     // Extract input arguments to the script
     std::map<std::string, chaiscript::Boxed_Value> arguments_map;   // The map of arguments to the node script
-    if (!process_script_args(argc, argv, arguments_map)) {
-        show_usage();
-        return 2;
+    if (args_map.count("script-args")) {
+        if (!process_script_args(args_map["script-args"].as< std::vector<std::string> >(), arguments_map)) {
+            return 2;
+        }
+
     }
+    
+    // System settings
+    SMNChai::SystemSettings sys_settings;
+    sys_settings.dockerlist = args_map.count("dockerlist") != 0;     // Whether we want to generate the list of nodes for Docker
+    sys_settings.dryrun = args_map.count("dry-run") != 0;
+
+    if (sys_settings.dockerlist) {
+        // Check output file
+        sys_settings.dockerlistfile = args_map["dockerlist"].as<std::string>();
+        
+        /* Does not work properly
+        if (!boost::filesystem::portable_posix_name(sys_settings.dockerlistfile)) {
+            std::cerr << "ERROR: The Docker node list file name " << sys_settings.dockerlistfile << " is invalid.\n";
+            return 2;
+        }*/
+    }
+    
+    /***************** Main program ******************/
     
     {
         // Set the handler for unexpected termination
@@ -220,7 +280,7 @@ int main(int argc, char* argv[]) {
         main_gcthread = &gc;
         
         // Run Chaiscript to load the network
-        auto load_script_result = SMNChai::smnchai_loadscript(script_file.string(), arguments_map, script_file.stem().string(), gc, comm_objects);
+        auto load_script_result = SMNChai::smnchai_loadscript(script_file.string(), arguments_map, script_file.stem().string(), gc, comm_objects, sys_settings);
         
         if (!load_script_result.first) {
             shutdown_SMN();

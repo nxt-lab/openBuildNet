@@ -18,6 +18,8 @@
 #include <fstream>
 #include <iomanip>
 
+#include <chaiscript/utility/json.hpp>
+
 #include <obnsmn_report.h>
 #include <smnchai_api.h>
 
@@ -62,7 +64,7 @@ void SMNChai::run_remote_command(const std::string &t_node, const std::string &t
 
 void SMNChai::WorkSpace::start_remote_node(const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag) {
     // Only start if node is not online
-    if (m_settings.m_run_simulation && !is_node_online(t_node)) {
+    if (m_settings.will_run_simulation() && !is_node_online(t_node)) {
         if (t_tag.empty()) {
             SMNChai::run_remote_command(t_computer, t_node, t_prog, t_args);
         } else {
@@ -155,7 +157,7 @@ bool SMNChai::WorkSpace::start_mqtt_client() {
 //}
 
 //void SMNChai::WorkSpace::waitfor_node_online(const std::string &t_node, double timeout) const {
-//    if (!m_settings.m_run_simulation) {
+//    if (!m_settings.will_run_simulation()) {
 //        // If not going to run simulation then we should not wait
 //        return;
 //    }
@@ -182,7 +184,7 @@ bool SMNChai::WorkSpace::start_mqtt_client() {
 //}
 
 void SMNChai::WorkSpace::waitfor_node_online(const SMNChai::Node &t_node, double timeout) {
-    if (!m_settings.m_run_simulation) {
+    if (!m_settings.will_run_simulation()) {
         // If not going to run simulation then we should not wait
         return;
     }
@@ -209,7 +211,7 @@ void SMNChai::WorkSpace::waitfor_node_online(const SMNChai::Node &t_node, double
 }
 
 void SMNChai::WorkSpace::waitfor_all_nodes_online(double timeout) {
-    if (!m_settings.m_run_simulation) {
+    if (!m_settings.will_run_simulation()) {
         // If not going to run simulation then we should not wait
         return;
     }
@@ -800,3 +802,31 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc, SMNChai::SMNC
     }
 }
 
+
+void SMNChai::WorkSpace::obndocker_node(const SMNChai::Node& node, const std::string& machine, const std::string& image, const std::string& cmd, const std::string& src)
+{
+    // name, machine, image, cmd, src
+    m_docker_nodelist.push_back({node.get_name(), machine, image, cmd, src});
+}
+
+// Dump the node list for Docker to JSON string
+std::string SMNChai::WorkSpace::obndocker_dump() const {
+    using namespace json;
+    JSON nodelist;    // Array of nodes
+    
+    int k = 0;
+    for (auto it = m_docker_nodelist.begin(); it != m_docker_nodelist.end(); ++it, ++k) {
+        // For each node, convert it to a JSON object
+        JSON obj;
+        obj["name"] = JSON(it->name);
+        obj["machine"] = JSON(it->machine);
+        obj["image"] = JSON(it->image);
+        obj["cmd"] = JSON(it->cmd);
+        obj["source"] = JSON(it->src);
+        
+        // and add to the list
+        nodelist[k] = obj;
+    }
+    
+    return nodelist.dump();
+}
