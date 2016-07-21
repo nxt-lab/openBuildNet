@@ -6,6 +6,7 @@ workspace("disttracking");
 settings.time_unit(millisecond);
 settings.final_time(10*minute);
 settings.default_comm("mqtt");	// Can change the default communication
+settings.MQTT_server((args.count("mqtt")>0)?args.at("mqtt"):"tcp://localhost:1883");
 
 // Do not run simulation
 //run_simulation(false);
@@ -48,7 +49,7 @@ for (auto i = 1; i <= nNodes; ++i) {
     // Start remote plant/battery nodes early
     start_remote_node(plant, "/truongpc",
                       "/Users/truong/work/working/obn/nodechai/build/Debug/obnchai",
-                      "/Users/truong/work/working/obn/tests/testadmm/admm_tracking/plant.ons id=${i} alpha=1 lstate=0 hstate=20 istate=10 linput=-1 hinput=1");
+                      "/Users/truong/work/working/obn/tests/testadmm/admm_tracking/plant.ons id=${i} alpha=1 lstate=0 hstate=20 istate=10 linput=-1 hinput=1 mqtt=${settings.MQTT_server()}");
   
     // Create the local controller node
     var ctrl = node(["name" : "Controller${i}",
@@ -107,7 +108,7 @@ add_node(recorder);
 // Start the recorder
 start_remote_node(recorder, "/truongpc",
 				  "/Users/truong/work/working/obn/nodechai/build/Debug/obnchai",
-				  "/Users/truong/work/working/obn/tests/testadmm/admm_tracking/recorder.ons n=${nNodes} file=/Users/truong/work/working/obn/tests/testadmm/admm_tracking/plantoutputs.txt");
+				  "/Users/truong/work/working/obn/tests/testadmm/admm_tracking/recorder.ons n=${nNodes} file=/Users/truong/work/working/obn/tests/testadmm/admm_tracking/plantoutputs.txt mqtt=${settings.MQTT_server()}");
 
 // Print the system to the screen to check its correctness
 print_system();

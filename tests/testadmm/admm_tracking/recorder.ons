@@ -44,7 +44,7 @@ def doRecord(all_inputs) {
 }
 
 // Create node, then its input and output ports
-set_comm_mqtt("tcp://localhost:1883");
+set_comm_mqtt( (args.count("mqtt")>0)?args.at("mqtt"):"tcp://localhost:1883" );
 set_node_name( (args.count("name")>0)?args.at("name"):"recorder" );
 set_workspace("disttracking");
 

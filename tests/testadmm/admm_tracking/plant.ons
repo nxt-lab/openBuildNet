@@ -61,7 +61,7 @@ def doMainUpdate(state, u_in, u_out) {
 }
 
 // Create node, then its input and output ports
-set_comm_mqtt("tcp://localhost:1883");
+set_comm_mqtt( (args.count("mqtt")>0)?args.at("mqtt"):"tcp://localhost:1883" );
 set_node_name("plant" + args.at("id"));
 set_workspace("disttracking");
 // set_timeout(10);	// you can set timeout for the node (in seconds)

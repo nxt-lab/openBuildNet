@@ -14,6 +14,9 @@ settings.MQTT_server((args.count("mqtt")>0)?args.at("mqtt"):"tcp://localhost:188
 //settings.MQTT_server("tcp://test.mosquitto.org:1883");  // Public Mosquitto test server
 //settings.MQTT_server("tcp://172.17.0.3:1883");
 
+// How to get the source files into the containers / nodes
+var file_source = "v:/Users/truong/work/working/obn/tests/testjulia";
+
 var othernode = node(
     ["name" : "othernode",
 	 "inputs" : ["uScalarDouble", "uVectorDouble", "uMatrixDouble"],
@@ -21,6 +24,10 @@ var othernode = node(
 	 "blocks" : [["sampling" : 1*second, "outputs" : ["yScalarDouble", "yVectorDouble", "yMatrixDouble"]] // , "yVectorDouble2"
 			    ]
 	]);
+// Docker node def
+//obndocker_node(othernode, "", "base", "obnchai /obnsim/othernode.ons mqtt={OBNMQTT}", file_source);
+obndocker_node(othernode, "", "base", "obnchai /obnsim/othernode.ons mqtt={OBNMQTT}",
+               "f:https://raw.githubusercontent.com/LA-EPFL/openBuildNet/master/tests/testjulia/othernode.ons:othernode.ons");
 
 var extnode = node(
     ["name" : "extnode",
@@ -33,6 +40,10 @@ var extnode = node(
          ]
 	 ]
 	]);
+// Docker node def
+//obndocker_node(extnode, "", "julia", "julia /obnsim/extnode.jl {OBNMQTT}", file_source);
+obndocker_node(extnode, "", "julia", "julia /obnsim/extnode.jl {OBNMQTT}",
+              "f:https://raw.githubusercontent.com/LA-EPFL/openBuildNet/master/tests/testjulia/extnode.jl:extnode.jl");
 
 connect(othernode.port("yScalarDouble"), extnode.port("input_scalardouble"));
 connect(othernode.port("yVectorDouble"), extnode.port("input_vectordouble"));

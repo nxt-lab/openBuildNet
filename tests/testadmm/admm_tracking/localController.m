@@ -16,7 +16,7 @@ classdef localController < OBNNode
         WORKSPACE = 'disttracking';
         
         COMM_TYPE = 'mqtt';             % the communication type, yarp or mqtt
-        COMM_PARAMS = '';               % the communication parameter
+        COMM_PARAMS = 'tcp://128.178.5.139:1883';               % the communication parameter
         
         % Any constant parameters (for all local nodes) can be placed here
     end
