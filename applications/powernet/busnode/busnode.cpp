@@ -181,11 +181,12 @@ public:
     
     /* This callback is called everytime this node's simulation starts or restarts.
      This is different from initialize() above. */
-    virtual void onInitialization() {
+    virtual int64_t onInitialization() {
         // Initial state and output
         this->m_output_grid = m_const_value;
         
         std::cout << "At " << this->currentSimulationTime() << " INIT" << std::endl;
+        return 0;
     }
     
     /* This callback is called when the node's current simulation is about to be terminated. */
@@ -595,13 +596,14 @@ public:
     
     /* This callback is called everytime this node's simulation starts or restarts.
      This is different from initialize() above. */
-    virtual void onInitialization() {
+    virtual int64_t onInitialization() {
         // Clear the memory for individual P's and Q's
         VWithLimits v{0.0, 0.0, 0.0};
         m_Ps.assign(m_nUsers, v);
         m_Qs.assign(m_nUsers, v);
         
         std::cout << "At " << this->currentSimulationTime() << " INIT" << std::endl;
+        return 0;
     }
     
     /* This callback is called when the node's current simulation is about to be terminated. */
