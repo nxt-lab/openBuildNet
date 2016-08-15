@@ -202,6 +202,7 @@ MQTTNodeExt::~MQTTNodeExt() {
 int MQTTNodeExt::runStep(double timeout) {
     if (_node_state == NODE_ERROR) {
         // We can't continue in error state
+        reportError("Node is in error state; can't continue simulation; please stop the node to clear the error state before continuing.");
         return 3;
     }
 
@@ -505,7 +506,6 @@ int simRunStep(size_t nodeid, double timeout, unsigned int* event_type, OBNEI_Ev
     
     // Handle the special cases
     if (result == 3) {
-        reportError("Node is in error state; can't continue simulation; please stop the node to clear the error state before continuing.");
         return result;
     }
     
