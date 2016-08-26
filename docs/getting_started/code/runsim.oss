@@ -1,0 +1,44 @@
+// -*- mode: javascript; -*-
+// Tutorial: control a DC motor.
+workspace("test2");
+settings.time_unit(millisecond);
+settings.final_time(12*second);
+
+settings.default_comm("mqtt");	// Can change the default communication
+settings.MQTT_server((args.count("mqtt")>0)?args.at("mqtt"):"tcp://localhost:1883");
+
+var motordef =
+	["name" : "motor",
+	 "inputs" : ["vol"],
+	 "outputs" : ["v"],
+	 "blocks" : [["sampling" : 100*millisecond,
+				  "outputs" : ["v"]]
+				]
+	];
+var motor = node(motordef);
+
+var ctrldef =
+	["name" : "ctrl",
+	 "inputs" : ["v", "sp"],
+	 "outputs" : ["u"],
+	 "blocks" : [["sampling" : 100*millisecond,
+				  "inputs" : ["v", "sp"],
+				  "outputs" : ["u"]]
+				]
+	];
+var ctrl = node(ctrldef);
+
+var sp = node(["name" : "sp",
+			   "outputs" : ["sp"],
+			   "blocks" : [["sampling": 4*second,
+							"outputs": ["sp"]]]
+			  ], false);
+sp.need_updateX(false);
+add_node(sp);
+
+connect(sp.port("sp"), ctrl.port("sp"));
+connect(motor.port("v"), ctrl.port("v"));
+connect(ctrl.port("u"), motor.port("vol"));
+
+print_system();
+waitfor_all_nodes(30);

@@ -1,0 +1,276 @@
+#+SETUPFILE: theme-readtheorg-local.setup
+#+OPTIONS: ':nil *:t -:t ::t <:t H:3 \n:nil ^:nil arch:headline author:t c:nil
+#+OPTIONS: creator:nil d:(not "LOGBOOK") date:t e:t email:nil f:t inline:t
+#+OPTIONS: num:t p:nil pri:nil prop:nil stat:t tags:t tasks:t tex:t timestamp:t
+#+OPTIONS: title:t toc:t todo:t |:t
+#+TITLE: Getting Started with OpenBuildNet
+#+AUTHOR: Truong X. Nghiem
+#+EMAIL: 
+#+LANGUAGE: en
+#+SELECT_TAGS: export
+#+EXCLUDE_TAGS: noexport
+#+CREATOR: Emacs 24.5.7 (Org mode 8.3.4)
+#+LATEX_CLASS: article
+#+LATEX_CLASS_OPTIONS: [a4paper]
+#+LATEX_HEADER: \usepackage{fullpage}
+#+LATEX_HEADER_EXTRA:
+#+DESCRIPTION:
+#+KEYWORDS:
+#+SUBTITLE: Docker-based Distribution
+#+MACRO: OBN OpenBuildNet
+#+MACRO: comment 
+
+* Introduction
+
+{{{OBN}}} is an open-source framework for distributed co-simulation, where specialized and sophisticated simulation tools in various fields are incorporated in a common platform to study the interdependencies between the subsystems.
+The main goal of {{{OBN}}} is to provide a /framework and software tools for large-scale distributed co-simulation of complex systems/, with /intended applications in smart energy systems/ such as smart buildings, power grids, and optimization-based controllers.
+Most of the time, such co-simulation systems are heterogeneous, which involves subsystems of different types and on potentially vastly different time scales.
+For example, a smart grid simulation may contain buildings, which have very slow thermal dynamics and fast electrical system dynamics, and the power grid with a very fast sub-second time scale.
+Furthermore, subsystems come in different forms and sizes: from large and highly sophisticated simulators such as EnergyPlus, to moderately complex controllers prototyped in Matlab or Python, to simple rule-based controllers implemented in C.
+{{{OBN}}} aims to support simulation systems composed of many heterogeneous sub-simulators distributed over multiple networked computers.
+It allows integration of specialized or legacy tools into the co-simulation to lower the barrier for adoption and reuse their industrial-strength, highly developed functionality.
+# Here, a computer is any physical or virtual device capable of computing, including  embedded computers and virtual cloud-computing instances.
+# e.g., an ordinary computer, an embedded computer like the RaspberryPi, or a virtual cloud-computing instance.
+
+
+{{{OBN}}} targets {{{comment(users who are)}}} researchers and engineers in control, optimization, and computer science, who wish to apply their expertise and techniques to smart energy systems.
+With {{{OBN}}}, researchers and engineers can comfortably implement large-scale heterogeneous co-simulations from within their familiar scientific computing environments and languages such as Matlab and Python.
+
+
+* Installation
+
+With the Docker-based distribution, it is quick and easy to start using {{{OBN}}}.
+It is also easy to deploy an {{{OBN}}} simulation on to any computers running major operating systems such as Linux, Windows, and Mac OS, or on to a cloud computing service such as the Amazon Elastic Compute Cloud (EC2).
+
+** Prerequisites
+
+ We will assume that the user is familiar with the Docker technology, understands the terms /container/ and /image/, and knows how to run and manage Docker containers.
+ If these sound unfamiliar to you, it is necessary to get acquainted with Docker by following the introduction and tutorial on the Docker [[http://www.docker.com/][website]].
+ The user must also be comfortable with using the terminal and writing and running commands at the terminal prompt.
+ In this tutorial we will demonstrate the steps in a Unix-like environment (such as Linux and Mac OS), however it is straightforward to translate the commands into Windows.
+
+** Docker installation
+
+A recent version of Docker must be installed on any computer that needs to run the Docker-based distribution of {{{OBN}}}.
+Follow the instructions on the Docker [[http://www.docker.com/][website]] to install Docker on your system.
+
+** Pull the Docker images of {{{OBN}}}
+
+   The Docker-based distribution of {{{OBN}}} consists of several pre-built images.
+   Each image targets specific uses.
+   This is to keep the size of the packages small because a complete {{{OBN}}} package for all language interfaces and all applications (e.g., EnergyPlus) will be huge.
+   This also aligns with the layer-based architecture of Docker images.
+   Based on the need of the user, appropriate images should be pulled to the user's system.
+   The appendix lists all currently available Docker images for {{{OBN}}}.
+   
+   In this tutorial, we will need the base image and the Python interface, hence we will pull these two images from the Docker hub by executing the following two commands in the terminal.
+#+BEGIN_SRC sh
+$ docker pull nxtruong/obnbase
+$ docker pull nxtruong/obnpy:2.7
+#+END_SRC
+
+** MQTT Broker
+
+{{{OBN}}} requires a messaging framework for the communication between nodes.
+Currently, only MQTT is supported by the Docker-based distribution.
+An MQTT broker is therefore needed to be available and accessible by all computers running the simulation.
+For the purpose of this tutorial, a local MQTT broker running on the same computer will suffice.
+However, for distributed simulations running on multiple computers, a broker running on the local network, or a public broker on the Internet, is necessary.
+If you already have an MQTT broker available (let us call the complete IP address of the broker as =MQTTBROKER=), you can skip the rest of this section.
+
+There are several options to make an MQTT broker available for this tutorial.
+1. Use a public MQTT broker on the Internet, for example: =tcp://test.mosquitto.org:1883=.  This is the easiest way but also the slowest and most unreliable way because the public broker is usually overloaded.  Use this only for testing, not for final deployment and simulation runs.
+2. Run a dedicated MQTT broker on the local network.  This requires the installation of an MQTT broker such as [[http://mosquitto.org/][Mosquitto]] on a local computer which can be accessed from other computers on the network.  On Mac, one can use Homebrew; on Linux, mosquitto is available on most official repositories (Debian, Ubuntu, etc.); on Windows, a binary installation is provided on Mosquitto's website.  This is the fastest and most reliable option.
+3. The {{{OBN}}} base image includes Mosquitto.  One can start the broker in a container and expose the MQTT port so that other computers can access it.  If all nodes run on the same machine, a default bridge network between the containers can be used and the MQTT port does not need to be exposed.  This option does not require any installation, is reliable, but slower than the previous option because of the Docker's network emulation.
+
+  
+In any case, we will use =MQTTBROKER= to denote the complete IP address of the MQTT broker.
+The next subsection details the steps to start the built-in Mosquitto broker in the {{{OBN}}} base image (the last option above).
+
+*** Using the built-in MQTT broker
+
+- Open a terminal window and run the following command:
+  #+BEGIN_SRC shell
+  $ docker run -d --name mqttserver nxtruong/obnbase start_mqttserver
+  #+END_SRC
+  This starts an MQTT broker in a container named /mqttserver/ as a daemon (service).  The prompt will return immediately, however the container is still running in the background.
+- Obtain the IP of the broker by running the following command in the terminal:
+  #+BEGIN_SRC shell
+  $ docker inspect --format '{{ .NetworkSettings.IPAddress }}' mqttserver
+  #+END_SRC
+  This prints out the IP address of the container /mqttserver/.  Append the IP with the port number =:1883= and prepend it with =tcp://= to get =MQTTBROKER=.  For example: =tcp://172.17.0.2:1883=.
+
+
+* Overview of OpenBuildNet Architecture
+
+This section briefly describes the architecture and the most important concepts of {{{OBN}}} from the users' perspective.  {{{comment(Indeed, a user only needs to understand these concepts to effectively use the framework.)}}}
+
+
+** Nodes as the Building Blocks
+
+A distributed co-simulation in {{{OBN}}} is a /synchronous simulation distributed to multiple computation nodes/.
+The nodes run their own local simulations in parallel, which are synchronized and driven by a global clock at discrete time instants.
+A global synchronization mechanism is required because nodes, as sub-simulators, often realize dynamical systems with differing sampling rates and computation speed.
+This heterogeneity and multi-timescale nature is particularly typical in the target applications of {{{OBN}}} in large-scale energy systems.
+# , which often consist of various types of components ranging from fast electrical systems to slow thermal dynamical systems.
+
+{{{OBN}}} considers the node model illustrated in Figure\nbsp{}ref:fig:node-model.
+/Nodes exchange data with other nodes through ports./
+The ports of a node represent its abstract interface to the external environment.
+A /physical port/ is a port whose data exchanges are synchronized and strictly managed by the global clock.
+As a result, a physical port is either an input or an output exclusively.
+In contrast, a /data port/ is not synchronized nor managed by the global clock and can possibly be bidirectional.
+Each node and port must have a unique valid identifier, which is a sequence of alphanumeric and the underscore (``_'') characters and may only begin with a letter.
+For example, input port =i1= in Figure\nbsp{}ref:fig:node-model is uniquely identified by =Node/i1=.
+# The node model in Figure\nbsp{}ref:fig:node-model has six physical input ports on the left, five physical output ports on the right, and one data port =d1= at the bottom right.
+# As physical ports are more commonly used in {{{OBN}}}, hereafter we always mean a physical port when we mention a port, an input port, or an output port.
+# A data port will always be explicitly referred to using the full term.
+
+
+Because in practice a node may consist of multiple subsystems, it is functionally divided into /computation blocks/ (or /blocks/ for short).
+For instance, a building node may simulate both the fast electrical system dynamics and the slow thermal dynamics as two blocks.
+A block is essentially a computation unit that may read certain inputs and may compute the values of certain outputs of the node containing it.
+This computation is triggered either periodically at a sampling time associated with the block, or non-periodically by requests during run-time, or both.
+Each block must have a non-negative sampling time.
+The blocks of a node may have different sampling times.
+For example, the node illustrated in Figure\nbsp{}ref:fig:node-model has two periodic blocks {{{comment(at sampling times of 10 minutes and 30 seconds respectively,)}}} and a non-periodic block ($T=0$).
+Note that in this case, block 3 can only be triggered by non-periodic execution requests.
+
+#+ATTR_LATEX: :width 0.5\columnwidth :placement [tb]
+#+CAPTION: Model of a node in {{{OBN}}} with physical input (output) ports depicted on the left (right) and a data port.  Blocks 1 and 2 are executed every 10 minutes and 30 seconds respectively, block 3 is non-periodic.
+#+NAME: fig:node-model
+[[file:obn_node_model.png]]
+
+# More details on this node model are presented in Section\nbsp{}ref:sec:design:node-model.
+
+
+# Each node must have a unique valid name, or /identifier/, to distinguish it from other nodes.
+# Similarly, each port must have a unique identifier among all ports of its node.
+# A valid identifier is a sequence of characters that contains only alphanumeric characters and the underscore ``_'', and may only begin with a letter.
+# A port is thus uniquely identified by its node's name and its own name (e.g., =Node/i1= in Figure\nbsp{}ref:fig:node-model).
+# Identifiers in {{{OBN}}} are case-insensitive.  This choice was made to ensure compatibility with all future supported communication frameworks.
+
+
+** Distributed Network of Nodes
+
+A simulation system is therefore a network of nodes connected in a certain topology.
+In {{{OBN}}} a system node, called the /System Management Node/ (SMN), synchronizes the computation of all other nodes and drives the entire simulation.
+As its name suggests, it also manages the entire node network besides running the simulation, e.g., adding nodes to the network and handling system errors.
+Every node must connect to and communicate with the SMN in order to participate in the co-simulation. {{{comment(In other words, the SMN can be considered as the central server of an {{{OBN}}} network.)}}}
+This architecture is illustrated in Figure\nbsp{}ref:fig:node-network.
+
+Nodes can be distributed across multiple computers over a communication network (possibly the Internet).
+Furthermore, nodes exchange data with each other through their ports and direct peer-to-peer links, i.e., their communications are not routed through the SMN.
+This decentralized architecture reduces the communication overhead and helps {{{OBN}}} scale up without difficulty.
+# and allows it to run on cloud computing platforms such as the Amazon Web Services.
+
+#+ATTR_LATEX: :width 0.5\columnwidth :placement [tb]
+#+CAPTION: {{{OBN}}} network of nodes:  the SMN manages the entire network and coordinates the co-simulation through system communication connections with the nodes (dashed lines).  Nodes communicate directly with each other through their ports and peer-to-peer communication links (solid lines).\vspace{-12pt}
+#+NAME: fig:node-network
+[[file:obn_network.png]]
+
+
+** Execution and Synchronization
+
+The execution of a block of a node is split into two stages.
+In the first stage, called /output update/, the block computes and sends out its outputs.
+This computation may depend directly on the current values of certain inputs; in that case the block is said to have direct feedthrough from those inputs.
+In the second stage, called /state update/, the block updates its internal states.
+
+/{{{OBN}}} blocks are loosely coupled and only their boundary states are synchronized during the *output update* stage at discrete-time steps, by exchanging data through their input and output ports./
+This synchronization mechanism is controlled by the SMN via system messages.
+The interdependencies between blocks determined by their direct feedthrough properties and the system topology define a partial order between them at any time instant. {{{comment(, represented by a /dependency graph/.)}}}
+The SMN enforces the relative order between blocks by issuing system messages in a precise order decided by a graph-based algorithm.
+It also detects /algebraic loops/, situations in which two blocks have circular dependency between them and their synchronization cannot be resolved.
+Blocks that have no relative order between them can be executed simultaneously and hence enjoy the computational speed-up benefit of distributed computation.
+
+
+
+# The direct feedthrough property of a block on an input determines its dependency on other blocks: any block that feeds values to the input must be executed before it.
+# This kind of relationship defines a partial order of blocks at any time instant, represented by a /dependency graph/.
+# Blocks that have no dependency between them can be executed simultaneously and hence enjoy the computational speed-up benefit of distributed computation.
+# This synchronization between blocks is handled automatically by the global clock algorithm in the SMN.
+# However, if two blocks have circular dependency between them, their synchronization cannot be resolved, causing an error.
+# This situation is called an /algebraic loop/ and is prohibited and automatically detected by the SMN.
+
+Details on the synchronization mechanism of {{{OBN}}} can be found in the technical documents on our website.
+
+
+
+* Tutorial: Control System Simulation
+
+In this tutorial, we will develop an {{{OBN}}} simulation of a control system in Python.
+The tutorial illustrates the most important and commonly used concepts and features in implementing {{{OBN}}} nodes and simulations.
+
+** The control system
+
+We will implement a control system depicted in Figure\nbsp{}ref:fig:control-system.
+This is a simple feedback control system of a DC motor model.
+Note that the focus of this tutorial is on the {{{OBN}}} simulation implementation, not on the control design of the system.
+
+#+BEGIN_SRC ditaa :file controlsystem.png :exports none
++----------+         +------------+         +-------------+
+| Setpoint |         | Controller |         |    Motor    |
++----------+         +------------+         +-------------+
+|        sp+-------->|sp         u+-------->|vol         v+--+
++----------+   +---->|v           |         +-------------+  |
+               |     +------------+                          |
+               |                                             |
+               +---------------------------------------------+
+#+END_SRC
+
+#+ATTR_LATEX: :width 0.7\columnwidth :placement [tb]
+#+CAPTION: Block diagram of the control system in the tutorial.
+#+NAME: fig:control-system
+[[file:controlsystem.png]]
+
+The system consists of three nodes: a motor node (the plant), a setpoint node, and a controller node.
+- Setpoint node: this node sets the velocity setpoint.  It has a single output =sp= which is the setpoint value, and no input.  It changes the setpoint randomly every 4 seconds, therefore its sampling time is 4 seconds.
+- Motor node: this node implements the motor's dynamics.  It has one input =vol= which is the input voltage and one output =v= which is the velocity.  The motor's discrete-time dynamics are given by the state-space equations \(x_m(t+1) = A_m x_m(t) + B_m vol(t)\) and \(v(t) = C_m x_m(t)\), where \(x_m \in \mathbb{R}^2\) is the motor's state vector,
+  \[ A_m = \begin{bmatrix} 1.511 & -0.5488 \\ 1 & 0 \end{bmatrix}, \quad
+     B_m = \begin{bmatrix} 0.0625 \\ 0 \end{bmatrix}, \quad
+     C_m = \begin{bmatrix} 0.03294 & 0.02697 \end{bmatrix} \]
+  and with sampling time of 0.1 second.
+- Controller node: this node implements the controller.  It has two inputs: =sp= receives the setpoint from the Setpoint node and =v= receives the velocity feedback measurement from the Motor node.  It produces one output: =u= is the control command to the motor in the form of the input voltage.  The controller implements the discrete-time equations \(x_c(t+1) = A_c x_c(t) + B_c (sp(t) - v(t))\) where \(x_c \in \mathbb{R}^3\) is the controller's internal state vector, and
+  \[ A_c = \begin{bmatrix} -0.82 & 1.0 & 0.82 \\ 1 & 0 & 0 \\ 0 & 1 & 0 \end{bmatrix}, \quad
+     B_c = \begin{bmatrix} 32 \\ 0 \\ 0 \end{bmatrix}, \quad
+     C_c = \begin{bmatrix} 12.62 & -19.75 & 7.625 \end{bmatrix} \]
+  The sampling time is also 0.1 second.
+
+
+** Design of the {{{OBN}}} simulation
+
+** The setpoint node
+
+** The plant node
+
+** The controller node
+
+** The simulation script
+
+** Running the simulation
+
+* Customize OpenBuildNet Docker Images
+
+* Appendix
+
+** Prebuilt Docker images of {{{OBN}}}
+
+   Currently, the following images are provided.
+   - *nxtruong/obnbase*: This is the base {{{OBN}}} system (server, Chaiscript nodes, MQTT server) which can run the simulation master/server and C/C++ programs built for {{{OBN}}}.
+   - *nxtruong/obnpy*: This is the Python interface of {{{OBN}}}.  It consists of the base Python system, pip, ipython ipython-notebook, as well as the popular scientific libraries =numpy=, =scipy=, =matplotlib=.  Currently, only Python version 2.7 is available.
+   - *nxtruong/obnjulia*: This the Julia interface of {{{OBN}}}.  It consists of the current stable version of Julia (4.6 as of this writing).
+   - *nxtruong/obnjulia_opt*: This is the base Julia image above plus packages for optimization in Julia.  These additional packages include the free solvers and modeling tools available on the [[http://www.juliaopt.org/][JuliaOpt website]].
+   - *nxtruong/obneplus*: This is a customized EnergyPlus building simulator with built-in support for {{{OBN}}}.  Usually the images are built for the two most recent versions of EnergyPlus (v8.4 and v8.5 as of this writing).
+   - *nxtruong/obndockerbuild*: This is the complete C/C++ build system for {{{OBN}}}, not needed for deployment but needed for building the {{{OBN}}} itself and for building any C/C++ programs for {{{OBN}}}.  For deploying OBN nodes and for developing OBN nodes with scripting languages, this image should not be used.
+   
+
+** Applications of {{{OBN}}} Docker-based distribution
+
+ OBN's Docker images are best used for:
+ - Developing OBN simulations: place the code files in a directory on the host computer, start an appropriate OBN's Docker container and mount the code directory as a volume in the container, use your favorite editor on your host OS to develop the code and the Docker container to test run the code (which are synchronized between the host and the container).  If you use Python or Julia, you can start a Jupyter server in the container and use your web browser to develop OBN nodes interactively in a Jupyter notebook.
+ - Deploying OBN simulations: install and start Docker on the machines you want to deploy to (Docker has tools for creating and managing a swarm of machines), copy the simulation code to each machine (or place it on the Internet), then issue a single command for each node to start the node in an appropriate container.
+   
+
+ OBN's Docker images may not be used on embedded computers if Docker is not supported on those platforms.  In those cases, a local installation of OBN is often required.
+
