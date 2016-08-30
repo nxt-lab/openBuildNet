@@ -28,11 +28,13 @@ var ctrldef =
 	];
 var ctrl = node(ctrldef);
 
-var sp = node(["name" : "sp",
-			   "outputs" : ["sp"],
-			   "blocks" : [["sampling": 4*second,
-							"outputs": ["sp"]]]
-			  ], false);
+var spdef =
+	["name" : "sp",
+	 "outputs" : ["sp"],
+	 "blocks" : [["sampling": 4*second,
+				  "outputs": ["sp"]]]
+	];
+var sp = node(spdef, false);
 sp.need_updateX(false);
 add_node(sp);
 

@@ -19,6 +19,7 @@
 #+SUBTITLE: Docker-based Distribution
 #+MACRO: OBN OpenBuildNet
 #+MACRO: comment 
+#+PROPERTY: header-args    :eval no
 
 * Introduction
 
@@ -40,7 +41,7 @@ With {{{OBN}}}, researchers and engineers can comfortably implement large-scale 
 * Installation
 
 With the Docker-based distribution, it is quick and easy to start using {{{OBN}}}.
-It is also easy to deploy an {{{OBN}}} simulation on to any computers running major operating systems such as Linux, Windows, and Mac OS, or on to a cloud computing service such as the Amazon Elastic Compute Cloud (EC2).
+It is also easy to deploy an {{{OBN}}} simulation onto any computers running major operating systems such as Linux, Windows, and Mac OS, or onto a cloud computing service such as the Amazon Elastic Compute Cloud (EC2).
 
 ** Prerequisites
 
@@ -61,7 +62,7 @@ Follow the instructions on the Docker [[http://www.docker.com/][website]] to ins
    This is to keep the size of the packages small because a complete {{{OBN}}} package for all language interfaces and all applications (e.g., EnergyPlus) will be huge.
    This also aligns with the layer-based architecture of Docker images.
    Based on the need of the user, appropriate images should be pulled to the user's system.
-   The appendix lists all currently available Docker images for {{{OBN}}}.
+   The [[*Appendix][Appendix]] lists all currently available Docker images for {{{OBN}}}.
    
    In this tutorial, we will need the base image and the Python interface, hence we will pull these two images from the Docker hub by executing the following two commands in the terminal.
 #+BEGIN_SRC sh
@@ -99,6 +100,16 @@ The next subsection details the steps to start the built-in Mosquitto broker in 
   $ docker inspect --format '{{ .NetworkSettings.IPAddress }}' mqttserver
   #+END_SRC
   This prints out the IP address of the container /mqttserver/.  Append the IP with the port number =:1883= and prepend it with =tcp://= to get =MQTTBROKER=.  For example: =tcp://172.17.0.2:1883=.
+
+
+Because the built-in MQTT broker is running in the background, we should stop it when it is not needed anymore.
+In any terminal window:
+#+BEGIN_SRC shell
+$ docker stop mqttserver
+$ docker rm mqttserver
+#+END_SRC
+The first command stops the container; the second command deletes the container.
+Note that a stopped container still exists and uses disk space in the system, until it is removed.
 
 
 * Overview of OpenBuildNet Architecture
@@ -225,13 +236,13 @@ Note that the focus of this tutorial is on the {{{OBN}}} simulation implementati
 [[file:controlsystem.png]]
 
 The system consists of three nodes: a motor node (the plant), a setpoint node, and a controller node.
-- Setpoint node: this node sets the velocity setpoint.  It has a single output =sp= which is the setpoint value, and no input.  It changes the setpoint randomly every 4 seconds, therefore its sampling time is 4 seconds.
-- Motor node: this node implements the motor's dynamics.  It has one input =vol= which is the input voltage and one output =v= which is the velocity.  The motor's discrete-time dynamics are given by the state-space equations \(x_m(t+1) = A_m x_m(t) + B_m vol(t)\) and \(v(t) = C_m x_m(t)\), where \(x_m \in \mathbb{R}^2\) is the motor's state vector,
+- *Setpoint node*: this node sets the velocity setpoint.  It has a single output =sp= which is the setpoint value, and no input.  It changes the setpoint randomly every 4 seconds, therefore its sampling time is 4 seconds.
+- *Motor node*: this node implements the motor's dynamics.  It has one input =vol= which is the input voltage and one output =v= which is the velocity.  The motor's discrete-time dynamics are given by the state-space equations \(x_m(t+1) = A_m x_m(t) + B_m vol(t)\) and \(v(t) = C_m x_m(t)\), where \(x_m \in \mathbb{R}^2\) is the motor's state vector,
   \[ A_m = \begin{bmatrix} 1.511 & -0.5488 \\ 1 & 0 \end{bmatrix}, \quad
      B_m = \begin{bmatrix} 0.0625 \\ 0 \end{bmatrix}, \quad
      C_m = \begin{bmatrix} 0.03294 & 0.02697 \end{bmatrix} \]
   and with sampling time of 0.1 second.
-- Controller node: this node implements the controller.  It has two inputs: =sp= receives the setpoint from the Setpoint node and =v= receives the velocity feedback measurement from the Motor node.  It produces one output: =u= is the control command to the motor in the form of the input voltage.  The controller implements the discrete-time equations \(x_c(t+1) = A_c x_c(t) + B_c (sp(t) - v(t))\) where \(x_c \in \mathbb{R}^3\) is the controller's internal state vector, and
+- *Controller node*: this node implements the controller.  It has two inputs: =sp= receives the setpoint from the Setpoint node and =v= receives the velocity feedback measurement from the Motor node.  It produces one output: =u= is the control command to the motor in the form of the input voltage.  The controller implements the discrete-time equations \(x_c(t+1) = A_c x_c(t) + B_c (sp(t) - v(t))\) and \(u(t) = C_c x_c(t)\) where \(x_c \in \mathbb{R}^3\) is the controller's internal state vector, and
   \[ A_c = \begin{bmatrix} -0.82 & 1.0 & 0.82 \\ 1 & 0 & 0 \\ 0 & 1 & 0 \end{bmatrix}, \quad
      B_c = \begin{bmatrix} 32 \\ 0 \\ 0 \end{bmatrix}, \quad
      C_c = \begin{bmatrix} 12.62 & -19.75 & 7.625 \end{bmatrix} \]
@@ -240,17 +251,368 @@ The system consists of three nodes: a motor node (the plant), a setpoint node, a
 
 ** Design of the {{{OBN}}} simulation
 
+The system will consist of three nodes as described above and in Figure\nbsp{}ref:fig:control-system.
+The inputs and outputs of each node are also illustrated in the figure; we will use the same names for the ports.
+In this system, all ports send and receive scalar values.
+Each node implements a single computation block.
+Note the difference in the sampling times between the setpoint node and the other nodes.
+
+It is worth noting that there is no direct feedthrough in the controller and motor nodes.
+Take the controller node for example.
+Its output =u= solely depends on the controller's state $x_c$ but not directly on the inputs =sp= and =v=, as evident from the equation $u(t) = C_c x_c(t)$.
+However, for the sake of illustration, we will impose that there are direct feedthroughs from both =sp= and =v= inputs to the output =u=.
+
+
 ** The setpoint node
+
+The setpoint node is the simplest one in this example.
+We will implement it in Python, using a /scripting style/ which constructs an =OBNNode= object, creates ports on this node object, then assigns callbacks to various events of the node and runs the simulation of the node.
+The complete Python code is in the file =nodesetpoint.py=.
+Below is the step-by-step explanation of the code snippets.
+
+We first import the necessary libraries.
+#+BEGIN_SRC python
+from __future__ import division, print_function
+import numpy as np
+import sys
+from obnpy.obnnode import *
+#+END_SRC
+
+We then define the variables for the node object and the current setpoint value.
+#+BEGIN_SRC python
+node = None                     # This will be the node object
+setpoint = 0.0                  # The current setpoint value
+#+END_SRC
+
+Two callbacks are then defined for the node:
+- The /initialization/ event is triggered only once when the node is initialized at the beginning of the simulation.  The function =initNode= is the callback for this event, which simply initializes =setpoint= to 0.
+- The /block output/ event is triggered whenever the outputs of a specific computation block need to be computed.  Note that output ports with updated values will be sent out automatically after the event, so it is not necessary to explicitly send them over the network.  In its output callback =outputSetpoint=, the node will randomly choose a new setpoint value between -100 and 100, then set the output port =sp= to this value.  The dictionary property =output_ports= of a node object returns a port object, on which the method =set= is called to set the port's value.
+
+
+#+BEGIN_SRC python
+def initNode():                 # Init callback
+    global setpoint
+    setpoint = 0.0              # Reset the setpoint value
+
+def outputSetpoint():           # Change and send the setpoint
+    global setpoint, node
+    setpoint = np.random.randint(-100, 101) / 10.0
+    node.output_ports["sp"].set(setpoint)
+#+END_SRC
+
+The main function is to construct and run the node.
+We allow a command-line argument to set the MQTT server address, which defaults to a local host.
+#+BEGIN_SRC python
+def main():
+    if len(sys.argv) < 2:
+        server = 'tcp://localhost:1883'
+    else:
+        server = sys.argv[1]
+#+END_SRC
+
+The node object is then created with src_python[:exports code]{OBNNode(name,workspace,server)} where =name= is the node's name ("sp" for this node), =workspace= is the workspace name (more on this below), and =server= is the MQTT server address.
+#+BEGIN_SRC python
+    global node
+    node = OBNNode("sp", "test2", server) # Create a node
+#+END_SRC
+{{{OBN}}} allows multiple simulations to run concurrently, which are distinguished by their names (or workspace names).
+Even if a single simulation is run, it is generally a good idea to give it a name.
+The =workspace= argument above sets the name of the workspace / simulation in which this node will run.
+It is possible to use an empty string as the workspace name.
+
+Next, an output port named =sp= is created on this node, whose type is a =double scalar= (i.e., a real number).
+The other options for the container type are "vector", "matrix", and "binary" (any binary data), while the other data types include "bool", "int32", "int64", etc.
+#+BEGIN_SRC python
+    node.create_output("sp", "scalar", "double") # The setpoint output
+#+END_SRC
+
+The initialization callback is then assigned.
+We also assign a callback for the /termination/ event, which is triggered when the simulation is terminated.
+In this case, a simple lambda function is used as the callback.
+#+BEGIN_SRC python
+    node.on_init(initNode)
+    node.on_term(lambda: print("Setpoint node terminated."))
+#+END_SRC
+
+As mentioned earlier, a node may contain multiple computation blocks, each of them must have a unique identification number.
+Currently, the eligible range for block IDs is from 0 to 63.
+Here, there is only one block, with ID = 0.
+The function =outputSetpoint= defined earlier is set to be the /output/ callback for this block.
+#+BEGIN_SRC python
+    MAINBLOCK = 0
+    node.on_block_output(outputSetpoint, MAINBLOCK)
+#+END_SRC
+All methods for assigning callbacks accept additional arguments after the required ones, which will be given to the callback functions as /user arguments/.
+For example, had the above statement be
+#+BEGIN_SRC python
+    node.on_block_output(outputSetpoint, MAINBLOCK, "user args")
+#+END_SRC
+then the callback function would have been called as src_python[:exports code]{outputSetpoint("user args")}.
+
+Finally, the node is run, ready to join the overall simulation.
+A timeout value in seconds can be given to the =run= method, which sets the duration for which the node will wait during its interactions with {{{OBN}}} before it times out.
+The default timeout value of $-1$ tells the node to never time out.
+It is a good idea to set a finite timeout value just in case there is an issue with the communication network or with {{{OBN}}}.
+However, this timeout value must be long enough to account for possible network latencies and the computation time of the other blocks.
+#+BEGIN_SRC python
+    print("Ready to run the setpoint node; please start all other nodes ...")
+    status = node.run(60)
+    print("Simulation stopped with status = {}".format(status))
+#+END_SRC
+
+The =run= method returns a status code.
+A status code of 2 means the simulation was successful.
+Other values have different meanings (e.g., the node has timed out).
+
 
 ** The plant node
 
+The plant node is more complex than the setpoint node as it has both input and output ports, internal states, and more complex computations.
+For complex nodes, it is recommended to subclass =OBNNode= to encapsulate the internal data and properties of the node object, rather than relying on global variables.
+This is illustrated in the implementation of the plant node, whose code can be found in the file =nodemotor.py=.
+The definition of the class =Motor= is reproduced below, which is similar to the code of the setpoint node.
+The main difference is that the callbacks are wrapped in a subclass and the node's construction is in the class' constructor.
+#+BEGIN_SRC python
+class Motor(OBNNode):
+    """Node that implements a DC motor model."""
+    def __init__(self, workspace, server):
+        OBNNode.__init__(self, "motor", workspace, server)
+
+        self.create_input("vol", "scalar", "double") # Create voltage input
+        self.create_output("v", "scalar", "double")  # Create velocity output
+
+        MAINBLOCK = 0                   # There is only one block in this node (the motor's dynamics)
+        self.on_init(self.initCallback) # assign callback to initialize the node
+        self.on_term(lambda: print("Motor node terminated.")) # simple callback for node's termination
+        self.on_block_output(self.motorOutput, MAINBLOCK)     # callback to send output
+        self.on_block_state(self.updateState, MAINBLOCK)      # callback to update the motor's states
+
+        # Initialize the system's matrices
+        self.A = np.array([(1.511, -0.5488), (1.0, 0.0)])
+        self.C = np.array([(0.03294, 0.02697)])
+
+
+    def initCallback(self):
+        self.x = np.zeros(2) # Reset the state vector
+        self.output_ports["v"].set(0.0) # Initialize the output (not necessary)
+        print("At {} simulation started.".format(self.sim_time()))
+
+    def motorOutput(self):
+        v = np.dot(self.C, self.x)
+        self.output_ports["v"].set(v[0]) # Set the output value
+        
+    
+    def updateState(self):
+        v = self.input_ports["vol"].get() # Get the input voltage
+        self.x = np.dot(self.A, self.x)
+        self.x[0] += 0.0625 * v
+#+END_SRC
+
+
+It is important to highlight two details in the above code.
+- To access an input port on a node, use the property =input_ports=, for example src_python[:exports code]{self.input_ports["vol"]}.  To get the current value of a port, use the method =get=, e.g., src_python[:exports code]{self.input_ports["vol"].get()}.  For vector and matrix ports, =get()= returns the data in the appropriate NumPy types.
+- A computation block also has a /state update/ event, which is /triggered at the end of the current simulation time step, after all outputs have been sent and all necessary inputs have been received/.  The purpose of this event is to update the internal states of the node with respect to the current input values.  A state update callback should not send output values.  In the case of the plant node, the state update callback is where the motor's states are updated according to the state equation.
+
+
 ** The controller node
+
+The controller node is similar to the plant node because it also implements a state-space model.
+Its code is in the file =nodectrl.py=.
+Besides computing the controller's output and states, this node also records its inputs, output, and states at each time step in a file named =controller.txt=.
+Fragments of the logging code can be found in the initialization callback, the state update callback, and the termination callback.
+
 
 ** The simulation script
 
+Once all nodes have been implemented, a simulation script is needed to declare the nodes to {{{OBN}}}, connect the ports, and run the actual simulation.
+The simulation script can be found in the file =runsim.oss=.
+{{{OBN}}} currently uses the [[http://chaiscript.com/][Chaiscript]] scripting language, which is similar to Javascript, for its simulation scripts.
+There is a plan to switch to Python as the simulation script language.
+
+*** Simulation setttings
+
+The script first sets some system settings for the simulation, including the workspace name, the atomic time unit (defaults to one microsecond), the final simulation time (defaults to infinite), the communication framework (defaults to MQTT), and the MQTT server address (defaults to the local host).
+#+BEGIN_SRC js
+workspace("test2");
+settings.time_unit(millisecond);
+settings.final_time(12*second);
+
+settings.default_comm("mqtt");	// Can change the default communication
+settings.MQTT_server((args.count("mqtt")>0)?args.at("mqtt"):"tcp://localhost:1883");
+#+END_SRC
+Note that here the MQTT server address can be specified in the command line when the simulation script is executed.
+
+*** Node declarations
+
+Next, each node is declared to {{{OBN}}}.  The following details are required or usually provided.
+- *name* : the unique name of the node.
+- *inputs* : the list of input ports' names (defaults to empty, ie., no input ports).
+- *outputs* : the list of output ports' names (defaults to empty, ie., no output ports).
+- *blocks* : the list of computation blocks. Each block is defined with the following properties.
+  - *sampling* : the sampling time of this block.
+  - *inputs* : the list of direct-feedthrough inputs to this block; a logical value can be provided to specify which port has direct-feedthrough (true) and which port does not (false).  This list defaults to empty, i.e., no direct-feedthrough inputs.
+  - *outputs* : the list of output ports of this block, which defaults to empty, i.e., no output.
+  - *id* : the ID number of the block.  If this property is omitted, the blocks' IDs are automatically assigned increasingly from 0.
+  - *name* : optional name of the block.
+
+
+For example, the plant / motor node is declared as following.
+#+BEGIN_SRC js
+var motordef =
+	["name" : "motor",
+	 "inputs" : ["vol"],
+	 "outputs" : ["v"],
+	 "blocks" : [["sampling" : 100*millisecond,
+				  "outputs" : ["v"]]
+				]
+	];
+var motor = node(motordef);
+#+END_SRC
+Compare this definition to section [[*The control system]["The control system"]] to see how it reflects the properties of the plant node.
+The statement src_js[:exports code]{var motor = node(motordef)} adds the node's declaration to the {{{OBN}}} simulation system.
+
+The controller and setpoint nodes are declared similarly.
+There is one minor difference for the setpoint node.
+Because this node does not need the state update event, we declare the node without adding it to {{{OBN}}} by (note the =false= argument, which tells the function not to add the node to {{{OBN}}} immediately)
+#+BEGIN_SRC js
+var sp = node(spdef, false);
+#+END_SRC
+We then specify that the node does not need the state update event =updateX= and manually add it to {{{OBN}}}.
+#+BEGIN_SRC js
+sp.need_updateX(false);
+add_node(sp);
+#+END_SRC
+
+#+BEGIN_framed
+*Remark*: although it is a good practice to specify whether a node needs the state update event, it is actually not required.  If a node does not define a callback for the event, the event is simply ignored.
+#+END_framed
+
+
+*** Port connections
+
+After nodes have been declared, their ports can be connected using the =connect= function.
+The syntax is straightforward: src_js[:exports code]{connect(source_node.port("source_port"), target_node.port("target_port"))}.
+In this example, three connections must be established as following:
+#+BEGIN_SRC js
+connect(sp.port("sp"), ctrl.port("sp"));
+connect(motor.port("v"), ctrl.port("v"));
+connect(ctrl.port("u"), motor.port("vol"));
+#+END_SRC
+
+Consult Figure\nbsp{}ref:fig:control-system to justify the above connections.
+
+*** Model export
+
+Once all nodes and connections have been established, the system configuration may be printed out to the console by the command =print_system()=.
+This is useful to verify the correctness of the system configuration.
+
+It is also possible to export a node or the entire system to a graphical representation in the Graphviz's [[http://www.graphviz.org/][DOT format]] or the [[http://graphml.graphdrawing.org/][GraphML format]].
+This is useful for visualizing a node or the system, and for publishing {{{OBN}}} models.
+
+*** Final matter
+
+Once the simulation script reaches its end, the simulation will automatically run unless
+- a command =run_simulation(false)= is included in the script; or
+- the simulation script is executed in the dry-run mode by specifying the option "--dry-run" in the command line.
+
+As the nodes in the system may take various amounts of time to start up, it is highly recommended to make the SMN wait for all the nodes to be available before starting the simulation.
+This is achieved by the command
+#+BEGIN_SRC js
+waitfor_all_nodes(30);
+#+END_SRC
+where the number argument is the waiting time in seconds (30 seconds in this case).
+
 ** Running the simulation
 
+Open four terminals, type exactly and run the following commands.
+The first three terminals are to run the three nodes, while the last one is for running the {{{OBN}}} system node (the SMN).
+Note that each node has a timeout of 60 seconds, therefore it is important to start the simulation (the last command) within 60 seconds from the first command.
+If you cannot start the nodes quickly enough, you should enter the command in each terminal but do not run them yet.
+After all terminals are ready, go through each of them and run the command.
+
+In the following, =DEMODIR= is the *absolute path* to the directory containing the example code, e.g., =/home/user/obntutorial/code=, and =MQTTBROKER= is the IP address of the MQTT broker.
+
+
+- Terminal 1: run the setpoint node
+  #+BEGIN_SRC shell
+  $ docker run -it --rm -v DEMODIR:/obnsim nxtruong/obnpy:2.7 python /obnsim/nodesetpoint.py MQTTBROKER
+  #+END_SRC
+  Check that the node is waiting and no errors are reported.
+- Terminal 2: run the motor node
+  #+BEGIN_SRC shell
+  $ docker run -it --rm -v DEMODIR:/obnsim nxtruong/obnpy:2.7 python /obnsim/nodemotor.py MQTTBROKER
+  #+END_SRC
+  Check that no errors are reported.
+- Terminal 3: run the controller node
+  #+BEGIN_SRC shell
+  $ docker run -it --rm -v DEMODIR:/obnsim nxtruong/obnpy:2.7 python /obnsim/nodectrl.py MQTTBROKER
+  #+END_SRC
+  Check that no errors are reported.
+- Terminal 4: run the simulation script, which runs the simulation
+  #+BEGIN_SRC shell
+  $ docker run -it --rm -v DEMODIR:/obnsim nxtruong/obnbase smnchai /obnsim/runsim.oss mqtt=MQTTBROKER
+  #+END_SRC
+
+
+Terminal 4 should print the output of the {{{OBN}}} server, similar to Figure\nbsp{}ref:fig:smn-output.
+A file named =controller.txt= should be created in =DEMODIR= which contains the controller's inputs, output, and states at each simulation time step.
+Congratulations!
+You have run an {{{OBN}}} simulation.
+
+#+ATTR_LATEX: :width 0.5\columnwidth :placement [tb]
+#+CAPTION: Output of the {{{OBN}}} server running the example's simulation script.
+#+NAME: fig:smn-output
+[[file:smn_output.png]]
+
+* Notes on simulation performance
+
+If one has ever used {{{OBN}}} natively by compiling the entire {{{OBN}}} suite from its source code, they will notice a significant slowdown in the simulation performance of the Docker approach compared to the native approach, especially on the MacOS and Windows platforms.
+This section addresses this performance issue.
+
+The total running time of an {{{OBN}}} simulation is determined by both the computation time of the nodes and the communication time between the nodes.
+In our experience, the computation performance of a Docker container is similar to that of the same code running natively, with a negligible loss.
+However, the Docker's network performance is significantly worse than the native network performance on the host, from 20 times to hundreds of times slower.
+For this reason, the tutorial example may take several seconds to finish on Docker in comparison to several tens of milliseconds on the native host machine.
+This is due to the nature of the Docker's network emulation and cannot be resolved easily.
+
+On the other hand, the impact of the network performance issue might not be significant in practice, for two reasons:
+1. In large-scale complex simulation systems, the computation time usually dominates the communication time.  Adding a few seconds or minutes to the total simulation time due to the network latency becomes insignificant in these cases.
+2. If a distributed simulation is to be run over the Internet (e.g., on a cloud computing platform), the Internet latency is already large even on native machines.  The Docker's network overhead is insignificant compared to this latency.
+
+
+In theory, Docker on Linux will have a much smaller network overhead than do Docker on MacOS and Docker on Windows.
+However, we have not tested {{{OBN}}} on Linux.
+
+
+* Developing nodes with {{{OBN}}} Docker images
+
+The {{{OBN}}} Docker images can also be used to develop {{{OBN}}} nodes on a host machine, using the native tools (editors and IDEs) on the host.
+For example, to develop a node in Python, one has several options:
+
+1. Start =bash= or =python= or =ipython= in an interactive container from the image =nxtruong/obnpy=, then develop the node as in a Linux environment:
+   #+BEGIN_SRC shell
+   $ docker run -it -v /path/to/your/code:/obnsim nxtruong/obnpy:2.7 ipython
+   #+END_SRC
+   Here we mount a directory in the host machine to the container at =/obnsim=, allowing us to access files in the host machine from the container.
+
+2. Start an IPython notebook server in a container and access it from the host using an web browser.  This is a great way to develop interactively with Python and {{{OBN}}}.
+   #+BEGIN_SRC shell
+   $ docker run -it -p 8888:8888 --name ipython -v /path/to/your/code:/obnsim nxtruong/obnpy:2.7 ipython notebook --no-browser --ip=0.0.0.0 --notebook-dir=/obnsim
+   #+END_SRC
+   The notebook server can be accessed from a web browser on the host machine at the address =localhost:8888=.
+
+
 * Customize OpenBuildNet Docker Images
+
+The prebuilt {{{OBN}}} Docker images contain only the necessary {{{OBN}}} binaries and several standard libraries depending on the language.
+If one needs additional libraries, they should customize the prebuilt Docker images, using standard Docker commands.
+This could be achieved in two ways:
+
+1. Start =bash= in a container using the appropriate image, e.g., =nxtruong/obnpy= for Python or =nxtruong/obnjulia= for Julia.  Using the appropriate tools to install required packages, e.g., =apt-get=, =pip=, Julia's package manager, or manually downloading and compiling source code.  Once the required packages are installed, exit the container and use =docker commit= to create a new image from the container.  For more information, see [[https://docs.docker.com/engine/tutorials/dockerimages/#/updating-and-committing-an-image][Docker's manual]].
+
+2. Alternatively, one can build a new image, based on the appropriate {{{OBN}}} Docker image, from a Dockerfile.  For more information, see [[https://docs.docker.com/engine/tutorials/dockerimages/#/building-an-image-from-a-dockerfile][Docker's manual]].
+
+
 
 * Appendix
 
