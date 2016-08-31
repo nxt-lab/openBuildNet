@@ -36,7 +36,7 @@ const char* CommProtocolNames[] = {
 };
 
 
-void SMNChai::run_remote_command(const std::string &t_node, const std::string &t_tag, const std::string &t_prog, const std::string &t_args) {
+void SMNChai::run_remote_command(const std::string &t_node, const std::string &t_tag, const std::string &t_prog, const std::string &t_args, const std::string &t_workdir) {
 #ifdef OBNSIM_COMM_YARP
     // Run a command on a remote node/computer using YarpRun
     if (t_node.empty() || t_tag.empty() || t_prog.empty()) {
@@ -50,6 +50,9 @@ void SMNChai::run_remote_command(const std::string &t_node, const std::string &t
     //if (!t_args.empty()) {
     //    prop.put("parameters", t_args);
     //}
+    if (!t_workdir.empty()) {
+        prop.put("workdir", t_workdir);
+    }
     
     auto tagName = yarp::os::ConstString(t_tag);
     if (yarp::os::Run::start(t_node, prop, tagName) != 0) {
@@ -62,19 +65,19 @@ void SMNChai::run_remote_command(const std::string &t_node, const std::string &t
 }
 
 
-void SMNChai::WorkSpace::start_remote_node(const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag) {
+void SMNChai::WorkSpace::start_remote_node(const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag, const std::string &t_workdir) {
     // Only start if node is not online
     if (m_settings.will_run_simulation() && !is_node_online(t_node)) {
         if (t_tag.empty()) {
-            SMNChai::run_remote_command(t_computer, t_node, t_prog, t_args);
+            SMNChai::run_remote_command(t_computer, t_node, t_prog, t_args, t_workdir);
         } else {
-            SMNChai::run_remote_command(t_computer, t_tag, t_prog, t_args);
+            SMNChai::run_remote_command(t_computer, t_tag, t_prog, t_args, t_workdir);
         }
     }
 }
 
-void SMNChai::WorkSpace::start_remote_node(const SMNChai::Node &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag) {
-    start_remote_node(t_node.get_name(), t_computer, t_prog, t_args, t_tag);
+void SMNChai::WorkSpace::start_remote_node(const SMNChai::Node &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag, const std::string &t_workdir) {
+    start_remote_node(t_node.get_name(), t_computer, t_prog, t_args, t_tag, t_workdir);
 }
 
 bool SMNChai::WorkSpace::is_node_online(const SMNChai::Node &t_node) {

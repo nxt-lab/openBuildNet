@@ -105,9 +105,13 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, SMNChai::WorkSpace &ws) {
     
     chai.add(fun<bool (WorkSpace::*) (const Node &)>(&WorkSpace::is_node_online, &ws), "is_node_online");
     //chai.add(fun<bool (WorkSpace::*) (const std::string &) const>(&WorkSpace::is_node_online, &ws), "is_node_online");
-
-    chai.add(fun<void (WorkSpace::*) (const SMNChai::Node &, const std::string &, const std::string &, const std::string &, const std::string &)>(&WorkSpace::start_remote_node, &ws), "start_remote_node");
-    chai.add(fun<void (WorkSpace::*) (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &)>(&WorkSpace::start_remote_node, &ws), "start_remote_node");
+    
+    chai.add(fun([&ws](const SMNChai::Node &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag){ws.start_remote_node(t_node,t_computer,t_prog,t_args,t_tag);}), "start_remote_node");
+    
+    chai.add(fun([&ws](const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag){ws.start_remote_node(t_node,t_computer,t_prog,t_args,t_tag);}), "start_remote_node");
+    
+    chai.add(fun<void (WorkSpace::*) (const SMNChai::Node &, const std::string &, const std::string &, const std::string &, const std::string &, const std::string &)>(&WorkSpace::start_remote_node, &ws), "start_remote_node");
+    chai.add(fun<void (WorkSpace::*) (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, const std::string &)>(&WorkSpace::start_remote_node, &ws), "start_remote_node");
     
     chai.add(fun([&ws](const SMNChai::Node &n, const std::string &c, const std::string &p, const std::string &a) {
         ws.start_remote_node(n, c, p, a);
