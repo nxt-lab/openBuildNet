@@ -132,9 +132,14 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, SMNChai::WorkSpace &ws) {
     // *********************************************
     if (ws.m_settings.m_dockerlist) {
         chai.add(fun(&WorkSpace::obndocker_node, &ws), "obndocker_node");
+        chai.add(fun(
+                     [&ws](const SMNChai::Node& a1, const std::string& a2, const std::string& a3, const std::string& a4, const std::string& a5){
+                         ws.obndocker_node(a1, a2, a3, a4, a5);
+                     }), "obndocker_node");  // with default "extra" argument = ""
     } else {
         // empty function
         chai.add(fun([](const SMNChai::Node&, const std::string&, const std::string&, const std::string&, const std::string&){}), "obndocker_node");
+        chai.add(fun([](const SMNChai::Node&, const std::string&, const std::string&, const std::string&, const std::string&, const std::string&){}), "obndocker_node");
     }
     
     // *********************************************
