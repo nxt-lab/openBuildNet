@@ -638,12 +638,13 @@ namespace SMNChai {
             std::string image;      // Docker image name
             std::string cmd;        // Command to run in the container
             std::string src;        // Source of the node (code files, model files, etc.)
+            std::string extra;      // Extra options to Docker
         };
         
         std::list<DockerNodeInfo> m_docker_nodelist;
     public:
         // Register a Docker node
-        void obndocker_node(const SMNChai::Node& node, const std::string& machine, const std::string& image, const std::string& cmd, const std::string& src);
+        void obndocker_node(const SMNChai::Node& node, const std::string& machine, const std::string& image, const std::string& cmd, const std::string& src, const std::string& extra = "");
         
         // Dump to a string
         std::string obndocker_dump() const;

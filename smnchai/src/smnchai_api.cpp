@@ -806,10 +806,10 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc, SMNChai::SMNC
 }
 
 
-void SMNChai::WorkSpace::obndocker_node(const SMNChai::Node& node, const std::string& machine, const std::string& image, const std::string& cmd, const std::string& src)
+void SMNChai::WorkSpace::obndocker_node(const SMNChai::Node& node, const std::string& machine, const std::string& image, const std::string& cmd, const std::string& src, const std::string& extra)
 {
     // name, machine, image, cmd, src
-    m_docker_nodelist.push_back({node.get_name(), machine, image, cmd, src});
+    m_docker_nodelist.push_back({node.get_name(), machine, image, cmd, src, extra});
 }
 
 // Dump the node list for Docker to JSON string
@@ -826,6 +826,9 @@ std::string SMNChai::WorkSpace::obndocker_dump() const {
         obj["image"] = JSON(it->image);
         obj["cmd"] = JSON(it->cmd);
         obj["source"] = JSON(it->src);
+        if (!it->extra.empty()) {
+            obj["extra"] = JSON(it->extra);
+        }
         
         // and add to the list
         nodelist[k] = obj;
