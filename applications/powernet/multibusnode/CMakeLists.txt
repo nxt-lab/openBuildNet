@@ -63,8 +63,8 @@ ADD_EXECUTABLE(obn_powernet_multibus
 if(APPLE)
   list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
 else()
-  set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD 11)
-  set_property(TARGET nodecpp-mynode PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_property(TARGET obn_powernet_multibus PROPERTY CXX_STANDARD 11)
+  set_property(TARGET obn_powernet_multibus PROPERTY CXX_STANDARD_REQUIRED ON)
 endif()
 
 

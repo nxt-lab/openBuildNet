@@ -143,11 +143,12 @@ namespace OBNnode {
         }
         
         /** \brief Callback to initialize the node before each simulation. */
-        virtual void onInitialization() override {
+        virtual int64_t onInitialization() override {
             // Post a Matlab event for SIM_INIT
             _ml_current_event.type = MLE_INIT;
             _ml_pending_event = true;
             _node_is_stopping = false;
+            return 0;
         }
         
         

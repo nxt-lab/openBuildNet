@@ -574,8 +574,8 @@ namespace SMNChai {
         
         /** Starts a remote node if it's not online.
          This function checks if the given node is online; if it's not, SMNChai::start_remote_node() is called to start the remote node with the given arguments. */
-        void start_remote_node(const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag = "");
-        void start_remote_node(const Node &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag = "");
+        void start_remote_node(const std::string &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag = "", const std::string &t_workdir = "");
+        void start_remote_node(const Node &t_node, const std::string &t_computer, const std::string &t_prog, const std::string &t_args, const std::string &t_tag = "", const std::string &t_workdir = "");
         
         /** Wait until a node is online or a timeout.
             If the simulation is not going to run, this function will return immediately.
@@ -638,12 +638,13 @@ namespace SMNChai {
             std::string image;      // Docker image name
             std::string cmd;        // Command to run in the container
             std::string src;        // Source of the node (code files, model files, etc.)
+            std::string extra;      // Extra options to Docker
         };
         
         std::list<DockerNodeInfo> m_docker_nodelist;
     public:
         // Register a Docker node
-        void obndocker_node(const SMNChai::Node& node, const std::string& machine, const std::string& image, const std::string& cmd, const std::string& src);
+        void obndocker_node(const SMNChai::Node& node, const std::string& machine, const std::string& image, const std::string& cmd, const std::string& src, const std::string& extra = "");
         
         // Dump to a string
         std::string obndocker_dump() const;
@@ -689,9 +690,10 @@ namespace SMNChai {
      \param t_tag A unique tag of the command execution; must be unique in the network.
      \param t_prog Name of the command/program to run on the remote node/computer.
      \param t_args Optional argument list.
+     \param t_workdir Optional working directory.
      \exception smnchai_exception Error if the command could not be run.
      */
-    void run_remote_command(const std::string &t_computer, const std::string &t_tag, const std::string &t_prog, const std::string &t_args);
+    void run_remote_command(const std::string &t_computer, const std::string &t_tag, const std::string &t_prog, const std::string &t_args, const std::string &t_workdir = "");
 }
 
 
