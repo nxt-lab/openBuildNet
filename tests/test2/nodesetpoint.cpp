@@ -19,8 +19,8 @@
 - OBNNODE_SMN_COMM_MQTT: if MQTT is supported for communication.
 */
 
-#ifndef OBNNODE_COMM_YARP
-#error This test requires YARP to run
+#if !defined(OBNNODE_COMM_YARP) && !defined(OBNNODE_COMM_MQTT)
+#error Either Yarp or MQTT is required to run
 #endif
 
 using namespace OBNnode;
@@ -29,16 +29,17 @@ using namespace OBNnode;
 #define MQTT_SERVER_ADDRESS "tcp://localhost:1883"
 typedef MQTTInput<OBN_PB, double> INPUT_PORT_CLASS;
 typedef MQTTOutput<OBN_PB, double> OUTPUT_PORT_CLASS;
-MQTTClient mqtt_client;     // The MQTT client of this node (used for all communications)
+#define BASE_CLASS MQTTNode
 #else
 typedef YarpInput<OBN_PB, double> INPUT_PORT_CLASS;
 typedef YarpOutput<OBN_PB, double> OUTPUT_PORT_CLASS;
+#define BASE_CLASS YarpNode
 #endif
 
 #define MAIN_UPDATE 0
 
 /* The controller node class */
-class SetPoint: public YarpNode {
+class SetPoint: public BASE_CLASS {
     /* Output: setpoint */
 #ifdef OBNNODE_COMM_MQTT
     OUTPUT_PORT_CLASS setpoint{"sp"};
@@ -50,7 +51,7 @@ class SetPoint: public YarpNode {
     std::uniform_int_distribution<int> distribution;
     
 public:
-    SetPoint(const std::string& name, const std::string& ws = ""): YarpNode(name, ws),
+    SetPoint(const std::string& name, const std::string& ws = ""): BASE_CLASS(name, ws),
     generator(std::chrono::system_clock::now().time_since_epoch().count()), distribution(-100, 100)
     { }
     
@@ -83,15 +84,16 @@ public:
     
     /* This callback is called everytime this node's simulation starts or restarts.
      This is different from initialize() above. */
-    virtual void onInitialization() override {
+    virtual int64_t onInitialization() override {
         // Initial state and output
         setpoint = 0.0;
-        std::cout << "At " << _current_sim_time << " INIT" << std::endl;
+        std::cout << "At " << currentSimulationTime() << " INIT" << std::endl;
+        return 0;
     }
     
     /* This callback is called when the node's current simulation is about to be terminated. */
     virtual void onTermination() override {
-        std::cout << "At " << _current_sim_time << " TERMINATED" << std::endl;
+        std::cout << "At " << currentSimulationTime() << " TERMINATED" << std::endl;
     }
     
     /* There are other callbacks for reporting errors, etc. */
@@ -99,28 +101,20 @@ public:
     // Callback for the main update
     void doMainUpdate() {
         setpoint = distribution(generator) / 10.0;
-        std::cout << "At " << _current_sim_time << " UPDATE_Y" << std::endl;
+        std::cout << "At " << currentSimulationTime() << " UPDATE_Y" << std::endl;
     }
 };
 
 int main() {
     std::cout << "This is setpoint node." << std::endl;
     
-    // Initialize the MQTT client
-#ifdef OBNNODE_COMM_MQTT
-    mqtt_client.setServerAddress(MQTT_SERVER_ADDRESS);
-    mqtt_client.setClientID("test2_setpoint");
-    if (!mqtt_client.initialize()) {
-        std::cerr << "Error while initializing MQTT" << std::endl;
-        return 10;
-    }
-    if (!mqtt_client.start()) {
-        std::cerr << "Error while connecting to MQTT" << std::endl;
-        return 10;
-    }
-#endif
     
     SetPoint node("sp", "test2");      // Node "sp" inside workspace "test2"
+
+#ifdef OBNNODE_COMM_MQTT
+    node.setServerAddress(MQTT_SERVER_ADDRESS);
+#endif
+   
     if (!node.initialize()) {
         return 1;
     }
@@ -136,9 +130,6 @@ int main() {
     //////////////////////
     // Clean up before exiting
     //////////////////////
-    if (mqtt_client.isRunning()) {
-        mqtt_client.stop();
-    }
     
     google::protobuf::ShutdownProtobufLibrary();
     
