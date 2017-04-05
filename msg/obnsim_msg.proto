@@ -3,6 +3,8 @@
 
 // Note that all field names are converted to lowercase in the generated code, so MsgType becomes msgtype.
 
+syntax = "proto2";
+
 option optimize_for = LITE_RUNTIME;
 
 package OBNSimMsg;  // package or namespace

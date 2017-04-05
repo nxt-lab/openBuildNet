@@ -1,8 +1,14 @@
 ## This is the root CMake file for the entire obnsim project.
-
-# TODO: add the option(s) so that subprojects will know the root project is being built, and will avoid certain commands (e.g. find packages, set install dirs).
-
 CMAKE_MINIMUM_REQUIRED(VERSION 3.1.0 FATAL_ERROR)
+
+# ON if the root OBNSIM project is being built, so that subprojects can avoid certain duplicate commands
+set(OBNSIM_BUILD_ROOT ON)
+
+# Options to build certain parts of the OBNSIM project
+option(BUILD_SMNCHAI "Build the Chaiscript-enabled SMN server." ON)
+option(BUILD_NODECHAI "Build the Chaiscript-enabled node program." ON)
+option(BUILD_APPLICATIONS "Build application programs (e.g., nodes for power networks)." ON)
+option(BUILD_TESTS "Build all tests." OFF)
 
 SET(PROJECT_NAME "obnsim")
 
@@ -16,45 +22,22 @@ SET(PROJECT_VERSION "0.1"  ## "hg-tip"
 
 PROJECT(${PROJECT_NAME})
 
-# SET(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
-
-IF(UNIX)
-  SET(INSTALL_BIN_DIR "bin" CACHE STRING
-    "Subdir for installing the binaries")
-  SET(INSTALL_DOC_DIR "share/doc/${PROJECT_NAME}"
-    CACHE STRING
-    "Subdir for installing the doc")
-  SET(INSTALL_DATA_DIR "share/data/${PROJECT_NAME}"
-    CACHE STRING
-    "Subdir for installing the map data")
-  SET(INSTALL_EXAMPLES_DIR "share/doc/${PROJECT_NAME}/examples"
-    CACHE STRING
-    "Subdir for installing the examples")
-ELSE(UNIX)
-  SET(INSTALL_BIN_DIR "." CACHE STRING
-                  "Subdir for installing the binaries")
-  SET(INSTALL_DOC_DIR "doc" CACHE STRING
-                  "Subdir for installing the doc")
-  SET(INSTALL_DATA_DIR "data" CACHE STRING
-                  "Subdir for installing the map data")
-  SET(INSTALL_EXAMPLES_DIR "examples" CACHE STRING
-                       "Subdir for installing the examples")
-ENDIF(UNIX)
-
-
 ## This line finds doxygen (for document creation)
 # FIND_PACKAGE(Doxygen)
 
-IF(CMAKE_COMPILER_IS_GNUCXX)
-  SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
-ENDIF(CMAKE_COMPILER_IS_GNUCXX)
 
+## Common Compiler settings
 
+if(MSVC)
+  # Force to always compile with W4
+  if(CMAKE_CXX_FLAGS MATCHES "/W[0-4]")
+    string(REGEX REPLACE "/W[0-4]" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
+  endif()
+  list(APPEND CMAKE_CXX_FLAGS "/w44640 ${CMAKE_CXX_FLAGS}")
 ## Sometimes MSVC overwhelms you with compiler warnings which are impossible to
-## avoid. Then comment out these sections.
-
-#IF(MSVC)
+## avoid. Then comment out these sections.  
 #  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}
 #      /wd4250 /wd4355 /wd4503 /wd4800 /wd4996")
 # # Suppressed warnings:
@@ -64,8 +47,17 @@ ENDIF(CMAKE_COMPILER_IS_GNUCXX)
 # # C4800: 'type' : forcing value to bool 'true' or 'false'
 # #        (performance warning)
 # # C4996: 'function': was declared deprecated
-# ENDIF(MSVC)
+elseif(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+  # Update if necessary
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wshadow -Wnon-virtual-dtor -pedantic")  # -Wextra
+endif()
 
+
+# Select the desired build type
+set(CMAKE_BUILD_TYPE Release)
+
+
+## Add the subprojects
 
 # ADD_SUBDIRECTORY(smn)
 
@@ -74,5 +66,4 @@ ADD_SUBDIRECTORY(tests/test1)
 ADD_SUBDIRECTORY(tests/test2)
 ADD_SUBDIRECTORY(tests/test3)
 
-ENABLE_TESTING()
 

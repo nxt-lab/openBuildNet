@@ -103,10 +103,13 @@ void shutdown_communication_threads(OBNsmn::GCThread& gc) {
     if (comm_objects.mqttClient) {
         // Loop until MQTT finishes or a max timeout
         int niters = 0;
-        while (niters++ <= 9 && comm_objects.mqttClient->outMsgCount() > 0) {
+        while (niters++ <= 19 && comm_objects.mqttClient->outMsgCount() > 0) {
             // Messages are still pending -> wait
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
+        
+        // Wait even a bit more, just to be sure
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
         
         comm_objects.mqttClient->stop();    // Force stop MQTT
     }
@@ -290,6 +293,8 @@ int main(int argc, char* argv[]) {
         // Done with running Chaiscript to load the network, now we only need to run the simulation
         std::cout << "Done constructing the network.\nStart simulation...\n";
         
+        auto simulation_start = std::chrono::steady_clock::now();
+        
         // Start running the GC thread
         if (!gc.startThread()) {
             std::cerr << "ERROR: could not start GC thread. Shutting down..." << std::endl;
@@ -312,6 +317,11 @@ int main(int argc, char* argv[]) {
         
         //Join the threads with the main thread
         gc.joinThread();
+        
+        // The simulation officially stops at this point => measure the duration
+        auto simulation_duration = std::chrono::steady_clock::now() - simulation_start;
+        std::cout << "Simulation duration is about: " <<
+            std::chrono::duration_cast<std::chrono::seconds>(simulation_duration).count() << "seconds.\n";
         
         // Shutdown communications
         shutdown_communication_threads(gc);
