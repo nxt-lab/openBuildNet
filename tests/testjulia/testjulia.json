@@ -1,0 +1,13 @@
+[{
+    "cmd" : "obnchai /obnsim/othernode.ons mqtt={OBNMQTT}",
+    "image" : "base",
+    "machine" : "aws-sandbox",
+    "name" : "othernode",
+    "source" : "f:https://raw.githubusercontent.com/LA-EPFL/openBuildNet/master/tests/testjulia/othernode.ons:othernode.ons"
+  }, {
+    "cmd" : "julia /obnsim/extnode.jl {OBNMQTT}",
+    "image" : "julia",
+    "machine" : "aws-sandbox",
+    "name" : "extnode",
+    "source" : "f:https://raw.githubusercontent.com/LA-EPFL/openBuildNet/master/tests/testjulia/extnode.jl:extnode.jl"
+  }]

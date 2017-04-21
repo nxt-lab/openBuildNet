@@ -3,3 +3,4 @@ obnsim_io.pb.*
 obnsim_msg.pb.*
 obnsim_yarp_.*
 *.mexmaci64
+build*
