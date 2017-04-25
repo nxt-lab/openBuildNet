@@ -7,6 +7,11 @@ SET(PROJECT_NAME "multibusnode")
 
 PROJECT(${PROJECT_NAME})
 
+## Installation directory
+IF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  SET(CMAKE_INSTALL_PREFIX /usr/local/obn CACHE PATH "OBN install directory" FORCE)
+ENDIF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+
 ## Change OBN_MAIN_DIR to the path to the main directory of openBuildNet
 set (OBN_MAIN_DIR ../../../)
 

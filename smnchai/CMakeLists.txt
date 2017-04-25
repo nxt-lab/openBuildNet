@@ -8,7 +8,9 @@ SET(PROJECT_NAME "smnchai")
 PROJECT(${PROJECT_NAME} C CXX)
 
 ## Installation directory
-SET(CMAKE_INSTALL_PREFIX /usr/local/obn)
+IF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  SET(CMAKE_INSTALL_PREFIX /usr/local/obn CACHE PATH "OBN install directory" FORCE)
+ENDIF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 
 # Select the desired build type
 set(CMAKE_BUILD_TYPE Release)
