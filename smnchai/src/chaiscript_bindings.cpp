@@ -44,6 +44,7 @@ void SMNChai::registerSMNAPI(ChaiScript &chai, SMNChai::WorkSpace &ws) {
     chai.add(fun(&Node::input_to_update), "input_to_block");
     chai.add(fun(&Node::output_from_update), "output_from_block");
     chai.add(fun(&Node::add_internal_dependency), "add_internal_dependency");
+    chai.add(fun(&Node::input_triggers_block), "input_triggers_block");
 
     // PortInfo from a node: used for connecting ports, and methods to access it
     chai.add(user_type<SMNChai::PortInfo>(), "PortInfo");

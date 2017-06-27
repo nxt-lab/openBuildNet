@@ -1,0 +1,52 @@
+// -*- mode: javascript; indent-tabs-mode: nil; -*-
+// Node 1: issues a signal every time step to trigger other nodes
+
+// IMPORTANT:
+// A function can't access top-level variables unless they are global variables.
+// A function can only access its local variables, its arguments (considered local), and global variables.
+// So for all top-level variables that need to be accessed inside callback functions (e.g. ports), use one or both of the following solutions:
+// 1. Make a variable global by declaring it as: GLOBAL var = ...; then it can be accessed directly inside any function.
+// 2. Define a non-global top-level variable as usual, then bind it to an argument of the function that needs to access it, e.g.
+//     var a = 1.0;
+//     var output = new_output_double("y");
+//     def myfunc(y, my_a) { print(my_a); y.set(my_a); }
+//     callback_updatey(0, bind(myfunc,output,a));
+//
+// Solution (1) is easier to use but less elegant.
+// The general syntax for bind in Chaiscript is: bind(func,arg1,arg2,...) where arg* is either an object or _; the latter causes the corresponding argument in func to be an argument in the new function.
+// Binding, and passing arguments to functions in general, is done via references; therefore any changes to the arguments made by the function are directly applied to the top-level variables (unless the passed arguments are constants). In other words, everything will work as expected, as if the function has direct access to the top-level variables.
+
+set_comm_mqtt("tcp://localhost:1883");
+set_node_name("node1");
+set_workspace("trigger");
+set_timeout(20);	// you can set timeout for the node (in seconds)
+create_node();
+
+// The ports
+var y_out = new_output_double("y");
+
+var iter = 0;
+
+// Define the callback functions
+def my_output(y, iter) {
+    print("At ${current_time_s()} output: ${iter}");
+    y.set(iter);
+    iter += 1;
+}
+
+callback_y(0, bind(my_output, y_out, iter));
+
+def my_init() {
+	print("At ${current_time_s()} INIT");
+}
+
+def my_term() {
+	print("At ${current_time_s()} TERMINATED");
+}
+
+// Set the callbacks
+callback_init(my_init);
+callback_term(my_term);
+
+// After the script file ends, if the node was created (by create_node()), the node will be run
+print("This is node 1.");

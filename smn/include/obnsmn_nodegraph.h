@@ -221,7 +221,7 @@ namespace OBNsmn {
         /**
          Here we use vecS to store the list of vertices, which is essentially a vector of integers (IDs of the vertices) starting from 0.
          Because this coincides with the IDs of the nodes (which are guaranteed to be integers from 0 to N-1 where N is the total number of nodes), we can directly associate the ID of a node with the ID (descriptor) of a vertex.
-         However, Otherwise we would have to use an <int> as the property of a vertex.
+         Otherwise we would have to use an <int> as the property of a vertex.
          The property of an edge is a vector (list) of pairs of source update mask and target update mask, which represents parallel links from one source node to one target node associated.
          A link is active iff its source mask is active (an active update type of the source node) and its target mask is active (an active update type of the target node).
          An edge is active, and is added to run-time dependency graph, iff at least one of its links is active.

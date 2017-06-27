@@ -208,6 +208,19 @@ namespace OBNsmn {
         /** Return number of nodes in the node list. */
         int numberOfNodes() const { return _nodes.size(); }
         
+        /** Add a new triggering from srcNode with srcMask blocks to tgtNode with tgtMask blocks.
+         \return 0 if successful; 1 if srcNode doesn't exist; 2 if tgtNode doesn't exist; 3 if either srcMask or tgtMask is zero.
+         */
+        int addTrigger(std::size_t srcNode, OBNsim::updatemask_t srcMask, std::size_t tgtNode, OBNsim::updatemask_t tgtMask) {
+            auto validMaxID = _nodes.size() - 1;
+            if (srcNode > validMaxID) return 1;
+            if (tgtNode > validMaxID) return 2;
+            if (srcMask == 0 || tgtMask == 0) return 3;
+            
+            _nodes[srcNode]->addTrigger(srcMask, tgtNode, tgtMask);
+            return 0;
+        }
+        
         typedef std::function<bool(const OBNSimMsg::SMN2N&)> TSendMsgToSysPortFunc;   ///< A function type to send a SMN2N message to the system port (instead of a node's port)
         
         /** Set the function to send an SMN2N message to the system port (_gc_) */

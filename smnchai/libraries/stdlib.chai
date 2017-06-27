@@ -12,7 +12,8 @@
 // To define a block, we use a Map object of the following form:
 // [ "name" : "name of block", "id" : id-of-block, "sampling" : real-number-sampling-time-in-microseconds,
 //   "inputs" : list-of-inputs-to-this-block, "outputs" : list-of-outputs-from-this-block,
-//   "depends" : list-of-other-blocks-on-which-this-block-depends]
+//   "depends" : list-of-other-blocks-on-which-this-block-depends,
+//	 "triggers" : list-of-inputs-that-trigger-this-block]
 // where only "sampling" is required. The list of outputs is a Vector of names, e.g. ["y1", "y2"].
 // The list of inputs can be either a Vector of names (all of them will have direct feedthrough to this block) or
 // a Map of [name -> bool] where the boolean value specifies whether the input has direct feedthrough to this block.
@@ -20,16 +21,18 @@
 // optional information (we know that "u3" is also an input, but it doesn't have direct feedthrough).
 //
 // A function called "define_block" will produce such a Map from all arguments:
-//     block("name", id, sampling, inputs, outputs, dependencies)
-// where inputs (or outputs), if it is a singleton, can be a string (name of the single port) instead of a vector of a single string.
+//     block("name", id, sampling, inputs, outputs, triggers, dependencies)
+// where inputs (or outputs, triggers), if it is a singleton, can be a string (name of the single port) instead of a vector of a single string.
 
-def define_block(string name, uint32_t id, double sampling, inputs, outputs, Vector dependencies) {
+def define_block(string name, uint32_t id, double sampling, inputs, outputs, triggers, Vector dependencies) {
   var myinputs;
   var myoutputs;
+  var mytriggers;
   if (inputs.is_type("string")) { myinputs := [inputs]; } else { myinputs := inputs; }
   if (outputs.is_type("string")) { myoutputs := [outputs]; } else { myoutputs := outputs; }
+  if (triggers.is_type("string")) { mytriggers := [triggers]; } else { mytriggers := triggers; }
   // The dictionary construction always copies data, so we can use references above
-  return ["name": name, "id": id, "sampling": sampling, "inputs": myinputs, "outputs": myoutputs, "depends": dependencies];
+  return ["name": name, "id": id, "sampling": sampling, "inputs": myinputs, "outputs": myoutputs, "triggers": mytriggers, "depends": dependencies];
 }
 
 
@@ -131,7 +134,12 @@ def node(Map tnodedef, bool addnow) {
 
       // Add inputs
       if (blocksdef[i].count("inputs") > 0) {
-		var inputs := blocksdef[i]["inputs"];	  
+		var inputs;
+		if (blocksdef[i]["inputs"].is_type("string")) {
+		  inputs := [blocksdef[i]["inputs"]];	  // convert into a vector
+		} else {
+		  inputs := blocksdef[i]["inputs"];	  // convert into a vector
+		}
 		if (inputs.is_type("Map")) {
 		  var myinputs := inputs.range();
           while (!myinputs.empty()) {
@@ -147,12 +155,32 @@ def node(Map tnodedef, bool addnow) {
 
       // Add outputs
       if (blocksdef[i].count("outputs") > 0) {
-		var outputs := blocksdef[i]["outputs"];
+		var outputs;
+		if (blocksdef[i]["outputs"].is_type("string")) {
+		  outputs := [blocksdef[i]["outputs"]];	  // convert into a vector
+		} else {
+		  outputs := blocksdef[i]["outputs"];	  // convert into a vector
+		}
 		if (outputs.is_type("Vector")) {
 		  for (auto j=0; j < outputs.size(); ++j) {
 			theNode.output_from_block(id, outputs[j]);
 		  }
 		} else { throw ("In definition of node " + nodedef["name"] + " block #${i} has invalid output list."); }
+      }
+
+      // Add triggers: must be after adding inputs (direct feedthrough)
+      if (blocksdef[i].count("triggers") > 0) {
+		var triggers;
+		if (blocksdef[i]["triggers"].is_type("string")) {
+		  triggers := [blocksdef[i]["triggers"]];	  // convert into a vector
+		} else {
+		  triggers := blocksdef[i]["triggers"];	  // convert into a vector
+		}
+		if (triggers.is_type("Vector")) {
+		  for (auto j=0; j < triggers.size(); ++j) {
+			theNode.input_triggers_block(id, triggers[j]);
+		  }
+		} else { throw ("In definition of node " + nodedef["name"] + " block #${i} has invalid trigger list."); }
       }
     }
 

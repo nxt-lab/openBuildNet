@@ -18,6 +18,7 @@
 #include <vector>
 #include <map>
 #include <tuple>
+#include <unordered_map>
 
 #include <obnsmn_basic.h>
 #include <obnsim_msg.pb.h>
@@ -68,7 +69,7 @@ namespace OBNsmn {
         updatemask_t getNextUpdateMask() const { return next_update_mask; }
         
         bool needUPDATEX;       ///< Whether this node needs the UPDATE_X message to update its internal state
-
+        
     private:    // ====== DATA ======== //
         const std::string name; ///< Node's name (identifier as a string)
         
@@ -104,6 +105,18 @@ namespace OBNsmn {
          Update types specified by the mask but do not exist will be omitted.
          */
         std::map<simtime_t, updatemask_t> irreg_updates;
+        
+        struct TriggerType {
+            updatemask_t    srcMask;    ///< The mask of source blocks (of this node)
+            int             tgtNode;    ///< ID of the target node
+            updatemask_t    tgtMask;    ///< The mask of target blocks (of tgtNode)
+        };
+        
+        /** \brief List of nodes and blocks triggered by the execution of blocks of this node.
+         **/
+        std::vector<TriggerType> trigger_list;
+        
+        bool has_trigger_list{false};   ///< Whether this node has a trigger list (blocks of this node can trigger other blocks)
 
     public:    // ====== METHODS ====== //
         
@@ -129,6 +142,28 @@ namespace OBNsmn {
         void setUpdateType(size_t idx, simtime_t period) {
             setUpdateType(idx, period, 1 << idx);
         }
+        
+        /** \brief Type for a list of nodes and blocks to be triggered. 
+         **/
+        typedef std::unordered_map<int, updatemask_t> TriggerListType;
+        
+        /** \brief Get blocks triggered by given blocks of this node.
+         
+         Returns the list of nodes and blocks (update types) triggered by given blocks of this node, directly to a list. If a node already exists in the list, modify the block mask.
+         
+         \param blks Mask value of the updating blocks of this node.
+         \param lst Current trigger list.
+         **/
+        void triggerBlocks(updatemask_t blks, TriggerListType &lst);
+        
+        /** \brief Add a new trigger.
+         
+         Add a new trigger from given blocks of this node to a certain node and its blocks.
+         \param srcBlks Source blocks (of this node).
+         \param tgtNode Index of the target node.
+         \param tgtBlks Target blocks (of the target node).
+         **/
+        void addTrigger(updatemask_t srcBlks, int tgtNode, updatemask_t tgtBlks);
         
     private:
         /** \brief Initialize the node to (re)start a simulation. */

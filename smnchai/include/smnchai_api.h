@@ -104,8 +104,14 @@ namespace SMNChai {
             CommProtocol m_comm;    // The communication protocol used for this port
         };
         
+        struct PhysicalInputPortProperties {
+            OBNsim::updatemask_t m_mask;
+            OBNsim::updatemask_t m_trigger;
+            CommProtocol m_comm;    // The communication protocol used for this port
+        };
+        
         /** Set of physical inputs and associated updates for which an input has direct feedthrough. */
-        std::map<std::string, PhysicalPortProperties> m_inputs;
+        std::map<std::string, PhysicalInputPortProperties> m_inputs;
         
         /** Set of physical outputs and associated updates that change the output. */
         std::map<std::string, PhysicalPortProperties> m_outputs;
@@ -200,13 +206,20 @@ namespace SMNChai {
          */
         void output_from_update(unsigned int t_id, const std::string &t_port);
         
-        /** /brief Add an internal dependency between two blocks / updates of this node.
+        /** \brief Add an internal dependency between two blocks / updates of this node.
          This method specifies that a given block depends on the computation outputs of another block of this same node.
          \param t_idsrc The ID of the source block, on whose outputs the other (target) block depends.
          \param t_idtgt The ID of the target block, which depends on the other (source) block.
          \exception smnchai_exception an error happens, e.g. block IDs are invalid.
          */
         void add_internal_dependency(unsigned int t_idsrc, unsigned int t_idtgt);
+        
+        /** \brief Specify that an input port to trigger a block.
+         \param t_id The ID of the block.
+         \param t_port Name of the input port, which must have direct feedthrough to this block.
+         \exception smnchai_exception an error happens, e.g. ID is invalid, port not exists, port doesn't have direct feedthrough, etc.
+         */
+        void input_triggers_block(unsigned int t_id, const std::string &t_port);
 
         /** \brief Return a PortInfo object for connecting ports.
          \param t_port Port name
@@ -241,6 +254,15 @@ namespace SMNChai {
                 throw smnchai_exception("Port " + port_name + " does not exist on node " + m_name);
             }
             return it->second.m_mask;
+        }
+        
+        /** Returns the trigger mask of a given input port, exception if port does not exist. */
+        OBNsim::updatemask_t input_triggermask(const std::string &port_name) const {
+            auto it = m_inputs.find(port_name);
+            if (it == m_inputs.end()) {
+                throw smnchai_exception("Port " + port_name + " does not exist on node " + m_name);
+            }
+            return it->second.m_trigger;
         }
         
         /** Returns the update mask of a given output port, exception if port does not exist. */

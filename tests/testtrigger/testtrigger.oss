@@ -1,0 +1,59 @@
+// This script tests the triggering feature of OBN.
+// There are 3 nodes:
+// - node1/block0 sends a signal to node2/block0 and node2/block1, which triggers their executions.
+// - node2/block0 has sampling time, so it will be triggered by both its periodic sampling and node1/block0's sampling. It in turn triggers node3/block0 by its output.
+// - node2/block1 has no sampling, so it is driven only by node1/block0.
+
+//run_simulation(false);
+workspace("trigger");
+settings.time_unit(millisecond);
+settings.final_time(10*second);
+
+settings.default_comm("mqtt");	// Can change the default communication
+
+var node1def =
+	["name" : "node1",
+	 "inputs" : [],
+	 "outputs" : ["y"],
+	 "blocks" : [["sampling" : 3*second, "outputs" : "y"]
+			    ]
+	];
+var node1 = node(node1def);
+
+var node2def =
+	["name" : "node2",
+	 "inputs" : ["u"],
+	 "outputs" : ["y"],
+	 "blocks" : [
+		 ["sampling" : 1*second,
+		  "inputs" : "u",
+		  "outputs" : ["y"],
+		  "triggers" : "u"
+		 ],
+		 ["sampling" : 0,
+		  "inputs" : ["u"],
+		  "triggers" : ["u"]
+		 ]
+	 ]
+	];
+var node2 = node(node2def);
+
+var node3def =
+	["name" : "node3",
+	 "inputs" : ["u"],
+	 "outputs" : [],
+	 "blocks" : [
+		 ["sampling" : 0,
+		  "inputs" : "u",
+		  "triggers" : "u"
+		 ]
+	 ]
+	];
+var node3 = node(node3def);
+
+connect(node1.port("y"), node2.port("u"));
+connect(node2.port("y"), node3.port("u"));
+
+print_system();
+
+waitfor_all_nodes(30);

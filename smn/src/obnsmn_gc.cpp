@@ -61,16 +61,14 @@
  The main algorithm is sequential (cf. the main design document), which will call helper functions, e.g. to wait for ACKs, to send messages to nodes, etc.
  
  In each simulation iteration, GC will do the following steps:
- - Create a list of irregular update nodes and a list of regular update nodes (which may have overlaps).
- - Send irregular UPDATE_Y to all nodes in first list, wait for ACK.
- - Create a run-time node dependency graph from list 2, then repeat until the graph is empty
+ - Create a list of update nodes (regular and irregular, there is no distinction).
+ - Create a run-time node dependency graph from the list, then repeat the following until the graph is empty
     - Extract next update nodes, send UPDATE_Y to them, wait for ACK.
- - Finally, send UPDATE_X to all nodes in both lists, without duplications. Wait for ACK.
+ - Finally, send UPDATE_X to all updating nodes. Wait for ACK.
  
- Lists 1 & 2 are maintained as a single pre-allocated array with three columns:
+ The list is maintained as a single pre-allocated list of two fields:
  1. Node ID
- 2. Type of update: 1 if regular only, 2 if irregular only, 3 if both
- 3. Irregular update mask, if column 2 is not 1.
+ 2. Update mask
  
  The array is pre-allocated with maximum number of rows (number of nodes), and a variable keeps track of the current length of the array.
  The algorithm goes through the array and picks the appropriate nodes to send messages to.
@@ -340,10 +338,58 @@ bool GCThread::startNextUpdate() {
         return false;
     }
     
-    // Now that the list of updating nodes is determined, we populate the update type masks of these nodes into the list
+    // Now that the list of updating nodes is determined, we populate the update type masks of these nodes into the list.
+    // We also check if triggers are added and build a list of triggers.
+    OBNsmn::OBNNode::TriggerListType trigger_list;
+    
     updateIt = gc_update_list.begin();
     for (auto k = 0; k < gc_update_size; ++k, ++updateIt) {
-        updateIt->updateMask = _nodes[updateIt->nodeID]->getNextUpdateMask();
+        auto curMask = _nodes[updateIt->nodeID]->getNextUpdateMask();
+        updateIt->updateMask = curMask;
+        _nodes[updateIt->nodeID]->triggerBlocks(curMask, trigger_list);
+    }
+    
+    // Update the list of updating nodes with active triggers -> loop until no new triggers are added
+    while (!trigger_list.empty()) {
+        // For nodes already in the updating list
+        bool listAdjusted = true;
+        while (listAdjusted) {
+            listAdjusted = false;
+            
+            // Loop through the updating list and adjust the current nodes with triggered blocks
+            updateIt = gc_update_list.begin();
+            for (auto k = 0; k < gc_update_size; ++k, ++updateIt) {
+                auto trgIt = trigger_list.find(updateIt->nodeID);
+                if (trgIt != trigger_list.end()) {
+                    // New blocks of the node may be triggered -> adjust its mask
+                    updatemask_t unionMask = trgIt->second | updateIt->updateMask;
+                    updatemask_t diffMask = unionMask ^ updateIt->updateMask;
+                    updateIt->updateMask = unionMask;
+                    trigger_list.erase(trgIt);      // Remove the trigger (added)
+                    if (diffMask) {
+                        // new blocks are added, so we get blocks triggered by these newly added blocks
+                        _nodes[updateIt->nodeID]->triggerBlocks(diffMask, trigger_list);
+                        listAdjusted = true;
+                    }
+                }
+            }
+        }
+        // At this point, updateIt points to just beyond the current end of gc_update_list
+        
+        // Remaining nodes in trigger_list are not in updating list -> add them
+        auto beginUpdateIt = updateIt;
+        for (auto&& trg: trigger_list) {
+            gc_update_size++;
+            *(updateIt++) = {trg.first, trg.second};
+        }
+        auto endUpdateIt = updateIt;
+        
+        trigger_list.clear();
+        
+        // Go through the newly added nodes and get the triggered blocks by them, if there are any
+        for (updateIt = beginUpdateIt; updateIt < endUpdateIt; ++updateIt) {
+            _nodes[updateIt->nodeID]->triggerBlocks(updateIt->updateMask, trigger_list);
+        }
     }
     
     // Update simulation time, and continue the simulation

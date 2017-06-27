@@ -1,6 +1,6 @@
 /* -*- mode: C++; indent-tabs-mode: nil; -*- */
 /** \file obnsim_nodegraph.cpp
- * \brief Implement node graph classes using LEMON graph library
+ * \brief Implement node graph classes using Boost graph library (BGL).
  *
  * This file is part of the openBuildNet simulation framework
  * (OBN-Sim) developed at EPFL.

@@ -335,7 +335,7 @@ void SMNChai::Node::add_input(const std::string &t_name, const std::string &t_co
     auto comm = comm_protocol_from_string(t_comm);
     
     // It's ok to add the port now
-    m_inputs.emplace(t_name, PhysicalPortProperties{0, comm});  // PhysicalPortProperties = {mask, comm-protocol}
+    m_inputs.emplace(t_name, PhysicalInputPortProperties{0, 0, comm});  // PhysicalInputPortProperties = {mask, trigger, comm-protocol}
 }
 
 void SMNChai::Node::add_output(const std::string &t_name, const std::string &t_comm) {
@@ -406,6 +406,34 @@ void SMNChai::Node::input_to_update(unsigned int t_id, const std::string &t_port
     if (t_direct) {
         it->second.m_mask |= (1 << t_id);
     }
+}
+
+/* Specify that an input port to trigger a block. */
+void SMNChai::Node::input_triggers_block(unsigned int t_id, const std::string &t_port) {
+    // Check that ID is valid and already exists
+    if (t_id > OBNsim::MAX_UPDATE_INDEX || m_updates.count(t_id) == 0) {
+        throw smnchai_exception("In input_triggers_block, update ID=" + std::to_string(t_id) + " on node '" + m_name + "' is invalid or not existing.");
+    }
+    
+    // Check that port is valid and exists
+    if (!OBNsim::Utils::isValidIdentifier(t_port)) {
+        throw smnchai_exception("In input_triggers_block, port name '" + t_port + "' on node '" + m_name + "' is invalid.");
+    }
+
+    auto it = m_inputs.find(t_port);
+    if (it == m_inputs.end()) {
+        throw smnchai_exception("In input_triggers_block, port name '" + t_port + "' on node '" + m_name + "' does not exist.");
+    }
+    
+    OBNsim::updatemask_t blockmask = (1 << t_id);
+    
+    // Check that this input has direct feedthrough
+    if ((it->second.m_mask & blockmask) == 0) {
+        throw smnchai_exception("In input_triggers_block, port name '" + t_port + "' on node '" + m_name + "' must have direct feedthrough to block ID " + std::to_string(t_id) + " but does not.");
+    }
+    
+    // Add the trigger
+    it->second.m_trigger |= blockmask;
 }
 
 
@@ -765,8 +793,17 @@ void SMNChai::WorkSpace::generate_obn_system(OBNsmn::GCThread &gc, SMNChai::SMNC
         if (myconn->first.port_type == PortInfo::OUTPUT && myconn->second.port_type == PortInfo::INPUT &&
             src_mask != 0 && tgt_mask != 0)
         {
-            //std::cout << "Dependency from " << src_node.second << " with mask " << src_mask << " to " << tgt_node.second << " with mask " << tgt_mask << std::endl;
+            //std::cout << "Dependency from " << src_node.node.get_name() << " with mask " << src_mask << " to " << tgt_node.node.get_name() << " with mask " << tgt_mask << std::endl;
             nodeGraph->addDependency(src_node.index, tgt_node.index, src_mask, tgt_mask);
+        }
+        
+        // Add triggering if there is any
+        tgt_mask = tgt_node.node.input_triggermask(myconn->second.port_name);
+        if (myconn->first.port_type == PortInfo::OUTPUT && myconn->second.port_type == PortInfo::INPUT &&
+            src_mask != 0 && tgt_mask != 0)
+        {
+            //std::cout << "Triggering from " << src_node.node.get_name() << " with mask " << src_mask << " to " << tgt_node.node.get_name() << " with mask " << tgt_mask << std::endl;
+            gc.addTrigger(src_node.index, src_mask, tgt_node.index, tgt_mask);
         }
     }
     

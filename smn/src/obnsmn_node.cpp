@@ -126,3 +126,51 @@ bool OBNsmn::OBNNode::initialize() {
     
     return true;
 }
+
+// Get blocks triggered by given blocks of this node.
+void OBNsmn::OBNNode::triggerBlocks(updatemask_t blks, TriggerListType &lst) {
+    if (!has_trigger_list) return;
+    
+    for (auto&& trg: trigger_list) {
+        if (blks & trg.srcMask) {
+            // given block(s) are in the list -> trigger target blocks
+            if (lst.count(trg.tgtNode)) {
+                // Exist -> Combine the masks
+                lst[trg.tgtNode] |= trg.tgtMask;
+            } else {
+                lst[trg.tgtNode] = trg.tgtMask;
+            }
+        }
+    }
+}
+
+// Add a new trigger
+void OBNsmn::OBNNode::addTrigger(updatemask_t srcBlks, int tgtNode, updatemask_t tgtBlks) {
+    has_trigger_list = true;
+    
+    // Loop through the current list, see if we can combine with an existing trigger
+    for (auto&& trg: trigger_list) {
+        if (trg.tgtNode == tgtNode) {
+            if (trg.srcMask == srcBlks) {
+                // Combine target
+                trg.tgtMask |= tgtBlks;
+                return;
+            } else if (trg.tgtMask == tgtBlks) {
+                // Combine source
+                trg.srcMask |= srcBlks;
+                return;
+            } else if ((trg.srcMask & srcBlks) == srcBlks && (trg.tgtMask & tgtBlks) == tgtBlks) {
+                // If new trigger is contained in existing trigger -> nothing to add
+                return;
+            } else if ((trg.srcMask | srcBlks) == srcBlks && (trg.tgtMask | tgtBlks) == tgtBlks) {
+                // If new trigger contains existing trigger -> replace
+                trg.srcMask = srcBlks;
+                trg.tgtMask = tgtBlks;
+                return;
+            }
+        }
+    }
+    
+    // Not combined --> add new
+    trigger_list.push_back({srcBlks, tgtNode, tgtBlks});
+}
