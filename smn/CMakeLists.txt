@@ -5,19 +5,31 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.1.0 FATAL_ERROR)
 
 ## Here comes the name of your project:
-SET(PROJECT_NAME "obnsmn_smn")
+SET(PROJECT_NAME "obnsmn")
 
 SET(PROJECT_VERSION "0.1"  ## "hg-tip"
     CACHE STRING "${PROJECT_NAME} version string")
 
 ## Do not edit this.
-PROJECT(${PROJECT_NAME})
+PROJECT(${PROJECT_NAME} C CXX)
 
-set (PROJECT_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include)
+## Installation directory
+IF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  SET(CMAKE_INSTALL_PREFIX /usr/local/obn CACHE PATH "OBN install directory" FORCE)
+ENDIF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+
+# Select the desired build type
+# set(CMAKE_BUILD_TYPE Release)
+
+
+## Set OBN_MAIN_DIR to the path to the main directory of openBuildNet
+set (OBN_MAIN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../)
+
+set (PROJECT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 set (PROJECT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 ## Include directories for the general OBNSim project
-set (OBNSIM_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+set (OBNSIM_INCLUDE_DIR ${OBN_MAIN_DIR}/include)
 
 
 IF(UNIX)
@@ -27,6 +39,31 @@ ELSE(UNIX)
   SET(INSTALL_BIN_DIR "." CACHE STRING
                   "Subdir for installing the binaries")
 ENDIF(UNIX)
+
+# guard against bad build-type strings
+if (NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE "Release")
+endif()
+
+IF(CMAKE_COMPILER_IS_GNUCXX)
+  SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
+ENDIF(CMAKE_COMPILER_IS_GNUCXX)
+
+## Sometimes MSVC overwhelms you with compiler warnings which are impossible to
+## avoid. Then comment out these sections.
+
+#IF(MSVC)
+#  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}
+#      /wd4250 /wd4355 /wd4503 /wd4800 /wd4996")
+# # Suppressed warnings:
+# # C4250: 'class1' : inherits 'class2::member' via dominance
+# # C4355: 'this' : used in base member initializer list
+# # C4503: 'function' : decorated name length exceeded, name was truncated
+# # C4800: 'type' : forcing value to bool 'true' or 'false'
+# #        (performance warning)
+# # C4996: 'function': was declared deprecated
+# ENDIF(MSVC)
 
 
 ## Generate code for the message formats using Google ProtoBuf, see http://www.cmake.org/cmake/help/v3.0/module/FindProtobuf.html
@@ -57,20 +94,20 @@ set(OBNSMN_COMM_SRC "")
 set(OBNSMN_COMM_HDR "")
 
 ## To use YARP (optionally)
-option(WITH_YARP "Build SMNChai with YARP support for communication." ON)
+option(WITH_YARP "Build SMNChai with YARP support for communication." OFF)
 if(WITH_YARP)
   find_package(YARP REQUIRED)
   include_directories(${YARP_INCLUDE_DIRS})
   link_libraries(${YARP_LIBRARIES})
-  set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${OBNSMN_SRC_DIR}/obnsmn_comm_yarp.cpp)
-  set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${OBNSMN_INCLUDE_DIR}/obnsmn_comm_yarp.h)
+  set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${PROJECT_SOURCE_DIR}/obnsmn_comm_yarp.cpp)
+  set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${PROJECT_INCLUDE_DIR}/obnsmn_comm_yarp.h)
   add_definitions(-DOBNSIM_COMM_YARP)
   message("Found YARP library; will build SMN with YARP support.")
 endif(WITH_YARP)
 
 
 ## To use MQTT (optionally)
-option(WITH_PAHOMQTT "Build SMNChai with Paho MQTT support for communication." OFF)
+option(WITH_PAHOMQTT "Build SMNChai with Paho MQTT support for communication." ON)
 if(WITH_PAHOMQTT)
   find_library(PAHOMQTT3A NAMES paho-mqtt3a)
   if(PAHOMQTT3A_NOTFOUND)
@@ -86,8 +123,8 @@ if(WITH_PAHOMQTT)
     link_libraries(${PAHOMQTT3A})
   endif()
   add_definitions(-DOBNSIM_COMM_MQTT)
-  set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${OBNSMN_SRC_DIR}/obnsmn_comm_mqtt.cpp)
-  set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${OBNSMN_INCLUDE_DIR}/obnsmn_comm_mqtt.h)
+  set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${PROJECT_SOURCE_DIR}/obnsmn_comm_mqtt.cpp)
+  set(OBNSMN_COMM_HDR ${OBNSMN_COMM_HDR} ${PROJECT_INCLUDE_DIR}/obnsmn_comm_mqtt.h)
 endif(WITH_PAHOMQTT)
 
 
@@ -99,26 +136,6 @@ INCLUDE_DIRECTORIES(
   ${PROJECT_BINARY_DIR}
   ${OBNSIM_INCLUDE_DIR}
 )
-
-IF(CMAKE_COMPILER_IS_GNUCXX)
-  SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
-ENDIF(CMAKE_COMPILER_IS_GNUCXX)
-
-## Sometimes MSVC overwhelms you with compiler warnings which are impossible to
-## avoid. Then comment out these sections.
-
-#IF(MSVC)
-#  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}
-#      /wd4250 /wd4355 /wd4503 /wd4800 /wd4996")
-# # Suppressed warnings:
-# # C4250: 'class1' : inherits 'class2::member' via dominance
-# # C4355: 'this' : used in base member initializer list
-# # C4503: 'function' : decorated name length exceeded, name was truncated
-# # C4800: 'type' : forcing value to bool 'true' or 'false'
-# #        (performance warning)
-# # C4996: 'function': was declared deprecated
-# ENDIF(MSVC)
 
 
 INCLUDE_DIRECTORIES(
@@ -133,7 +150,7 @@ set(OBNSMN_CORE_SRCFILES
 	${PROJECT_SOURCE_DIR}/obnsmn_event.cpp
 	${PROJECT_SOURCE_DIR}/obnsmn_node.cpp
 	${PROJECT_SOURCE_DIR}/obnsmn_nodegraph.cpp
-    	${PROJECT_SOURCE_DIR}/obnsmn_gc.cpp
+    ${PROJECT_SOURCE_DIR}/obnsmn_gc.cpp
 	${OBNSIM_INCLUDE_DIR}/obnsim_basic.cpp	
 	${PROTO_SRCS}
 	${OBNSMN_COMM_SRC}
@@ -143,11 +160,13 @@ set(OBNSMN_CORE_HDRFILES
 	${PROJECT_INCLUDE_DIR}/obnsmn_basic.h
 	${PROJECT_INCLUDE_DIR}/obnsmn_event.h
 	${PROJECT_INCLUDE_DIR}/obnsmn_gc.h
-	${OBNSMN_INCLUDE_DIR}/obnsmn_gc_inline.h
+	${PROJECT_INCLUDE_DIR}/obnsmn_gc_inline.h
 	${PROJECT_INCLUDE_DIR}/obnsmn_node.h
 	${PROJECT_INCLUDE_DIR}/obnsmn_nodegraph.h
 	${PROJECT_INCLUDE_DIR}/sharedqueue.h
 	${PROJECT_INCLUDE_DIR}/obnsmn_report.h
+	${PROJECT_INCLUDE_DIR}/obnsmnlib.h
+	${PROJECT_INCLUDE_DIR}/obnsmnlib_system.h
 	${OBNSIM_INCLUDE_DIR}/obnsim_basic.h
 	${PROTO_HDRS}
 	${OBNSMN_COMM_HDR}
@@ -161,36 +180,66 @@ if(CMAKE_GENERATOR STREQUAL Xcode)
 endif()
 
 
-ADD_EXECUTABLE(obnsim-smn
-	${PROJECT_SOURCE_DIR}/main.cpp
+# ADD_EXECUTABLE(obnsim-smn
+# 	${PROJECT_SOURCE_DIR}/main.cpp
+# 	${OBNSMN_CORE_SRCFILES}
+# )
+
+ADD_LIBRARY(obnsmn SHARED
+	${PROJECT_SOURCE_DIR}/obnsmnlib.cpp
+	${PROJECT_SOURCE_DIR}/obnsmnlib_system.cpp
 	${OBNSMN_CORE_SRCFILES}
 )
+
 
 ## Make sure that C++ 11 is used (for thread, mutex...)
 if(APPLE)
   list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
 else()
-  set_property(TARGET obnsim-smn PROPERTY CXX_STANDARD 11)
-  set_property(TARGET obnsim-smn PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_target_properties(obnsmn PROPERTIES
+      CXX_STANDARD 11
+	  CXX_STANDARD_REQUIRED ON)
+endif()
+
+## Set compiler options
+if(MSVC)
+  # Force to always compile with W4
+  if(CMAKE_CXX_FLAGS MATCHES "/W[0-4]")
+    string(REGEX REPLACE "/W[0-4]" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
+  endif()
+  list(APPEND CMAKE_CXX_FLAGS "/w44640 ${CMAKE_CXX_FLAGS}")
+elseif(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+  # Update if necessary
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow -Wnon-virtual-dtor -pedantic")  # -Wextra
 endif()
 
 
-TARGET_LINK_LIBRARIES(obnsim-smn
+TARGET_LINK_LIBRARIES(obnsmn
   ${PROTOBUF_LITE_LIBRARIES}
   ${Boost_LIBRARIES}
 )
+#  ${CMAKE_THREAD_LIBS_INIT}
+#  ${CMAKE_DL_LIBS}
 
 
-INSTALL(
-  TARGETS obnsim-smn
-  RUNTIME DESTINATION ${INSTALL_BIN_DIR}
-  COMPONENT bin
-)
+
+# INSTALL(
+#   TARGETS obnsim-smn
+#   RUNTIME DESTINATION ${INSTALL_BIN_DIR}
+#   COMPONENT bin
+# )
+
+
+## Installation rules
+install(TARGETS obnsmn
+		RUNTIME DESTINATION ${INSTALL_BIN_DIR}
+        LIBRARY DESTINATION lib)
+install(FILES include/obnsmnlib.h DESTINATION include)
 
 
 ## The auxiliary doxygen files (.dox) should be placed in the 'doc'
 ## subdirectory. The next line includes the CMAKE config of that directory.
 
 # ADD_SUBDIRECTORY(doc)
-
-set(CMAKE_BUILD_TYPE Release)
