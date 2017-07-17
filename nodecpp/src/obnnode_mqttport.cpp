@@ -86,12 +86,17 @@ void MQTTClient::stop() {
     MQTTAsync_disconnectOptions disc_opts = MQTTAsync_disconnectOptions_initializer;
     disc_opts.onSuccess = &MQTTClient::onDisconnect;
     disc_opts.context = this;
+    {
+        std::unique_lock<std::mutex> mylock(m_notify_mutex);
+        m_notify_done = 1;
+    }
     if (MQTTAsync_disconnect(m_client, &disc_opts) == MQTTASYNC_SUCCESS)
     {
         // Wait until finished
         std::unique_lock<std::mutex> mylock(m_notify_mutex);
-        m_notify_done = 1;
-        m_notify_var.wait(mylock, [this](){ return (m_notify_done == 0); });
+        if (m_notify_done != 1) {
+            m_notify_var.wait(mylock, [this](){ return (m_notify_done == 0); });
+        }
     }
     
     MQTTAsync_destroy(&m_client);
