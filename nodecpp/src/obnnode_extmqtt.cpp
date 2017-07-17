@@ -573,6 +573,19 @@ int nodeSimulationTime(size_t nodeid, int timeunit, double* T) {
 }
 
 EXPORT
+int nodeSimulationTimeTicks(size_t nodeid, OBNSimTimeType* T) {
+    // Find node
+    MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);
+    if (!pnode) {
+        reportError(OBNNodeExtInt::StdMsgs::NODE_NOT_EXIST);
+        return -1;
+    }
+    
+    *T = pnode->currentSimulationTime();
+    return 0;
+}
+
+EXPORT
 int nodeTimeUnit(size_t nodeid, OBNSimTimeType* tu) {
     // Find node
     MQTTNodeExt* pnode = OBNNodeExtInt::Session<MQTTNodeExt>::get(nodeid);

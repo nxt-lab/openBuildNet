@@ -88,6 +88,12 @@ extern "C" {
     // 0 = second, -1 = millisecond, -2 = microsecond, 1 = minute, 2 = hour
     int nodeSimulationTime(size_t nodeid, int timeunit, double* T);
     
+    // Returns the current simulation time of the node in atomic clock ticks.
+    // Args: node ID, int64* time
+    // Returns: 0 if successful
+    // *time receives the current simulation time as the number of atomic clock ticks (an integer number) since the beginning.
+    int nodeSimulationTimeTicks(size_t nodeid, OBNSimTimeType* T);
+    
     // Returns the atomic time unit, an integer in microseconds, of the simulation.
     // Args: node ID, OBNSimTimeType* tu
     // Returns: 0 if successful
