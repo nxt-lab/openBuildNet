@@ -23,6 +23,8 @@
 #include <obnsmn_basic.h>
 #include <obnsim_msg.pb.h>
 
+#include <iostream>
+
 namespace OBNsmn {
     
     class GCThread;  // will be used later to be a friend class
@@ -174,12 +176,11 @@ namespace OBNsmn {
         
         /** \brief Get the next update time, whether regular or irregular. */
         simtime_t getNextUpdate();
-                
         
         /** \brief Insert an irregular update.
          
          Inserts an irregular update. It will be sorted in increasing order of the time instants.
-         If an irregular update at the same time instant is already present, the new request will replace the old one.
+         If an irregular update at the same time instant is already present, the new request will replace the old one, if exists.
          It is the responsibility of the caller to make sure that the requested time is in the future; otherwise, time will not be guaranteed to progress forward.
          
          \param reqT The requested update time instant (must be in the future, but not checked).
@@ -191,6 +192,8 @@ namespace OBNsmn {
             // Insert the new update, replace existing one if necessary
             irreg_updates[reqT] = mask;
         }
+        
+        
       
         /** \brief Get the next irregular update
          
@@ -208,6 +211,17 @@ namespace OBNsmn {
             mask = it->second;
             return true;
         }
+        
+        /** \brief Schedule blocks which are triggered by other blocks at current time.
+         
+         Schedule given blocks as triggered blocks (by other blocks through port triggering mechanism).
+         These blocks are considered "irregular updates."
+         The next_update type and mask are recalculated (by getNextUpdate()).
+         
+         \param t Current simulation time.
+         \param mask Mask of triggered blocks.
+         */
+        void addTriggeredBlocks(simtime_t t, updatemask_t mask);
     };
 
 }

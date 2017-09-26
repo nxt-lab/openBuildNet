@@ -99,6 +99,21 @@ simtime_t OBNNode::getNextUpdate() {
 }
 
 
+/* Schedule blocks which are triggered by other blocks at current time. */
+void OBNNode::addTriggeredBlocks(simtime_t t, updatemask_t mask) {
+    // Insert or combine the new update mask as an irregular update
+    auto it = irreg_updates.find(t);
+    if (it == irreg_updates.end()) {
+        // Not found -> create new
+        irreg_updates[t] = mask;
+    } else {
+        irreg_updates[t] |= mask;    // update by the union
+    }
+    
+    // Update the next_update variables
+    getNextUpdate();
+}
+
 
 /**
  Initialize the node's state to (re)start a simulation.

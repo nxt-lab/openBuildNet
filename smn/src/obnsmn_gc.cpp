@@ -362,13 +362,18 @@ bool GCThread::startNextUpdate() {
                 auto trgIt = trigger_list.find(updateIt->nodeID);
                 if (trgIt != trigger_list.end()) {
                     // New blocks of the node may be triggered -> adjust its mask
-                    updatemask_t unionMask = trgIt->second | updateIt->updateMask;
+                    
+                    auto *curNode = _nodes[updateIt->nodeID].get();
+                    
+                    // Trigger those triggered blocks as "irregular updates"
+                    curNode->addTriggeredBlocks(t, trgIt->second);
+                    updatemask_t unionMask = curNode->getNextUpdateMask();  // The new, updated mask
                     updatemask_t diffMask = unionMask ^ updateIt->updateMask;
                     updateIt->updateMask = unionMask;
                     trigger_list.erase(trgIt);      // Remove the trigger (added)
                     if (diffMask) {
                         // new blocks are added, so we get blocks triggered by these newly added blocks
-                        _nodes[updateIt->nodeID]->triggerBlocks(diffMask, trigger_list);
+                        curNode->triggerBlocks(diffMask, trigger_list);
                         listAdjusted = true;
                     }
                 }
@@ -381,6 +386,9 @@ bool GCThread::startNextUpdate() {
         for (auto&& trg: trigger_list) {
             gc_update_size++;
             *(updateIt++) = {trg.first, trg.second};
+            
+            // Trigger those triggered blocks as "irregular updates"
+            _nodes[trg.first]->addTriggeredBlocks(t, trg.second);
         }
         auto endUpdateIt = updateIt;
         
@@ -648,6 +656,8 @@ bool GCThread::gc_send_update_y() {
         return false;
     }
     
+    //std::string allnames;
+    
     for (const auto & node: updateList) {
         // Each node is a pair (node-ID, updatemask)
         int thisNodeID = node.first;
@@ -657,7 +667,10 @@ bool GCThread::gc_send_update_y() {
         msg.set_i(node.second); // Set the update mask specified in the update list
 
         _nodes[thisNodeID]->sendMessage(thisNodeID, msg);
+    
+        //allnames += (" " + _nodes[thisNodeID]->name);
     }
+    //std::cout << "At " << std::to_string(current_sim_time) << " Update Y for:" << allnames << std::endl;
     
     // Set up timeout if necessary
     if (ack_timeout > 0) {
