@@ -9,6 +9,7 @@
  */
 
 #include <cstdlib>
+#include <boost/filesystem.hpp>     // manipulate paths
 #include <smnchai_api.h>
 #include <csvparser/csvparser.h>  // Read CSV files
 #include <smnchai_utils.h>
@@ -411,6 +412,9 @@ chaiscript::ModulePtr SMNChai::APIUtils::smnchai_api_utils_misc(chaiscript::Modu
 {
     // Delay the execution by a number of milliseconds
     m->add(chaiscript::fun([](unsigned long t){ std::this_thread::sleep_for(std::chrono::milliseconds(t)); }), "delay");
+    
+    // Returns the current path (pwd)
+    m->add(chaiscript::fun([](){return boost::filesystem::current_path().string();}), "pwd");
     
     return m;
 }

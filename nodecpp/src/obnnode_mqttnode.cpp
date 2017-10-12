@@ -12,8 +12,8 @@
 
 #include <chrono>
 #include <thread>
-#include <obnnode_MQTTnode.h>
-#include <obnnode_MQTTport.h>
+#include <obnnode_mqttnode.h>
+#include <obnnode_mqttport.h>
 #include <obnnode_exceptions.h>
 
 using namespace OBNnode;
