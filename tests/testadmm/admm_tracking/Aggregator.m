@@ -120,7 +120,7 @@ classdef Aggregator < OBNNode
             this.MU = this.MU + this.U - this.Z;
             % local reference update
             G = (eye(this.Nhorizon*this.Nnode) + this.T'*this.T);
-            f = vec(this.U)+vec(this.MU) + this.T'*(this.refHorizon - this.lambda);
+            f = this.U(:)+this.MU(:) + this.T'*(this.refHorizon - this.lambda);
             z = G\f;
             this.Z_prev = this.Z;
             this.Z = vec2mat(z,this.Nhorizon)';
@@ -172,11 +172,11 @@ classdef Aggregator < OBNNode
                 % convergence criteria
                 
                 % compute Residuals
-                residualRef = this.T*vec(this.Z)-this.refHorizon;
-                residualLocalTracking = vec(this.U)- vec(this.Z);
+                residualRef = this.T*this.Z(:)-this.refHorizon;
+                residualLocalTracking = this.U(:)- this.Z(:);
                 this.resPrimal = [residualRef;residualLocalTracking];
                 %
-                this.resDual = -this.rho * vec( this.Z - this.Z_prev ) ;
+                this.resDual = -this.rho * reshape( this.Z - this.Z_prev, [], 1 ) ;
                 
                 % check convergence
                 convPrimal = sqrt(this.resPrimal'*this.resPrimal);
