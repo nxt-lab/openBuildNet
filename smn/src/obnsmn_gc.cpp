@@ -947,8 +947,7 @@ std::pair<int, std::string> GCThread::request_port_connect(std::size_t idx, cons
     OBNEventQueueType::item_type ev;    // To receive the node event
     OBNSysRequestType sysreq = SYSREQ_NONE;  // To receive the system request
 
-    //bool timed_out = !
-    gc_wait_for_next_event(ev, sysreq);
+    bool timed_out = !gc_wait_for_next_event(ev, sysreq);
     
     gc_timer_reset();
     
@@ -958,6 +957,11 @@ std::pair<int, std::string> GCThread::request_port_connect(std::size_t idx, cons
         return std::make_pair(-15, "User requested to stop.");
     }
     
+    // Time out
+    if (timed_out) {
+        return std::make_pair(-12, "Timeout");
+    }
+
     // Process the event
     if (ev) {
         if (ev->category == SMNNodeEvent::EVT_SYS &&
@@ -976,8 +980,9 @@ std::pair<int, std::string> GCThread::request_port_connect(std::size_t idx, cons
             // Not the msg we need
             return std::make_pair(-13, std::string());
         }
-    } else {
-        // must be timeout
-        return std::make_pair(-12, std::string());
+    }
+    else {
+        // Unknown problem, either internal or commuication error
+        return std::make_pair(-14, "Internal or comm error");
     }
 }

@@ -319,6 +319,7 @@ namespace OBNsmn {
            -11 if communication error while sending the request;
            -12 if timeout;
            -13 if the desired ACK message was not received but a different message;
+           -14 if an internal or communication error;
            -15 if other error.
          */
         std::pair<int, std::string> request_port_connect(std::size_t idx, const std::string& target, const std::string& source, unsigned int timeout = 5000);
