@@ -106,7 +106,7 @@ namespace OBNnode {
         
         /** \brief Set the binary contents of the message from a ProtoBuf message object, to be sent over Yarp. */
         bool setMessage(const TW &msg) {
-            m_buffer.allocateData(msg.ByteSize());
+            m_buffer.allocateData(msg.ByteSizeLong());
             return msg.SerializeToArray(m_buffer.data(), m_buffer.size());
         }
         

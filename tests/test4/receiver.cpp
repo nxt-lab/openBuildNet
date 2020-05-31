@@ -88,9 +88,10 @@ public:
     
     /* This callback is called everytime this node's simulation starts or restarts.
      This is different from initialize() above. */
-    virtual void onInitialization() {
+    virtual int64_t onInitialization() {
         // Initial state and output
         std::cout << "At " << this->currentSimulationTime() << " INIT" << std::endl;
+        return 0;
     }
     
     /* This callback is called when the node's current simulation is about to be terminated. */

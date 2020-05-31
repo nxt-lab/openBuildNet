@@ -33,7 +33,9 @@ ENDIF(UNIX)
 ## The source files and header files are listed in PROTO_SRCS and PROTO_HDRS respectively
 ## The libraries and header files of the ProtoBuf framework (not the generated files) are in PROTOBUF_LITE_LIBRARIES and PROTOBUF_INCLUDE_DIRS respectively, because we will generate lite code instead of the full ProtoBuf code.
 
+set(protobuf_MODULE_COMPATIBLE TRUE)
 find_package(Protobuf REQUIRED)
+message(STATUS "Using protobuf ${protobuf_VERSION}")
 PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS ../msg/obnsim_msg.proto)
 
 

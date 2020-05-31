@@ -38,17 +38,11 @@ endif(WITH_YARP)
 ## To use MQTT (optionally)
 if(WITH_MQTT)
   find_library(PAHOMQTT3A NAMES paho-mqtt3a)
-  if(PAHOMQTT3A_NOTFOUND)
-    # Use the local source files (submodule)
-    message("Did not find Paho MQTT3 library in the system; will use the local source files. This may bloat your program, so it's best to install Paho into your system before building SMNChai.")
-
-    find_package(OpenSSL REQUIRED)
-    AUX_SOURCE_DIRECTORY(${OBN_MAIN_DIR}/thirdparties/paho/src PAHOMQTT3A_SRC)
-    INCLUDE_DIRECTORIES(${OBN_MAIN_DIR}/thirdparties/paho/src)
-    set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${PAHOMQTT3A_SRC})
-  else()
-    message("Found Paho MQTT3 library in the system; will use this library.")
+  if(PAHOMQTT3A)
+    message("Found Paho MQTT3 library in the system; will use this library: ${PAHOMQTT3A}")
     link_libraries(${PAHOMQTT3A})
+  else()
+    message(FATAL_ERROR "Did not find Paho MQTT3 library in the system.")
   endif()
 
   add_definitions(-DOBNSIM_COMM_MQTT)
@@ -62,13 +56,10 @@ INCLUDE_DIRECTORIES(
   ${OBNSMN_INCLUDE_DIR}
 )
 
-IF(CMAKE_COMPILER_IS_GNUCXX)
-  SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
-ENDIF(CMAKE_COMPILER_IS_GNUCXX)
-
 ## Sometimes MSVC overwhelms you with compiler warnings which are impossible to
 ## avoid. Then comment out these sections.
+
+
 
 #IF(MSVC)
 #  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}
@@ -126,12 +117,26 @@ ADD_EXECUTABLE(nodetest1
 	${OBNNODE_CORE_SRCFILES}
 )
 
-## Make sure that C++ 11 is used (for thread, mutex...)
+
+## Make sure that C++ 14 is used (for thread, mutex...)
 if(APPLE)
-  list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++11 ${CMAKE_CXX_FLAGS}")
+  list( APPEND CMAKE_CXX_FLAGS "-stdlib=libc++ -std=c++14 ${CMAKE_CXX_FLAGS}")
 else()
-  set_property(TARGET smntest1 nodetest1 PROPERTY CXX_STANDARD 11)
+  set_property(TARGET smntest1 nodetest1 PROPERTY CXX_STANDARD 14)
   set_property(TARGET smntest1 nodetest1 PROPERTY CXX_STANDARD_REQUIRED ON)
 endif()
 
+## Set compiler options
+if(MSVC)
+  # Force to always compile with W4
+  if(CMAKE_CXX_FLAGS MATCHES "/W[0-4]")
+    string(REGEX REPLACE "/W[0-4]" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
+  endif()
+  list(APPEND CMAKE_CXX_FLAGS "/w44640 ${CMAKE_CXX_FLAGS}")
+elseif(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+  # Update if necessary
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wshadow -Wnon-virtual-dtor -pedantic")  # -Wextra
+endif()
 

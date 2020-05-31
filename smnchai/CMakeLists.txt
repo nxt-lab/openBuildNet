@@ -37,7 +37,9 @@ FIND_PACKAGE ( Threads REQUIRED )
 ## The source files and header files are listed in PROTO_SRCS and PROTO_HDRS respectively
 ## The libraries and header files of the ProtoBuf framework (not the generated files) are in PROTOBUF_LITE_LIBRARIES and PROTOBUF_INCLUDE_DIRS respectively, because we will generate lite code instead of the full ProtoBuf code.
 
+set(protobuf_MODULE_COMPATIBLE TRUE)
 find_package(Protobuf REQUIRED)
+# message(STATUS "Using protobuf ${protobuf_VERSION}")
 PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS ${OBN_MAIN_DIR}/msg/obnsim_msg.proto ${OBN_MAIN_DIR}/msg/obnsim_io.proto)
 
 
@@ -74,17 +76,12 @@ endif(WITH_YARP)
 option(WITH_PAHOMQTT "Build SMNChai with Paho MQTT support for communication." OFF)
 if(WITH_PAHOMQTT)
   find_library(PAHOMQTT3A NAMES paho-mqtt3a)
-  if(PAHOMQTT3A_NOTFOUND)
-    # Use the local source files (submodule)
-    message("Did not find Paho MQTT3 library in the system; will use the local source files. This may bloat your program, so it's best to install Paho into your system before building SMNChai.")
-
-    find_package(OpenSSL REQUIRED)
-    AUX_SOURCE_DIRECTORY(${OBN_MAIN_DIR}/thirdparties/paho/src PAHOMQTT3A_SRC)
-    INCLUDE_DIRECTORIES(${OBN_MAIN_DIR}/thirdparties/paho/src)
-    set(OBNSMN_COMM_SRC ${OBNSMN_COMM_SRC} ${PAHOMQTT3A_SRC})
-  else()
-    message("Found Paho MQTT3 library in the system; will use this library.")
+  if(PAHOMQTT3A)
+    message("Found Paho MQTT3 library in the system: ${PAHOMQTT3A}.")
     link_libraries(${PAHOMQTT3A})
+  else()
+    # Use the local source files (submodule)
+    message(FATAL_ERROR "Did not find Paho MQTT3 library in the system.")
   endif()
 
   add_definitions(-DOBNSIM_COMM_MQTT)
