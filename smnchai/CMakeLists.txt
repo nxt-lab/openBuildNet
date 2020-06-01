@@ -9,7 +9,7 @@ PROJECT(${PROJECT_NAME} C CXX)
 
 ## Installation directory
 IF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-  SET(CMAKE_INSTALL_PREFIX /usr/local/obn CACHE PATH "OBN install directory" FORCE)
+  SET(CMAKE_INSTALL_PREFIX /usr/local CACHE PATH "OBN install directory" FORCE)
 ENDIF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 
 # Select the desired build type

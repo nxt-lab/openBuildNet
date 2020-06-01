@@ -75,7 +75,7 @@ void MQTTNodeBase::sendN2SMNMsg() {
     // OBNsim::clockStart = chrono::steady_clock::now();
     
     // Generate the binary content
-    m_gcbuffer.allocateData(_n2smn_message.ByteSizeLong());
+    m_gcbuffer.allocateData(_n2smn_message.ByteSize());
     bool success = _n2smn_message.SerializeToArray(m_gcbuffer.data(), m_gcbuffer.size());
     success = success && mqtt_client.sendData(m_gcbuffer.data(), m_gcbuffer.size(), m_smn_topic);
     

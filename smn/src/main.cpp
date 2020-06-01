@@ -51,7 +51,7 @@ public:
     
     /** \brief Set the contents of the N2SMN message. */
     bool setMessage(const OBNSimMsg::N2SMN &msg) {
-        allocateData(msg.ByteSizeLong());
+        allocateData(msg.ByteSize());
         return msg.SerializeToArray(_data, _size);
     }
     

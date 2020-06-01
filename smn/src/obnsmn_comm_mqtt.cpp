@@ -121,7 +121,7 @@ int MQTTClient::sendMessage(const OBNSimMsg::SMN2N &msg, const std::string& topi
     }
     
     // Allocate buffer to store the bytes of the message
-    auto msgsize = msg.ByteSizeLong();
+    auto msgsize = msg.ByteSize();
     char* buffer = new char[msgsize];
     
     if (!msg.SerializeToArray(buffer, msgsize)) {
@@ -427,7 +427,7 @@ bool OBNNodeMQTT::sendMessage(int nodeID, OBNSimMsg::SMN2N &msg) {
     msg.set_id(nodeID);
     
     // Allocate buffer to store the bytes of the message
-    auto msgsize = msg.ByteSizeLong();
+    auto msgsize = msg.ByteSize();
     allocateBuffer(msgsize);
 
     if (!msg.SerializeToArray(m_buffer, m_buffer_allocsize)) {

@@ -61,7 +61,7 @@ namespace OBNsmn {
             
             /** \brief Set the contents of the SMN2N message. */
             bool setMessage(const OBNSimMsg::SMN2N &msg) {
-                m_msgbuffer.allocateData(msg.ByteSizeLong());
+                m_msgbuffer.allocateData(msg.ByteSize());
                 return msg.SerializeToArray(m_msgbuffer.data(), m_msgbuffer.size());
             }
             

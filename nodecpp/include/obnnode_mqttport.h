@@ -859,7 +859,7 @@ namespace OBNnode {
                 OBN_DATA_TYPE_CLASS<D>::writePBMessage(m_cur_value, m_PBMessage);
                 
                 // Generate the binary content
-                m_buffer.allocateData(m_PBMessage.ByteSizeLong());
+                m_buffer.allocateData(m_PBMessage.ByteSize());
                 if (!m_PBMessage.SerializeToArray(m_buffer.data(), m_buffer.size())) {
                     // Error while serializing the raw message
                     throw OBNnode::outputport_error(this, OBNnode::outputport_error::ERR_SENDMSG);
@@ -916,7 +916,7 @@ namespace OBNnode {
                 }
                 
                 // Generate the binary content
-                m_buffer.allocateData(m_cur_message.ByteSizeLong());
+                m_buffer.allocateData(m_cur_message.ByteSize());
                 if (!m_cur_message.SerializeToArray(m_buffer.data(), m_buffer.size())) {
                     // Error while serializing the raw message
                     throw OBNnode::outputport_error(this, OBNnode::outputport_error::ERR_SENDMSG);
