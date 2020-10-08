@@ -22,13 +22,17 @@ if ~exist('private/obnsim_msg.pb.h', 'file') || ~exist('private/obnsim_io.pb.h',
     error('Could not run ProtoBuf compiler to generate message classes.');
 end
 
+% Get protobuf config
+[~,protoflags] = system('/usr/local/bin/pkg-config --cflags --libs protobuf');
+protoflags = replace(protoflags, char(10), '');
+
 mexargs = 'mex ';
 mexargs = [mexargs '-output private/obnsim_mqtt_ CXXFLAGS=''$CXXFLAGS -std=c++11 -stdlib=libc++'' '];
 mexargs = [mexargs '-DOBNNODE_COMM_MQTT '];
-mexargs = [mexargs '-I/usr/local/include/ -I../../nodematlab/include ' ...
+mexargs = [mexargs protoflags '-I/usr/local/include/ -I../../nodematlab/include ' ...
   '-I../../nodecpp/include -I../../include ' ...
   '-Iprivate -L/usr/local/lib/ '];
-mexargs = [mexargs '-lpaho-mqtt3a -lprotobuf '];
+mexargs = [mexargs '-lpaho-mqtt3a '];
 mexargs = [mexargs '../../nodecpp/src/obnnode_mqttnode.cpp ../../nodecpp/src/obnnode_mqttport.cpp ../../nodecpp/src/obnnode_basic.cpp ../../include/obnsim_basic.cpp ' ...
   '../../nodematlab/src/obnsim_mqtt.cc private/obnsim_msg.pb.cc private/obnsim_io.pb.cc '];
 
